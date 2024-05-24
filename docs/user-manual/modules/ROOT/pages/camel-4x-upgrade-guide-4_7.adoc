@@ -21,6 +21,10 @@ We have now implemented similar logic for the consumer health check as well (the
 Previously a route that has not been started due to `auto-startup=false` would still have its consumer health-check being executed,
 which could lead to DOWN due to consumer failing the check.
 
+The `SupervisingRouteController` has now been pre-configured to report `DOWN` during restart attempts, and also when
+giving up starting a route. It is the `UnhealthyOnExhausted` and `UnhealthyOnRestarting` options that have been changed to be default `true`.
+To have previous behavior you can set these options to `false`.
+
 === DSL
 
 The Load Balancer EIP has aligned naming and the following balancers has been renamed in XML and YAML DSL:
@@ -113,6 +117,18 @@ sections https://datatracker.ietf.org/doc/html/rfc5402/#section-3.2[3.2] and htt
 === camel-cloudevents
 
 Moved the `camel-cloudevents` api into `camel-api` and removed the `camel-cloudevents` dependency from all components that provide CloudEvent transformers.
+
+=== camel-hashicorp-vault
+
+The `HashicorpVaultPropertiesFunction` from the hashicorp vault has been changed to avoid declaring statically the Vault Engine.
+
+This means the `camel.vault.hashicorp.engine` property and the support for `CAMEL_HASHICORP_VAULT_ENGINE` environment variable have been removed.
+
+You can now use the following syntax:
+
+`hashicorp:engine:secret`
+
+Where engine will be the Hashicorp Vault Engine to be used. This means you'll be able to use multiple engines at the same time. More details at CAMEL-20775 issue.
 
 === Camel Spring Boot
 

@@ -16,7 +16,6 @@
  */
 package org.apache.camel.test.junit5;
 
-import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -29,38 +28,28 @@ import org.apache.camel.Exchange;
 import org.apache.camel.Expression;
 import org.apache.camel.FluentProducerTemplate;
 import org.apache.camel.Message;
-import org.apache.camel.NamedNode;
 import org.apache.camel.NoSuchEndpointException;
 import org.apache.camel.Predicate;
 import org.apache.camel.Processor;
 import org.apache.camel.ProducerTemplate;
-import org.apache.camel.RouteConfigurationsBuilder;
 import org.apache.camel.RoutesBuilder;
-import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.Service;
-import org.apache.camel.ServiceStatus;
-import org.apache.camel.builder.AdviceWith;
-import org.apache.camel.builder.AdviceWithRouteBuilder;
 import org.apache.camel.builder.RouteBuilder;
-import org.apache.camel.component.mock.InterceptSendToMockEndpointStrategy;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.impl.DefaultCamelContext;
-import org.apache.camel.impl.debugger.DefaultDebugger;
-import org.apache.camel.model.Model;
 import org.apache.camel.model.ModelCamelContext;
 import org.apache.camel.model.ProcessorDefinition;
 import org.apache.camel.spi.CamelBeanPostProcessor;
 import org.apache.camel.spi.Language;
 import org.apache.camel.spi.PropertiesComponent;
 import org.apache.camel.spi.Registry;
-import org.apache.camel.support.BreakpointSupport;
 import org.apache.camel.support.EndpointHelper;
 import org.apache.camel.support.PluginHelper;
+import org.apache.camel.test.junit5.util.CamelContextTestHelper;
 import org.apache.camel.test.junit5.util.ExtensionHelper;
 import org.apache.camel.test.junit5.util.RouteCoverageDumperExtension;
 import org.apache.camel.util.StopWatch;
 import org.apache.camel.util.StringHelper;
-import org.apache.camel.util.URISupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInstance.Lifecycle;
@@ -76,6 +65,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.apache.camel.test.junit5.TestSupport.isCamelDebugPresent;
+import static org.apache.camel.test.junit5.util.ExtensionHelper.normalizeUri;
 import static org.apache.camel.test.junit5.util.ExtensionHelper.testStartHeader;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -109,7 +99,6 @@ public abstract class CamelTestSupport
     @RegisterExtension
     protected CamelTestSupport camelTestSupportExtension = this;
     private boolean useRouteBuilder = true;
-    private final DebugBreakpoint breakpoint = new DebugBreakpoint();
     private final StopWatch watch = new StopWatch();
     private final Map<String, String> fromEndpoints = new HashMap<>();
     private static final ThreadLocal<AtomicInteger> TESTS = new ThreadLocal<>();
@@ -349,10 +338,7 @@ public abstract class CamelTestSupport
             createCamelContextPerClass();
         } else {
             // test is per test so always setup
-            setupResources();
-            doPreSetup();
-            doSetUp();
-            doPostSetup();
+            initialize();
         }
 
         // only start timing after all the setup
@@ -369,16 +355,20 @@ public abstract class CamelTestSupport
         if (v.getAndIncrement() == 0) {
             LOG.debug("Setup CamelContext before running first test");
             // test is per class, so only setup once (the first time)
-            setupResources();
-            doPreSetup();
-            doSetUp();
-            doPostSetup();
+            initialize();
         } else {
             LOG.debug("Reset between test methods");
             // and in between tests we must do IoC and reset mocks
             postProcessTest();
             MockEndpoint.resetMocks(context);
         }
+    }
+
+    private void initialize() throws Exception {
+        setupResources();
+        doPreSetup();
+        doSetUp();
+        doPostSetup();
     }
 
     /**
@@ -436,7 +426,7 @@ public abstract class CamelTestSupport
         context = (ModelCamelContext) createCamelContext();
         THREAD_CAMEL_CONTEXT.set(context);
 
-        assertNotNull(context, "No context found!");
+        assert context != null : "No context found!";
 
         // add custom beans
         bindToRegistry(context.getRegistry());
@@ -446,18 +436,18 @@ public abstract class CamelTestSupport
 
         // set debugger if enabled
         if (isUseDebugger()) {
-            setupDebugger();
+            CamelContextTestHelper.setupDebugger(context, createBreakpoint());
         }
 
         setupTemplates();
 
         // enable auto mocking if enabled
-        enableAutoMocking();
+        CamelContextTestHelper.enableAutoMocking(context, isMockEndpoints(), isMockEndpointsAndSkip());
 
         // configure properties component (mandatory for testing)
         configurePropertiesComponent();
 
-        setupIncludeExcludePatterns();
+        configureIncludeExcludePatterns();
 
         // prepare for in-between tests
         postProcessTest();
@@ -467,12 +457,10 @@ public abstract class CamelTestSupport
 
             tryStartCamelContext();
         } else {
-            replaceFromEndpoints();
+            CamelContextTestHelper.replaceFromEndpoints(context, fromEndpoints);
             LOG.debug("Using route builder from the created context: {}", context);
         }
         LOG.debug("Routing Rules are: {}", context.getRoutes());
-
-        assertValidContext(context);
     }
 
     private void setupTemplates() {
@@ -490,22 +478,10 @@ public abstract class CamelTestSupport
 
     private void setupRoutes() throws Exception {
         RoutesBuilder[] builders = createRouteBuilders();
-        // add configuration before routes
-        for (RoutesBuilder builder : builders) {
-            if (builder instanceof RouteConfigurationsBuilder) {
-                LOG.debug("Using created route configuration: {}", builder);
-                context.addRoutesConfigurations((RouteConfigurationsBuilder) builder);
-            }
-        }
-        for (RoutesBuilder builder : builders) {
-            LOG.debug("Using created route builder to add routes: {}", builder);
-            context.addRoutes(builder);
-        }
-        for (RoutesBuilder builder : builders) {
-            LOG.debug("Using created route builder to add templated routes: {}", builder);
-            context.addTemplatedRoutes(builder);
-        }
-        replaceFromEndpoints();
+
+        CamelContextTestHelper.setupRoutes(context, builders);
+
+        CamelContextTestHelper.replaceFromEndpoints(context, fromEndpoints);
     }
 
     private void tryStartCamelContext() throws Exception {
@@ -519,68 +495,24 @@ public abstract class CamelTestSupport
         }
     }
 
-    private void setupIncludeExcludePatterns() {
+    private void configureIncludeExcludePatterns() {
         final String include = getRouteFilterIncludePattern();
         final String exclude = getRouteFilterExcludePattern();
-        if (include != null || exclude != null) {
-            LOG.info("Route filtering pattern: include={}, exclude={}", include, exclude);
-            context.getCamelContextExtension().getContextPlugin(Model.class).setRouteFilterPattern(include, exclude);
-        }
+
+        CamelContextTestHelper.configureIncludeExcludePatterns(context, include, exclude);
     }
 
     private void configurePropertiesComponent() {
-        PropertiesComponent pc = context.getPropertiesComponent();
         if (extra == null) {
             extra = useOverridePropertiesWithPropertiesComponent();
         }
-        if (extra != null && !extra.isEmpty()) {
-            pc.setOverrideProperties(extra);
-        }
-        pc.addPropertiesSource(new JunitPropertiesSource(globalStore));
+
         Boolean ignore = ignoreMissingLocationWithPropertiesComponent();
-        if (ignore != null) {
-            pc.setIgnoreMissingLocation(ignore);
-        }
-    }
-
-    private void enableAutoMocking() {
-        String pattern = isMockEndpoints();
-        if (pattern != null) {
-            context.getCamelContextExtension()
-                    .registerEndpointCallback(new InterceptSendToMockEndpointStrategy(pattern));
-        }
-        pattern = isMockEndpointsAndSkip();
-        if (pattern != null) {
-            context.getCamelContextExtension()
-                    .registerEndpointCallback(new InterceptSendToMockEndpointStrategy(pattern, true));
-        }
-    }
-
-    private void setupDebugger() {
-        if (context.getStatus().equals(ServiceStatus.Started)) {
-            LOG.info("Cannot setting the Debugger to the starting CamelContext, stop the CamelContext now.");
-            // we need to stop the context first to setup the debugger
-            context.stop();
-        }
-        context.setDebugging(true);
-        context.setDebugger(new DefaultDebugger());
-        context.getDebugger().addBreakpoint(breakpoint);
-        // when stopping CamelContext it will automatically remove the breakpoint
-    }
-
-    private void replaceFromEndpoints() throws Exception {
-        for (final Map.Entry<String, String> entry : fromEndpoints.entrySet()) {
-            AdviceWith.adviceWith(context.getRouteDefinition(entry.getKey()), context, new AdviceWithRouteBuilder() {
-                @Override
-                public void configure() {
-                    replaceFromWith(entry.getValue());
-                }
-            });
-        }
+        CamelContextTestHelper.configurePropertiesComponent(context, extra, new JunitPropertiesSource(globalStore), ignore);
     }
 
     private boolean isRouteCoverageEnabled() {
-        return System.getProperty(ROUTE_COVERAGE_ENABLED, "false").equalsIgnoreCase("true") || isDumpRouteCoverage();
+        return Boolean.parseBoolean(System.getProperty(ROUTE_COVERAGE_ENABLED, "false")) || isDumpRouteCoverage();
     }
 
     @AfterEach
@@ -753,31 +685,11 @@ public abstract class CamelTestSupport
     }
 
     protected void startCamelContext() throws Exception {
-        if (camelContextService != null) {
-            camelContextService.start();
-        } else {
-            if (context instanceof DefaultCamelContext) {
-                DefaultCamelContext defaultCamelContext = (DefaultCamelContext) context;
-                if (!defaultCamelContext.isStarted()) {
-                    defaultCamelContext.start();
-                }
-            } else {
-                context.start();
-            }
-        }
+        CamelContextTestHelper.startCamelContextOrService(context, camelContextService);
     }
 
     protected CamelContext createCamelContext() throws Exception {
-        Registry registry = createCamelRegistry();
-
-        CamelContext retContext;
-        if (registry != null) {
-            retContext = new DefaultCamelContext(registry);
-        } else {
-            retContext = new DefaultCamelContext();
-        }
-
-        return retContext;
+        return CamelContextTestHelper.createCamelContext(createCamelRegistry());
     }
 
     /**
@@ -825,7 +737,7 @@ public abstract class CamelTestSupport
      * @param  uri the Camel <a href="">URI</a> to use to create or resolve an endpoint
      * @return     the endpoint
      */
-    protected Endpoint resolveMandatoryEndpoint(String uri) {
+    protected final Endpoint resolveMandatoryEndpoint(String uri) {
         return TestSupport.resolveMandatoryEndpoint(context, uri);
     }
 
@@ -835,7 +747,7 @@ public abstract class CamelTestSupport
      * @param  uri the Camel <a href="">URI</a> to use to create or resolve an endpoint
      * @return     the endpoint
      */
-    protected <T extends Endpoint> T resolveMandatoryEndpoint(String uri, Class<T> endpointType) {
+    protected final <T extends Endpoint> T resolveMandatoryEndpoint(String uri, Class<T> endpointType) {
         return TestSupport.resolveMandatoryEndpoint(context, uri, endpointType);
     }
 
@@ -845,7 +757,7 @@ public abstract class CamelTestSupport
      * @param  uri the URI which typically starts with "mock:" and has some name
      * @return     the mandatory mock endpoint or an exception is thrown if it could not be resolved
      */
-    protected MockEndpoint getMockEndpoint(String uri) {
+    protected final MockEndpoint getMockEndpoint(String uri) {
         return getMockEndpoint(uri, true);
     }
 
@@ -860,41 +772,17 @@ public abstract class CamelTestSupport
      *                                 be resolved
      * @throws NoSuchEndpointException is the mock endpoint does not exist
      */
-    protected MockEndpoint getMockEndpoint(String uri, boolean create) throws NoSuchEndpointException {
+    protected final MockEndpoint getMockEndpoint(String uri, boolean create) throws NoSuchEndpointException {
         // look for existing mock endpoints that have the same queue name, and
         // to
         // do that we need to normalize uri and strip out query parameters and
         // whatnot
-        String n;
-        try {
-            n = URISupport.normalizeUri(uri);
-        } catch (URISyntaxException e) {
-            throw RuntimeCamelException.wrapRuntimeException(e);
-        }
+        final String normalizedUri = normalizeUri(uri);
         // strip query
-        final String target = StringHelper.before(n, "?", n);
+        final String target = StringHelper.before(normalizedUri, "?", normalizedUri);
 
         // lookup endpoints in registry and try to find it
-        MockEndpoint found = (MockEndpoint) context.getEndpointRegistry().values().stream()
-                .filter(e -> e instanceof MockEndpoint).filter(e -> {
-                    String t = e.getEndpointUri();
-                    // strip query
-                    int idx2 = t.indexOf('?');
-                    if (idx2 != -1) {
-                        t = t.substring(0, idx2);
-                    }
-                    return t.equals(target);
-                }).findFirst().orElse(null);
-
-        if (found != null) {
-            return found;
-        }
-
-        if (create) {
-            return resolveMandatoryEndpoint(uri, MockEndpoint.class);
-        } else {
-            throw new NoSuchEndpointException(String.format("MockEndpoint %s does not exist.", uri));
-        }
+        return CamelContextTestHelper.lookupEndpoint(context, uri, create, target);
     }
 
     /**
@@ -903,7 +791,7 @@ public abstract class CamelTestSupport
      * @param endpointUri the URI of the endpoint to send to
      * @param body        the body for the message
      */
-    protected void sendBody(String endpointUri, final Object body) {
+    protected final void sendBody(String endpointUri, final Object body) {
         template.send(endpointUri, exchange -> {
             Message in = exchange.getIn();
             in.setBody(body);
@@ -917,7 +805,7 @@ public abstract class CamelTestSupport
      * @param body        the body for the message
      * @param headers     any headers to set on the message
      */
-    protected void sendBody(String endpointUri, final Object body, final Map<String, Object> headers) {
+    protected final void sendBody(String endpointUri, final Object body, final Map<String, Object> headers) {
         template.send(endpointUri, exchange -> {
             Message in = exchange.getIn();
             in.setBody(body);
@@ -933,7 +821,8 @@ public abstract class CamelTestSupport
      * @param endpointUri the endpoint URI to send to
      * @param bodies      the bodies to send, one per message
      */
-    protected void sendBodies(String endpointUri, Object... bodies) {
+    @Deprecated
+    protected final void sendBodies(String endpointUri, Object... bodies) {
         for (Object body : bodies) {
             sendBody(endpointUri, body);
         }
@@ -942,14 +831,14 @@ public abstract class CamelTestSupport
     /**
      * Creates an exchange with the given body
      */
-    protected Exchange createExchangeWithBody(Object body) {
+    protected final Exchange createExchangeWithBody(Object body) {
         return TestSupport.createExchangeWithBody(context, body);
     }
 
     /**
      * Asserts that the given language name and expression evaluates to the given value on a specific exchange
      */
-    protected void assertExpression(Exchange exchange, String languageName, String expressionText, Object expectedValue) {
+    protected final void assertExpression(Exchange exchange, String languageName, String expressionText, Object expectedValue) {
         Language language = assertResolveLanguage(languageName);
 
         Expression expression = language.createExpression(expressionText);
@@ -962,7 +851,7 @@ public abstract class CamelTestSupport
      * Asserts that the given language name and predicate expression evaluates to the expected value on the message
      * exchange
      */
-    protected void assertPredicate(String languageName, String expressionText, Exchange exchange, boolean expected) {
+    protected final void assertPredicate(String languageName, String expressionText, Exchange exchange, boolean expected) {
         Language language = assertResolveLanguage(languageName);
 
         Predicate predicate = language.createPredicate(expressionText);
@@ -974,23 +863,23 @@ public abstract class CamelTestSupport
     /**
      * Asserts that the language name can be resolved
      */
-    protected Language assertResolveLanguage(String languageName) {
+    protected final Language assertResolveLanguage(String languageName) {
         Language language = context.resolveLanguage(languageName);
         assertNotNull(language, "Nog language found for name: " + languageName);
         return language;
     }
 
-    protected void assertValidContext(CamelContext context) {
+    protected final void assertValidContext(CamelContext context) {
         assertNotNull(context, "No context found!");
     }
 
-    protected <T extends Endpoint> T getMandatoryEndpoint(String uri, Class<T> type) {
+    protected final <T extends Endpoint> T getMandatoryEndpoint(String uri, Class<T> type) {
         T endpoint = context.getEndpoint(uri, type);
         assertNotNull(endpoint, "No endpoint found for uri: " + uri);
         return endpoint;
     }
 
-    protected Endpoint getMandatoryEndpoint(String uri) {
+    protected final Endpoint getMandatoryEndpoint(String uri) {
         Endpoint endpoint = context.getEndpoint(uri);
         assertNotNull(endpoint, "No endpoint found for uri: " + uri);
         return endpoint;
@@ -1011,36 +900,32 @@ public abstract class CamelTestSupport
     }
 
     /**
-     * Single step debugs and Camel invokes this method before entering the given processor
+     * Single step debugs and Camel invokes this method before entering the given processor. This method is NOOP.
+     *
+     * @deprecated Use {@link #createBreakpoint} and return a new instance of {@link DebugBreakpoint}
      */
+    @Deprecated(since = "4.7.0")
     protected void debugBefore(
             Exchange exchange, Processor processor, ProcessorDefinition<?> definition, String id, String label) {
     }
 
     /**
-     * Single step debugs and Camel invokes this method after processing the given processor
+     * Single step debugs and Camel invokes this method after processing the given processor. This method is NOOP.
+     *
+     * @deprecated Use {@link #createBreakpoint} and return a new instance of {@link DebugBreakpoint}
      */
+    @Deprecated(since = "4.7.0")
     protected void debugAfter(
             Exchange exchange, Processor processor, ProcessorDefinition<?> definition, String id, String label,
             long timeTaken) {
     }
 
     /**
-     * To easily debug by overriding the <tt>debugBefore</tt> and <tt>debugAfter</tt> methods.
+     * Provides a debug breakpoint to be executed before and/or after entering processors
+     *
+     * @return a new debug breakpoint
      */
-    private class DebugBreakpoint extends BreakpointSupport {
-
-        @Override
-        public void beforeProcess(Exchange exchange, Processor processor, NamedNode definition) {
-            CamelTestSupport.this.debugBefore(exchange, processor, (ProcessorDefinition<?>) definition, definition.getId(),
-                    definition.getLabel());
-        }
-
-        @Override
-        public void afterProcess(Exchange exchange, Processor processor, NamedNode definition, long timeTaken) {
-            CamelTestSupport.this.debugAfter(exchange, processor, (ProcessorDefinition<?>) definition, definition.getId(),
-                    definition.getLabel(), timeTaken);
-        }
+    protected DebugBreakpoint createBreakpoint() {
+        return null;
     }
-
 }

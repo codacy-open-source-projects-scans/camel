@@ -121,7 +121,7 @@ public class Run extends CamelCommand {
     public List<String> files = new ArrayList<>();
 
     @Option(names = { "--runtime" }, completionCandidates = RuntimeCompletionCandidates.class,
-            defaultValue = "camel-main", description = "Runtime (spring-boot, quarkus, or camel-main)")
+            defaultValue = "camel-main", description = "Runtime (${COMPLETION-CANDIDATES})")
     String runtime = "camel-main";
 
     @Option(names = { "--source-dir" },
@@ -141,8 +141,8 @@ public class Run extends CamelCommand {
     String kameletsVersion;
 
     @Option(names = { "--quarkus-version" }, description = "Quarkus Platform version",
-            defaultValue = "3.10.0")
-    String quarkusVersion = "3.10.0";
+            defaultValue = "3.10.2")
+    String quarkusVersion = "3.10.2";
 
     @Option(names = { "--spring-boot-version" }, description = "Spring Boot version",
             defaultValue = "3.2.5")
@@ -203,7 +203,7 @@ public class Run extends CamelCommand {
     boolean logging = true;
 
     @Option(names = { "--logging-level" }, completionCandidates = LoggingLevelCompletionCandidates.class,
-            defaultValue = "info", description = "Logging level")
+            defaultValue = "info", description = "Logging level (${COMPLETION-CANDIDATES})")
     String loggingLevel;
 
     @Option(names = { "--logging-color" }, defaultValue = "true", description = "Use colored logging")

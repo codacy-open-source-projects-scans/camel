@@ -96,7 +96,7 @@ abstract class ExportBaseCommand extends CamelCommand {
     protected String dependencies;
 
     @CommandLine.Option(names = { "--runtime" }, completionCandidates = RuntimeCompletionCandidates.class,
-                        description = "Runtime (spring-boot, quarkus, or camel-main)")
+                        description = "Runtime (${COMPLETION-CANDIDATES})")
     protected String runtime;
 
     @CommandLine.Option(names = { "--gav" }, description = "The Maven group:artifact:version")
@@ -163,8 +163,8 @@ abstract class ExportBaseCommand extends CamelCommand {
     protected String quarkusArtifactId = "quarkus-bom";
 
     @CommandLine.Option(names = { "--quarkus-version" }, description = "Quarkus Platform version",
-                        defaultValue = "3.10.0")
-    protected String quarkusVersion = "3.10.0";
+                        defaultValue = "3.10.2")
+    protected String quarkusVersion = "3.10.2";
 
     @CommandLine.Option(names = { "--maven-wrapper" }, defaultValue = "true",
                         description = "Include Maven Wrapper files in exported project")
