@@ -143,7 +143,7 @@ public abstract class CamelTestSupport
     @Override
     public void afterAll(ExtensionContext context) {
         CamelTestSupport support = INSTANCE.get();
-        if (support != null && support.isCreateCamelContextPerClass()) {
+        if (support != null && support.isCreateCamelContextPerClass) {
             try {
                 support.tearDownCreateCamelContextPerClass();
             } catch (Exception e) {
@@ -211,7 +211,7 @@ public abstract class CamelTestSupport
      *
      * @return <tt>true</tt> per class, <tt>false</tt> per test.
      */
-    public final boolean isCreateCamelContextPerClass() {
+    protected final boolean isCreateCamelContextPerClass() {
         return isCreateCamelContextPerClass;
     }
 
@@ -332,9 +332,9 @@ public abstract class CamelTestSupport
     public void setUp() throws Exception {
         testStartHeader(getClass(), currentTestName);
 
-        ExtensionHelper.hasUnsupported(getClass());
+        unsupportedCheck();
 
-        if (isCreateCamelContextPerClass()) {
+        if (isCreateCamelContextPerClass) {
             createCamelContextPerClass();
         } else {
             // test is per test so always setup
@@ -413,7 +413,16 @@ public abstract class CamelTestSupport
         }
     }
 
-    protected void doSetUp() throws Exception {
+    /**
+     * Temporary method for the child classes to modify the unsupported check.
+     */
+    @Deprecated(since = "4.7.0")
+    protected void unsupportedCheck() {
+        ExtensionHelper.hasUnsupported(getClass());
+    }
+
+    @Deprecated(since = "4.7.0")
+    protected final void doSetUp() throws Exception {
         LOG.debug("setUp test");
         // jmx is enabled if we have configured to use it, if dump route coverage is enabled (it requires JMX) or if
         // the component camel-debug is in the classpath
@@ -525,7 +534,7 @@ public abstract class CamelTestSupport
             ExtensionHelper.testEndFooter(getClass(), currentTestName, time);
         }
 
-        if (isCreateCamelContextPerClass()) {
+        if (isCreateCamelContextPerClass) {
             // will tear down test specially in afterAll callback
             return;
         }
@@ -705,6 +714,7 @@ public abstract class CamelTestSupport
      * However if you need to bind beans to the registry then this is possible already with the bind method on registry,
      * and there is no need to override this method.
      */
+    @Deprecated(since = "4.7.0")
     protected Registry createCamelRegistry() throws Exception {
         return null;
     }

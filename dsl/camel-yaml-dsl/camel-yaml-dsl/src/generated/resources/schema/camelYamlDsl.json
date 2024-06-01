@@ -288,6 +288,11 @@
           } ]
         } ],
         "properties" : {
+          "id" : {
+            "type" : "string",
+            "title" : "Id",
+            "description" : "The id of this node"
+          },
           "deadLetterChannel" : { },
           "defaultErrorHandler" : { },
           "jtaTransactionErrorHandler" : { },
@@ -6021,6 +6026,8 @@
           },
           "headers" : {
             "type" : "array",
+            "title" : "Headers",
+            "description" : "Contains the headers to be set",
             "items" : {
               "$ref" : "#/items/definitions/org.apache.camel.model.SetHeaderDefinition"
             }
@@ -6313,6 +6320,8 @@
           },
           "variables" : {
             "type" : "array",
+            "title" : "Variables",
+            "description" : "Contains the variables to be set",
             "items" : {
               "$ref" : "#/items/definitions/org.apache.camel.model.SetVariableDefinition"
             }
