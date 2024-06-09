@@ -14,31 +14,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.camel.impl.engine;
+package org.apache.camel.component.langchain4j.chat.tool;
 
-import org.apache.camel.CamelContext;
-import org.apache.camel.ValueHolder;
-import org.apache.camel.spi.DataType;
+import java.util.List;
 
 /**
- * Key used in {@link org.apache.camel.spi.ValidatorRegistry} in {@link CamelContext}, to ensure a consistent lookup.
+ * langchain4j Simple Tool parameter implementation, this class can be used to provide multiple properties/input
+ * parameters to the tool itself, the NamedJsonSchemaProperty can be then found as headers into the consumer route
  */
-public final class ValidatorKey extends ValueHolder<String> {
+public class CamelSimpleToolParameter {
 
-    private final DataType type;
+    private final String description;
+    private final List<NamedJsonSchemaProperty> properties;
 
-    public ValidatorKey(DataType type) {
-        super(type.toString());
-        this.type = type;
+    public CamelSimpleToolParameter(String description, List<NamedJsonSchemaProperty> properties) {
+        this.description = description;
+        this.properties = properties;
     }
 
-    public DataType getType() {
-        return type;
+    public List<NamedJsonSchemaProperty> getProperties() {
+        return properties;
     }
 
-    @Override
-    public String toString() {
-        return get();
+    public String getDescription() {
+        return description;
     }
-
 }

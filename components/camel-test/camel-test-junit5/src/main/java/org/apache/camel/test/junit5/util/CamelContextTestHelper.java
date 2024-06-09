@@ -38,11 +38,17 @@ import org.apache.camel.spi.Breakpoint;
 import org.apache.camel.spi.PropertiesComponent;
 import org.apache.camel.spi.PropertiesSource;
 import org.apache.camel.spi.Registry;
+import org.apache.camel.test.junit5.TestExecutionConfiguration;
 import org.apache.camel.test.junit5.TestSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public final class CamelContextTestHelper {
+    /**
+     * JVM system property which can be set to true to turn on dumping route coverage statistics.
+     */
+    public static final String ROUTE_COVERAGE_ENABLED = "CamelTestRouteCoverage";
+
     private static final Logger LOG = LoggerFactory.getLogger(CamelContextTestHelper.class);
 
     public static CamelContext createCamelContext(Registry registry) throws Exception {
@@ -229,5 +235,13 @@ public final class CamelContextTestHelper {
                 }
             });
         }
+    }
+
+    public static boolean isSkipAutoStartContext(TestExecutionConfiguration configuration) {
+        return Boolean.parseBoolean(System.getProperty("skipStartingCamelContext")) || !configuration.autoStartContext();
+    }
+
+    public static boolean isRouteCoverageEnabled(boolean legacyDumpCoverage) {
+        return Boolean.parseBoolean(System.getProperty(ROUTE_COVERAGE_ENABLED, "false")) || legacyDumpCoverage;
     }
 }

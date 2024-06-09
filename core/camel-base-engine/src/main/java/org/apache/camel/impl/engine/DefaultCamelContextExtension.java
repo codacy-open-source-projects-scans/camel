@@ -122,8 +122,8 @@ class DefaultCamelContextExtension implements ExtendedCamelContext {
     private volatile InflightRepository inflightRepository;
     private volatile UuidGenerator uuidGenerator;
     private volatile Tracer tracer;
-    private volatile TransformerRegistry<TransformerKey> transformerRegistry;
-    private volatile ValidatorRegistry<ValidatorKey> validatorRegistry;
+    private volatile TransformerRegistry transformerRegistry;
+    private volatile ValidatorRegistry validatorRegistry;
     private volatile TypeConverterRegistry typeConverterRegistry;
     private volatile EndpointServiceRegistry endpointServiceRegistry;
     private volatile TypeConverter typeConverter;
@@ -789,7 +789,8 @@ class DefaultCamelContextExtension implements ExtendedCamelContext {
 
     @Override
     public void setEndpointServiceRegistry(EndpointServiceRegistry endpointServiceRegistry) {
-        this.endpointServiceRegistry = camelContext.getInternalServiceManager().addService(camelContext, endpointServiceRegistry);
+        this.endpointServiceRegistry
+                = camelContext.getInternalServiceManager().addService(camelContext, endpointServiceRegistry);
     }
 
     ValidatorRegistry getValidatorRegistry() {

@@ -37,9 +37,11 @@ public class DebugSpringTest extends CamelSpringTestSupport {
     private boolean debugged;
 
     @Override
-    public boolean isUseDebugger() {
-        // must enable debugger
-        return true;
+    public void doPreSetup() throws Exception {
+        super.doPreSetup();
+
+        camelContextConfiguration()
+                .withBreakpoint(createBreakpoint());
     }
 
     protected DebugBreakpoint createBreakpoint() {
