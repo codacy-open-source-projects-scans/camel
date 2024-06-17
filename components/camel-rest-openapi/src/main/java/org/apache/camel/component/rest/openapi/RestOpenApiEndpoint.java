@@ -126,6 +126,7 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
     private String operationId;
     @UriParam(description = "What payload type this component capable of consuming. Could be one type, like `application/json`"
                             + " or multiple types as `application/json, application/xml; q=0.5` according to the RFC7231. This equates"
+                            + " or multiple types as `application/json, application/xml; q=0.5` according to the RFC7231. This equates"
                             + " to the value of `Accept` HTTP header. If set overrides any value found in the OpenApi specification and."
                             + " in the component configuration",
               label = "consumer")
@@ -209,7 +210,9 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
         RestOpenApiProcessor target
                 = new RestOpenApiProcessor(this, doc, path, apiContextPath, processor, restOpenapiProcessorStrategy);
         CamelContextAware.trySetCamelContext(target, getCamelContext());
-        return createConsumerFor(path, target);
+        Consumer consumer = createConsumerFor(path, target);
+        target.setConsumer(consumer);
+        return consumer;
     }
 
     protected Consumer createConsumerFor(String basePath, RestOpenApiProcessor processor) throws Exception {

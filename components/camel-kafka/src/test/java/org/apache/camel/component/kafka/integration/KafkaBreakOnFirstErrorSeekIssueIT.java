@@ -54,7 +54,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tags({ @Tag("breakOnFirstError") })
 @EnabledOnOs(value = { OS.LINUX, OS.MAC, OS.FREEBSD, OS.OPENBSD, OS.WINDOWS },
-             architectures = { "amd64", "aarch64" },
+             architectures = { "amd64", "aarch64", "ppc64le" },
              disabledReason = "This test does not run reliably on some platforms")
 
 class KafkaBreakOnFirstErrorSeekIssueIT extends BaseKafkaTestSupport {
@@ -81,7 +81,7 @@ class KafkaBreakOnFirstErrorSeekIssueIT extends BaseKafkaTestSupport {
 
         // This wait is necessary to ensure that required number of partitions are actually created
         Awaitility.await()
-                .timeout(20, TimeUnit.SECONDS)
+                .timeout(180, TimeUnit.SECONDS)
                 .pollDelay(5, TimeUnit.SECONDS)
                 .untilAsserted(() -> assertTrue(r.numPartitions(TOPIC).isDone()));
 
@@ -127,8 +127,8 @@ class KafkaBreakOnFirstErrorSeekIssueIT extends BaseKafkaTestSupport {
 
         // let test run for awhile
         Awaitility.await()
-                .timeout(30, TimeUnit.SECONDS)
-                .pollDelay(8, TimeUnit.SECONDS)
+                .timeout(180, TimeUnit.SECONDS)
+                .pollDelay(5, TimeUnit.SECONDS)
                 .untilAsserted(() -> assertTrue(true));
 
         // the replaying of the message with an error

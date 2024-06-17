@@ -195,7 +195,9 @@ public interface Exchange extends VariableAware {
     String HTTP_URI = "CamelHttpUri";
     String HTTP_URL = "CamelHttpUrl";
     String HTTP_CHUNKED = "CamelHttpChunked";
+    @Deprecated(since = "4.7.0")
     String HTTP_SERVLET_REQUEST = "CamelHttpServletRequest";
+    @Deprecated(since = "4.7.0")
     String HTTP_SERVLET_RESPONSE = "CamelHttpServletResponse";
 
     @Metadata(label = "interceptFrom,interceptSendToEndpoint", description = "The endpoint URI that was intercepted",
@@ -260,6 +262,7 @@ public interface Exchange extends VariableAware {
     String REDELIVERY_DELAY = "CamelRedeliveryDelay";
     String REST_HTTP_URI = "CamelRestHttpUri";
     String REST_HTTP_QUERY = "CamelRestHttpQuery";
+    String REST_OPENAPI = "CamelRestOpenAPI";
     @Deprecated(since = "3.1.0")
     String ROLLBACK_ONLY = "CamelRollbackOnly";
     @Deprecated(since = "3.1.0")

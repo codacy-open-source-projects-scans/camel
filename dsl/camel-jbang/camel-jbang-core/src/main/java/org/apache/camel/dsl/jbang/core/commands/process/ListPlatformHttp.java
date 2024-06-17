@@ -103,8 +103,8 @@ public class ListPlatformHttp extends ProcessWatchCommand {
                     new Column().header("NAME").dataAlign(HorizontalAlign.LEFT).maxWidth(30, OverflowBehaviour.ELLIPSIS_RIGHT)
                             .with(r -> r.name),
                     new Column().header("URL").dataAlign(HorizontalAlign.LEFT).with(r -> r.url),
-                    new Column().header("VERB").dataAlign(HorizontalAlign.LEFT).with(r -> r.verbs),
-                    new Column().header("CONTENT").dataAlign(HorizontalAlign.LEFT).with(this::getContent))));
+                    new Column().header("METHOD").dataAlign(HorizontalAlign.LEFT).with(r -> r.verbs),
+                    new Column().header("CONTENT-TYPE").dataAlign(HorizontalAlign.LEFT).with(this::getContent))));
         }
 
         return 0;

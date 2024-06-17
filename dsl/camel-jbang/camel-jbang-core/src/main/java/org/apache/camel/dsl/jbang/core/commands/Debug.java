@@ -369,6 +369,10 @@ public class Debug extends Run {
                             }
                             row.endpoint.put("endpoint", uri);
                         }
+                        JsonObject es = jo.getMap("endpointService");
+                        if (es != null) {
+                            row.endpointService = es;
+                        }
                         Long ts = jo.getLong("timestamp");
                         if (ts != null) {
                             row.timestamp = ts;
@@ -740,16 +744,19 @@ public class Debug extends Run {
     }
 
     private String getDataAsTable(SuspendedRow r) {
-        return tableHelper.getDataAsTable(r.exchangeId, r.exchangePattern, r.endpoint, r.message, r.exception);
+        return tableHelper.getDataAsTable(r.exchangeId, r.exchangePattern, r.endpoint, r.endpointService, r.message,
+                r.exception);
     }
 
     private String getStatus(SuspendedRow r) {
+        boolean remote = r.endpoint != null && r.endpoint.getBooleanOrDefault("remote", false);
+
         if (r.first) {
             String s = "Created";
             if (loggingColor) {
                 return Ansi.ansi().fg(Ansi.Color.GREEN).a(s).reset().toString();
             } else {
-                return "Input";
+                return s;
             }
         } else if (r.last) {
             String done = r.exception != null ? "Completed (exception)" : "Completed (success)";
@@ -773,10 +780,11 @@ public class Debug extends Run {
                 return fail;
             }
         } else {
+            String s = remote ? "Sent" : "Processed";
             if (loggingColor) {
-                return Ansi.ansi().fg(Ansi.Color.GREEN).a("Processed").reset().toString();
+                return Ansi.ansi().fg(Ansi.Color.GREEN).a(s).reset().toString();
             } else {
-                return "Processed";
+                return s;
             }
         }
     }
@@ -815,6 +823,7 @@ public class Debug extends Run {
         boolean done;
         boolean failed;
         JsonObject endpoint;
+        JsonObject endpointService;
         JsonObject message;
         JsonObject exception;
         List<Code> code = new ArrayList<>();
