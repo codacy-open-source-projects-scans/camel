@@ -208,7 +208,6 @@
         <module>camel-micrometer</module>
         <module>camel-micrometer-prometheus</module>
         <module>camel-microprofile</module>
-        <module>camel-milvus</module>
         <module>camel-mina</module>
         <module>camel-minio</module>
         <module>camel-mllp</module>
@@ -234,7 +233,6 @@
         <module>camel-pdf</module>
         <module>camel-pg-replication-slot</module>
         <module>camel-pgevent</module>
-        <module>camel-pinecone</module>
         <module>camel-platform-http</module>
         <module>camel-platform-http-jolokia</module>
         <module>camel-platform-http-main</module>
@@ -245,7 +243,6 @@
         <module>camel-pubnub</module>
         <module>camel-pulsar</module>
         <module>camel-python</module>
-        <module>camel-qdrant</module>
         <module>camel-quartz</module>
         <module>camel-quickfix</module>
         <module>camel-reactive-executor-tomcat</module>
