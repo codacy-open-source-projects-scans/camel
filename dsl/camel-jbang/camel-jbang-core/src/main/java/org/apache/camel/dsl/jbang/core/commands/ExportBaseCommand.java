@@ -163,8 +163,8 @@ abstract class ExportBaseCommand extends CamelCommand {
     protected String quarkusArtifactId = "quarkus-bom";
 
     @CommandLine.Option(names = { "--quarkus-version" }, description = "Quarkus Platform version",
-                        defaultValue = "3.11.3")
-    protected String quarkusVersion = "3.11.3";
+                        defaultValue = "3.12.0")
+    protected String quarkusVersion = "3.12.0";
 
     @CommandLine.Option(names = { "--maven-wrapper" }, defaultValue = "true",
                         description = "Include Maven Wrapper files in exported project")
@@ -290,13 +290,17 @@ abstract class ExportBaseCommand extends CamelCommand {
     protected Integer runSilently(boolean ignoreLoadingError) throws Exception {
         Run run = new Run(getMain());
         // need to declare the profile to use for run
-        run.localKameletDir = localKameletDir;
         run.dependencies = dependencies;
         run.files = files;
         run.exclude = exclude;
         run.openapi = openapi;
         run.download = download;
-        return run.runSilent(ignoreLoadingError);
+        run.camelVersion = camelVersion;
+        run.quarkusVersion = quarkusVersion;
+        run.springBootVersion = springBootVersion;
+        run.kameletsVersion = kameletsVersion;
+        run.localKameletDir = localKameletDir;
+        return run.runExport(ignoreLoadingError);
     }
 
     protected Set<String> resolveDependencies(File settings, File profile) throws Exception {

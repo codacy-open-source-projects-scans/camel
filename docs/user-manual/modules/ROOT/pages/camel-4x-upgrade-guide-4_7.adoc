@@ -21,6 +21,9 @@ Add default values to `ThrottlingExceptionRoutePolicy` route policy.
 The `EndpointRegistry` interface has been slightly changed to now directly extends `Map<NormalizedEndpointUri, Endpoint>` 
 instead of being a parameterized type. This may cause some compilation failures if the code is declaring a variable for the registry.
 
+The statistics collector in the registry has been made immutable. As such, enabling collection of statistics has to be done
+prior to creating the type converter registry
+
 === camel-health
 
 Routes which has are set to **not** auto-startup are reported as UP in health-checks.
@@ -36,6 +39,10 @@ To have previous behavior you can set these options to `false`.
 == camel-cloud
 
 The camel-cloud component has been deprecated.
+
+=== camel-crypto
+
+PGP dataformat functionality was extracted from `camel-crypto` JAR and placed into `camel-crypto-pgp`.
 
 === DSL
 
