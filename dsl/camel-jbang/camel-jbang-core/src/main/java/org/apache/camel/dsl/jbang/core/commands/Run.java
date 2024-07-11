@@ -20,8 +20,8 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.UnsupportedFlavorException;
+import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -51,7 +51,12 @@ import org.apache.camel.catalog.DefaultCamelCatalog;
 import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
 import org.apache.camel.dsl.jbang.core.common.LoggingLevelCompletionCandidates;
 import org.apache.camel.dsl.jbang.core.common.RuntimeCompletionCandidates;
+import org.apache.camel.dsl.jbang.core.common.RuntimeType;
+import org.apache.camel.dsl.jbang.core.common.RuntimeTypeConverter;
 import org.apache.camel.dsl.jbang.core.common.RuntimeUtil;
+import org.apache.camel.dsl.jbang.core.common.Source;
+import org.apache.camel.dsl.jbang.core.common.SourceHelper;
+import org.apache.camel.dsl.jbang.core.common.SourceScheme;
 import org.apache.camel.dsl.jbang.core.common.VersionHelper;
 import org.apache.camel.main.KameletMain;
 import org.apache.camel.main.download.DownloadListener;
@@ -120,9 +125,12 @@ public class Run extends CamelCommand {
 
     public List<String> files = new ArrayList<>();
 
-    @Option(names = { "--runtime" }, completionCandidates = RuntimeCompletionCandidates.class,
-            defaultValue = "camel-main", description = "Runtime (${COMPLETION-CANDIDATES})")
-    String runtime = "camel-main";
+    @Option(names = { "--runtime" },
+            completionCandidates = RuntimeCompletionCandidates.class,
+            defaultValue = "camel-main",
+            converter = RuntimeTypeConverter.class,
+            description = "Runtime (${COMPLETION-CANDIDATES})")
+    RuntimeType runtime = RuntimeType.main;
 
     @Option(names = { "--source-dir" },
             description = "Source directory for dynamically loading Camel file(s) to run. When using this, then files cannot be specified at the same time.")
@@ -141,12 +149,12 @@ public class Run extends CamelCommand {
     String kameletsVersion;
 
     @Option(names = { "--quarkus-version" }, description = "Quarkus Platform version",
-            defaultValue = "3.12.0")
-    String quarkusVersion = "3.12.0";
+            defaultValue = RuntimeType.QUARKUS_VERSION)
+    String quarkusVersion = RuntimeType.QUARKUS_VERSION;
 
     @Option(names = { "--spring-boot-version" }, description = "Spring Boot version",
-            defaultValue = "3.3.1")
-    String springBootVersion = "3.3.1";
+            defaultValue = RuntimeType.SPRING_BOOT_VERSION)
+    String springBootVersion = RuntimeType.SPRING_BOOT_VERSION;
 
     @Option(names = { "--profile" }, scope = CommandLine.ScopeType.INHERIT, defaultValue = "dev",
             description = "Profile to run (dev, test, or prod).")
@@ -278,7 +286,7 @@ public class Run extends CamelCommand {
     @Option(names = { "--open-api" }, description = "Adds an OpenAPI spec from the given file (json or yaml file)")
     String openapi;
 
-    @Option(names = { "--code" }, description = "Run the given string as Java DSL route")
+    @Option(names = { "--code" }, description = "Run the given text or file as Java DSL routes")
     String code;
 
     @Option(names = { "--verbose" }, description = "Verbose output of startup activity (dependency resolution and downloading")
@@ -298,9 +306,9 @@ public class Run extends CamelCommand {
 
     @Override
     public boolean disarrangeLogging() {
-        if (runtime.equals("quarkus")) {
+        if (RuntimeType.quarkus == runtime) {
             return true;
-        } else if (runtime.equals("spring-boot")) {
+        } else if (RuntimeType.springBoot == runtime) {
             return true;
         }
         return false;
@@ -405,9 +413,9 @@ public class Run extends CamelCommand {
             return 1;
         }
 
-        if (runtime.equals("quarkus")) {
+        if (RuntimeType.quarkus == runtime) {
             return runQuarkus();
-        } else if (runtime.equals("spring-boot")) {
+        } else if (RuntimeType.springBoot == runtime) {
             return runSpringBoot();
         }
 
@@ -423,8 +431,23 @@ public class Run extends CamelCommand {
 
         // route code as option
         if (!empty && code != null) {
+            // code may refer to an existing file
+            String name = "CodeRoute";
+            boolean file = false;
+            File f = new File(code);
+            if (f.isFile() && f.exists()) {
+                // must be a java file
+                boolean java = f.getName().endsWith(".java");
+                if (!java) {
+                    printer().println("ERROR: Only java source files is accepted when using --code parameter");
+                    return 1;
+                }
+                code = Files.readString(f.toPath());
+                name = FileUtil.onlyName(f.getName());
+                file = true;
+            }
             // store code in temporary file
-            String codeFile = loadFromCode(code);
+            String codeFile = loadFromCode(code, name, file);
             // use code as first file
             files.add(0, codeFile);
         }
@@ -620,6 +643,14 @@ public class Run extends CamelCommand {
                 } else {
                     dependencies += "," + d;
                 }
+            }
+        }
+
+        if (profile != null) {
+            // need to include profile application properties if exists
+            String name = "application-" + profile + ".properties";
+            if (new File(name).exists() && !files.contains(name)) {
+                files.add(name);
             }
         }
 
@@ -867,7 +898,7 @@ public class Run extends CamelCommand {
         eq.files = this.files;
         eq.gav = this.gav;
         if (eq.gav == null) {
-            eq.gav = "org.apache.camel:jbang-run-dummy:1.0-SNAPSHOT";
+            eq.gav = "org.example.project:jbang-run-dummy:1.0-SNAPSHOT";
         }
         eq.dependencies = this.dependencies;
         if (eq.dependencies == null) {
@@ -935,7 +966,7 @@ public class Run extends CamelCommand {
         eq.files = this.files;
         eq.gav = this.gav;
         if (eq.gav == null) {
-            eq.gav = "org.apache.camel:jbang-run-dummy:1.0-SNAPSHOT";
+            eq.gav = "org.example.project:jbang-run-dummy:1.0-SNAPSHOT";
         }
         eq.dependencies = this.dependencies;
         if (eq.dependencies == null) {
@@ -1058,7 +1089,11 @@ public class Run extends CamelCommand {
             // application-profile.properties should override standard application.properties
             Properties override = doLoadAndInitProfileProperties(profilePropertiesFile);
             if (override != null) {
-                answer.putAll(override);
+                if (answer == null) {
+                    answer = override;
+                } else {
+                    answer.putAll(override);
+                }
             }
         }
 
@@ -1312,19 +1347,22 @@ public class Run extends CamelCommand {
         return main.getExitCode();
     }
 
-    private String loadFromCode(String code) throws IOException {
-        String fn = CommandLineHelper.CAMEL_JBANG_WORK_DIR + "/CodeRoute.java";
+    private String loadFromCode(String code, String name, boolean file) throws IOException {
+        String fn = CommandLineHelper.CAMEL_JBANG_WORK_DIR + "/" + name + ".java";
         InputStream is = Run.class.getClassLoader().getResourceAsStream("templates/code-java.tmpl");
         String content = IOHelper.loadText(is);
         IOHelper.close(is);
-        // need to replace single quote as double quotes and end with semicolon
-        code = code.replace("'", "\"");
-        code = code.trim();
+        if (!file) {
+            // need to replace single quote as double quotes (from input string)
+            code = code.replace("'", "\"");
+            code = code.trim();
+        }
+        // ensure the code ends with semicolon to finish the java statement
         if (!code.endsWith(";")) {
             code = code + ";";
         }
-        content = content.replaceFirst("\\{\\{ \\.Name }}", "CodeRoute");
-        content = content.replaceFirst("\\{\\{ \\.Code }}", code);
+        content = StringHelper.replaceFirst(content, "{{ .Name }}", name);
+        content = StringHelper.replaceFirst(content, "{{ .Code }}", code);
         Files.writeString(Paths.get(fn), content);
         return "file:" + fn;
     }
@@ -1400,8 +1438,8 @@ public class Run extends CamelCommand {
             if ("java".equals(ext)) {
                 String fqn = determineClassName(t.toString());
                 if (fqn == null) {
-                    throw new IllegalArgumentException(
-                            "Cannot determine the Java class name from the source in the clipboard");
+                    // wrap code in wrapper
+                    return loadFromCode(t.toString(), "ClipboardRoute", true);
                 }
                 // drop package in file name
                 String cn = fqn;
@@ -1513,28 +1551,27 @@ public class Run extends CamelCommand {
 
         String ext2 = FileUtil.onlyExt(file, true);
         if (ext2 != null) {
-            boolean github = file.startsWith("github:") || file.startsWith("https://github.com/")
-                    || file.startsWith("https://gist.github.com/");
+            SourceScheme sourceScheme = SourceScheme.fromUri(file);
             // special for yaml or xml, as we need to check if they have camel or not
-            if (!github && ("xml".equals(ext2) || "yaml".equals(ext2))) {
+            if (!sourceScheme.isRemote() && ("xml".equals(ext2) || "yaml".equals(ext2))) {
                 // load content into memory
-                try (FileInputStream fis = new FileInputStream(file)) {
-                    if ("xml".equals(ext2)) {
-                        XmlStreamDetector detector = new XmlStreamDetector(fis);
-                        XmlStreamInfo info = detector.information();
-                        if (!info.isValid()) {
-                            return false;
-                        }
-                        return ACCEPTED_XML_ROOT_ELEMENTS.contains(info.getRootElementName());
-                    } else {
-                        String data = IOHelper.loadText(fis);
-                        // also support Camel K integrations and Pipes. And KameletBinding for backward compatibility
-                        return data.contains("- from:") || data.contains("- route:") || data.contains("- route-configuration:")
-                                || data.contains("- rest:") || data.contains("- beans:")
-                                || data.contains("KameletBinding")
-                                || data.contains("Pipe")
-                                || data.contains("kind: Integration");
+                Source source = SourceHelper.resolveSource(file);
+                if ("xml".equals(ext2)) {
+                    XmlStreamDetector detector = new XmlStreamDetector(
+                            new ByteArrayInputStream(source.content().getBytes(StandardCharsets.UTF_8)));
+                    XmlStreamInfo info = detector.information();
+                    if (!info.isValid()) {
+                        return false;
                     }
+                    return ACCEPTED_XML_ROOT_ELEMENTS.contains(info.getRootElementName());
+                } else {
+                    // also support Camel K integrations and Pipes. And KameletBinding for backward compatibility
+                    return source.content().contains("- from:") || source.content().contains("- route:")
+                            || source.content().contains("- route-configuration:")
+                            || source.content().contains("- rest:") || source.content().contains("- beans:")
+                            || source.content().contains("KameletBinding")
+                            || source.content().contains("Pipe")
+                            || source.content().contains("kind: Integration");
                 }
             }
             // if the ext is an accepted file then we include it as a potential route
@@ -1714,7 +1751,7 @@ public class Run extends CamelCommand {
         @Override
         public void onDownloadDependency(String groupId, String artifactId, String version) {
             String line = "mvn:" + groupId + ":" + artifactId;
-            if (version != null) {
+            if (ObjectHelper.isNotEmpty(version)) {
                 line += ":" + version;
             }
             if (!downloaded.contains(line)) {

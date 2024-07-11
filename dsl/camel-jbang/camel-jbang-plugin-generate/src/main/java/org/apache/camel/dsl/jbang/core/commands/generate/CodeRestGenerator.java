@@ -20,6 +20,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import io.swagger.v3.oas.models.OpenAPI;
@@ -27,6 +29,9 @@ import io.swagger.v3.parser.OpenAPIV3Parser;
 import org.apache.camel.CamelContext;
 import org.apache.camel.dsl.jbang.core.commands.CamelCommand;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
+import org.apache.camel.dsl.jbang.core.common.RuntimeCompletionCandidates;
+import org.apache.camel.dsl.jbang.core.common.RuntimeType;
+import org.apache.camel.dsl.jbang.core.common.RuntimeTypeConverter;
 import org.apache.camel.generator.openapi.RestDslGenerator;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.logging.log4j.Level;
@@ -42,24 +47,52 @@ import static org.openapitools.codegen.CodegenConstants.SERIALIZABLE_MODEL;
 @CommandLine.Command(name = "rest", description = "Generate REST DSL source code from OpenApi specification")
 public class CodeRestGenerator extends CamelCommand {
 
+    public static class OpenApiVersionCompletionCandidates implements Iterable<String> {
+
+        public OpenApiVersionCompletionCandidates() {
+        }
+
+        @Override
+        public Iterator<String> iterator() {
+            return List.of("3.0", "3.1").iterator();
+        }
+
+    }
+
+    public static class OpenApiTypeCompletionCandidates implements Iterable<String> {
+
+        public OpenApiTypeCompletionCandidates() {
+        }
+
+        @Override
+        public Iterator<String> iterator() {
+            return List.of("xml", "yaml").iterator();
+        }
+
+    }
+
     @CommandLine.Option(names = { "--input" }, required = true, description = "OpenApi specification file name")
     private String input;
     @CommandLine.Option(names = { "--output" }, description = "Output REST DSL file name")
     private String output;
-    @CommandLine.Option(names = { "--type" }, description = "REST DSL type (YAML or XML)", defaultValue = "yaml")
+    @CommandLine.Option(names = { "--type" }, description = "REST DSL type (YAML or XML)", defaultValue = "yaml",
+                        completionCandidates = OpenApiTypeCompletionCandidates.class)
     private String type;
     @CommandLine.Option(names = { "--routes" }, description = "Generate routes (only in YAML)")
     private boolean generateRoutes;
     @CommandLine.Option(names = { "--dto" }, description = "Generate Java Data Objects")
     private boolean generateDataObjects;
-    @CommandLine.Option(names = { "--runtime" }, description = "Runtime (quarkus, or spring-boot)",
-                        defaultValue = "quarkus")
-    private String runtime;
+    @CommandLine.Option(names = { "--runtime" },
+                        completionCandidates = RuntimeCompletionCandidates.class,
+                        converter = RuntimeTypeConverter.class,
+                        defaultValue = "quarkus",
+                        description = "Runtime (${COMPLETION-CANDIDATES})")
+    RuntimeType runtime = RuntimeType.quarkus;
     @CommandLine.Option(names = { "--package" }, description = "Package for generated Java models",
                         defaultValue = "model")
     private String packageName;
     @CommandLine.Option(names = { "--openapi-version" }, description = "Openapi specification 3.0 or 3.1",
-                        defaultValue = "3.0")
+                        defaultValue = "3.0", completionCandidates = OpenApiVersionCompletionCandidates.class)
     private String openApiVersion = "3.0";
 
     public CodeRestGenerator(CamelJBangMain main) {
@@ -68,6 +101,13 @@ public class CodeRestGenerator extends CamelCommand {
 
     @Override
     public Integer doCall() throws Exception {
+        // validate that the input file exists
+        File f = new File(input);
+        if (!f.exists() && !f.isFile()) {
+            printer().println("Error: Input file " + input + " does not exist");
+            return 1;
+        }
+
         OpenAPI doc;
 
         OpenAPIV3Parser parser = new OpenAPIV3Parser();

@@ -46,6 +46,11 @@
           <artifactId>camel-jbang-core</artifactId>
         </dependency>
 
+        <dependency>
+          <groupId>org.apache.camel</groupId>
+          <artifactId>camel-jbang-plugin-kubernetes</artifactId>
+        </dependency>
+
         <!-- kubernetes -->
         <dependency>
             <groupId>io.fabric8</groupId>
