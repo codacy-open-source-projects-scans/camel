@@ -8,6 +8,7 @@
 :tabs-sync-option:
 :component-header: Only producer is supported
 //Manually maintained attributes
+:group: AI
 :camel-spring-boot-name: langchain4j-chat
 
 *Since Camel {since}*
@@ -51,6 +52,10 @@ include::partial$component-endpoint-options.adoc[]
 // endpoint options: START
 
 // endpoint options: END
+
+// component headers: START
+include::partial$component-endpoint-headers.adoc[]
+// component headers: END
 
 include::spring-boot:partial$starter.adoc[]
 
