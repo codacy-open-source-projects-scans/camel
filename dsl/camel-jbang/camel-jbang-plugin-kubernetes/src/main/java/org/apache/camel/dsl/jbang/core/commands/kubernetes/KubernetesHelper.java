@@ -55,6 +55,7 @@ public final class KubernetesHelper {
                 .enable(SerializationFeature.WRITE_ENUMS_USING_TO_STRING)
                 .disable(JsonParser.Feature.AUTO_CLOSE_SOURCE)
                 .enable(MapperFeature.BLOCK_UNSAFE_POLYMORPHIC_BASE_TYPES)
+                .enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES)
                 .build()
                 .setDefaultPropertyInclusion(
                         JsonInclude.Value.construct(JsonInclude.Include.NON_EMPTY, JsonInclude.Include.NON_EMPTY));
@@ -134,8 +135,6 @@ public final class KubernetesHelper {
 
     /**
      * Overwrites the kubernetes client. Typically used by unit tests.
-     *
-     * @param kubernetesClient
      */
     public static void setKubernetesClient(KubernetesClient kubernetesClient) {
         KubernetesHelper.kubernetesClient = kubernetesClient;
@@ -144,11 +143,12 @@ public final class KubernetesHelper {
     /**
      * Dump given domain model object as YAML. Uses Json conversion to generic map as intermediate step. This makes sure
      * to properly write Json additional properties.
-     *
-     * @param  model
-     * @return
      */
     public static String dumpYaml(Object model) {
         return yaml().dumpAsMap(json().convertValue(model, Map.class));
+    }
+
+    public static Map<String, Object> toJsonMap(Object model) {
+        return json().convertValue(model, Map.class);
     }
 }

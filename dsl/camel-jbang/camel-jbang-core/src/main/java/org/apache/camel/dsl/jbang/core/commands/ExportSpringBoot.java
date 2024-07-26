@@ -22,13 +22,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import org.apache.camel.catalog.CamelCatalog;
 import org.apache.camel.dsl.jbang.core.common.CatalogLoader;
@@ -46,6 +42,7 @@ class ExportSpringBoot extends Export {
 
     public ExportSpringBoot(CamelJBangMain main) {
         super(main);
+        pomTemplateName = "spring-boot-pom.tmpl";
     }
 
     @Override
@@ -165,51 +162,28 @@ class ExportSpringBoot extends Export {
         // First try to load a specialized template from the catalog, if the catalog does not provide it
         // fallback to the template defined in camel-jbang-core
         String context;
-        InputStream template = catalog.loadResource("camel-jbang", "spring-boot-pom.tmpl");
+        InputStream template = catalog.loadResource("camel-jbang", pomTemplateName);
         if (template != null) {
             context = IOHelper.loadText(template);
         } else {
-            context = readResourceTemplate("templates/spring-boot-pom.tmpl");
+            context = readResourceTemplate("templates/" + pomTemplateName);
         }
 
         String camelVersion = catalog.getLoadedVersion();
 
-        context = context.replaceFirst("\\{\\{ \\.GroupId }}", ids[0]);
-        context = context.replaceFirst("\\{\\{ \\.ArtifactId }}", ids[1]);
-        context = context.replaceFirst("\\{\\{ \\.Version }}", ids[2]);
+        context = context.replaceAll("\\{\\{ \\.GroupId }}", ids[0]);
+        context = context.replaceAll("\\{\\{ \\.ArtifactId }}", ids[1]);
+        context = context.replaceAll("\\{\\{ \\.Version }}", ids[2]);
         context = context.replaceAll("\\{\\{ \\.SpringBootVersion }}", springBootVersion);
-        context = context.replaceFirst("\\{\\{ \\.JavaVersion }}", javaVersion);
-        context = context.replaceFirst("\\{\\{ \\.CamelVersion }}", camelVersion);
+        context = context.replaceAll("\\{\\{ \\.JavaVersion }}", javaVersion);
+        context = context.replaceAll("\\{\\{ \\.CamelVersion }}", camelVersion);
         if (camelSpringBootVersion != null) {
-            context = context.replaceFirst("\\{\\{ \\.CamelSpringBootVersion }}", camelSpringBootVersion);
+            context = context.replaceAll("\\{\\{ \\.CamelSpringBootVersion }}", camelSpringBootVersion);
         } else {
-            context = context.replaceFirst("\\{\\{ \\.CamelSpringBootVersion }}", camelVersion);
-        }
-        if (additionalProperties != null) {
-            String properties = Arrays.stream(additionalProperties.split(","))
-                    .map(property -> {
-                        String[] keyValueProperty = property.split("=");
-                        return String.format("        <%s>%s</%s>", keyValueProperty[0], keyValueProperty[1],
-                                keyValueProperty[0]);
-                    })
-                    .collect(Collectors.joining(System.lineSeparator()));
-            context = context.replaceFirst(Pattern.quote("{{ .AdditionalProperties }}"), Matcher.quoteReplacement(properties));
-        } else {
-            context = context.replaceFirst(Pattern.quote("{{ .AdditionalProperties }}"), "");
+            context = context.replaceAll("\\{\\{ \\.CamelSpringBootVersion }}", camelVersion);
         }
 
-        // Convert jkube properties to maven properties
-        Properties allProps = new CamelCaseOrderedProperties();
-        if (profile != null && profile.exists()) {
-            RuntimeUtil.loadProperties(allProps, profile);
-        }
-        StringBuilder sbJKube = new StringBuilder();
-        allProps.stringPropertyNames().stream().filter(p -> p.startsWith("jkube")).forEach(key -> {
-            String value = allProps.getProperty(key);
-            sbJKube.append("        <").append(key).append(">").append(value).append("</").append(key).append(">\n");
-        });
-        context = context.replaceFirst(Pattern.quote("{{ .jkubeProperties }}"),
-                Matcher.quoteReplacement(sbJKube.toString()));
+        context = replaceBuildProperties(context);
 
         if (repos == null || repos.isEmpty()) {
             context = context.replaceFirst("\\{\\{ \\.MavenRepositories }}", "");
@@ -272,13 +246,6 @@ class ExportSpringBoot extends Export {
             sb.append("        </dependency>\n");
         }
         context = context.replaceFirst("\\{\\{ \\.CamelDependencies }}", sb.toString());
-
-        // add jkube profiles if there is jkube version property
-        String jkubeProfiles = "";
-        if (allProps.getProperty("jkube.version") != null) {
-            jkubeProfiles = readResourceTemplate("templates/jkube-profiles.tmpl");
-        }
-        context = context.replaceFirst(Pattern.quote("{{ .jkubeProfiles }}"), Matcher.quoteReplacement(jkubeProfiles));
 
         IOHelper.writeText(context, new FileOutputStream(pom, false));
     }

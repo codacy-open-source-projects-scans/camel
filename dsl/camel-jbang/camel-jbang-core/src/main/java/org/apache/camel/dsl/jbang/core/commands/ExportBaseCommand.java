@@ -94,7 +94,7 @@ public abstract class ExportBaseCommand extends CamelCommand {
     protected String repos;
 
     @CommandLine.Option(names = { "--dep", "--dependency" }, arity = "*", description = "Add additional dependencies")
-    protected String[] dependencies;
+    protected List<String> dependencies = new ArrayList<>();
 
     @CommandLine.Option(names = { "--runtime" },
                         completionCandidates = RuntimeCompletionCandidates.class,
@@ -204,9 +204,9 @@ public abstract class ExportBaseCommand extends CamelCommand {
                         description = "Whether to allow automatic downloading JAR dependencies (over the internet)")
     protected boolean download = true;
 
-    @CommandLine.Option(names = { "--additional-properties" },
-                        description = "Additional maven properties, ex. --additional-properties=prop1=foo,prop2=bar")
-    protected String additionalProperties;
+    @CommandLine.Option(names = { "--build-property" }, arity = "*",
+                        description = "Maven/Gradle build properties, ex. --build-property=prop1=foo")
+    protected List<String> buildProperties = new ArrayList<>();
 
     @CommandLine.Option(names = { "--logging" }, defaultValue = "false",
                         description = "Can be used to turn on logging (logs to file in <user home>/.camel directory)")
@@ -220,7 +220,9 @@ public abstract class ExportBaseCommand extends CamelCommand {
                         description = "Whether to ignore route loading and compilation errors (use this with care!)")
     protected boolean ignoreLoadingError;
 
-    protected boolean symbolicLink; // copy source files using symbolic link
+    protected boolean symbolicLink;     // copy source files using symbolic link
+
+    public String pomTemplateName;   // support for specialised pom templates
 
     public ExportBaseCommand(CamelJBangMain main) {
         super(main);
@@ -293,7 +295,7 @@ public abstract class ExportBaseCommand extends CamelCommand {
     protected Integer runSilently(boolean ignoreLoadingError) throws Exception {
         Run run = new Run(getMain());
         // need to declare the profile to use for run
-        run.addDependencies(dependencies);
+        run.dependencies = dependencies;
         run.files = files;
         run.exclude = exclude;
         run.openapi = openapi;
@@ -308,14 +310,24 @@ public abstract class ExportBaseCommand extends CamelCommand {
 
     protected void addDependencies(String... deps) {
         var depsArray = Optional.ofNullable(deps).orElse(new String[0]);
-        var depsList = new ArrayList<>(getDependenciesList());
-        depsList.addAll(Arrays.asList(depsArray));
-        dependencies = depsList.toArray(new String[0]);
+        dependencies.addAll(Arrays.asList(depsArray));
     }
 
-    protected List<String> getDependenciesList() {
-        var depsArray = Optional.ofNullable(dependencies).orElse(new String[0]);
-        return Arrays.asList(depsArray);
+    protected String replaceBuildProperties(String context) {
+        String properties = buildProperties.stream()
+                .filter(item -> !item.isEmpty())
+                .map(item -> {
+                    String[] keyValueProperty = item.split("=");
+                    return String.format("        <%s>%s</%s>", keyValueProperty[0], keyValueProperty[1],
+                            keyValueProperty[0]);
+                })
+                .collect(Collectors.joining(System.lineSeparator()));
+        if (!properties.isEmpty()) {
+            context = context.replaceFirst(Pattern.quote("{{ .BuildProperties }}"), Matcher.quoteReplacement(properties));
+        } else {
+            context = context.replaceFirst(Pattern.quote("{{ .BuildProperties }}"), "");
+        }
+        return context;
     }
 
     protected Set<String> resolveDependencies(File settings, File profile) throws Exception {
@@ -336,7 +348,7 @@ public abstract class ExportBaseCommand extends CamelCommand {
         }
 
         // custom dependencies
-        for (String d : getDependenciesList()) {
+        for (String d : dependencies) {
             answer.add(normalizeDependency(d));
         }
 
@@ -362,45 +374,51 @@ public abstract class ExportBaseCommand extends CamelCommand {
                 }
             } else if (line.startsWith("camel.jbang.dependencies=")) {
                 String deps = StringHelper.after(line, "camel.jbang.dependencies=");
-                for (String d : deps.split(",")) {
-                    answer.add(d.trim());
-                    if (kamelets && d.contains("org.apache.camel:camel-kamelet")) {
-                        // include yaml-dsl and kamelet catalog if we use kamelets
-                        answer.add("camel:yaml-dsl");
-                        answer.add("org.apache.camel.kamelets:camel-kamelets:" + kameletsVersion);
+                if (!deps.isEmpty()) {
+                    for (String d : deps.split(",")) {
+                        answer.add(d.trim());
+                        if (kamelets && d.contains("org.apache.camel:camel-kamelet")) {
+                            // include yaml-dsl and kamelet catalog if we use kamelets
+                            answer.add("camel:yaml-dsl");
+                            answer.add("org.apache.camel.kamelets:camel-kamelets:" + kameletsVersion);
+                        }
                     }
                 }
             } else if (line.startsWith("camel.jbang.classpathFiles")) {
                 String deps = StringHelper.after(line, "camel.jbang.classpathFiles=");
-                for (String d : deps.split(",")) {
-                    // special to include local JARs in export lib folder
-                    if (d.endsWith(".jar")) {
-                        answer.add("lib:" + d.trim());
+                if (!deps.isEmpty()) {
+                    for (String d : deps.split(",")) {
+                        // special to include local JARs in export lib folder
+                        if (d.endsWith(".jar")) {
+                            answer.add("lib:" + d.trim());
+                        }
                     }
                 }
             } else if (line.startsWith("camel.main.routesIncludePattern=")) {
                 String routes = StringHelper.after(line, "camel.main.routesIncludePattern=");
-                for (String r : routes.split(",")) {
-                    String ext = FileUtil.onlyExt(r, true);
-                    if (ext != null) {
-                        // java is moved into src/main/java and compiled during build
-                        // for the other DSLs we need to add dependencies
-                        if ("groovy".equals(ext)) {
-                            answer.add("mvn:org.apache.camel:camel-groovy-dsl");
-                        } else if ("js".equals(ext)) {
-                            answer.add("mvn:org.apache.camel:camel-js-dsl");
-                        } else if ("jsh".equals(ext)) {
-                            answer.add("mvn:org.apache.camel:camel-jsh-dsl");
-                        } else if ("kts".equals(ext)) {
-                            answer.add("mvn:org.apache.camel:camel-kotlin-dsl");
-                        } else if ("xml".equals(ext)) {
-                            answer.add("mvn:org.apache.camel:camel-xml-io-dsl");
-                        } else if ("yaml".equals(ext)) {
-                            answer.add("mvn:org.apache.camel:camel-yaml-dsl");
-                            // is it a kamelet?
-                            ext = FileUtil.onlyExt(r, false);
-                            if ("kamelet.yaml".equals(ext)) {
-                                answer.add("mvn:org.apache.camel.kamelets:camel-kamelets:" + kameletsVersion);
+                if (!routes.isEmpty()) {
+                    for (String r : routes.split(",")) {
+                        String ext = FileUtil.onlyExt(r, true);
+                        if (ext != null) {
+                            // java is moved into src/main/java and compiled during build
+                            // for the other DSLs we need to add dependencies
+                            if ("groovy".equals(ext)) {
+                                answer.add("mvn:org.apache.camel:camel-groovy-dsl");
+                            } else if ("js".equals(ext)) {
+                                answer.add("mvn:org.apache.camel:camel-js-dsl");
+                            } else if ("jsh".equals(ext)) {
+                                answer.add("mvn:org.apache.camel:camel-jsh-dsl");
+                            } else if ("kts".equals(ext)) {
+                                answer.add("mvn:org.apache.camel:camel-kotlin-dsl");
+                            } else if ("xml".equals(ext)) {
+                                answer.add("mvn:org.apache.camel:camel-xml-io-dsl");
+                            } else if ("yaml".equals(ext)) {
+                                answer.add("mvn:org.apache.camel:camel-yaml-dsl");
+                                // is it a kamelet?
+                                ext = FileUtil.onlyExt(r, false);
+                                if ("kamelet.yaml".equals(ext)) {
+                                    answer.add("mvn:org.apache.camel.kamelets:camel-kamelets:" + kameletsVersion);
+                                }
                             }
                         }
                     }
@@ -611,6 +629,12 @@ public abstract class ExportBaseCommand extends CamelCommand {
         // noop
     }
 
+    protected Properties mapBuildProperties() {
+        var answer = new Properties();
+        buildProperties.stream().map(item -> item.split("=")).forEach(toks -> answer.setProperty(toks[0], toks[1]));
+        return answer;
+    }
+
     protected void copyMavenWrapper() throws Exception {
         File wrapper = new File(BUILD_DIR, ".mvn/wrapper");
         wrapper.mkdirs();
@@ -731,18 +755,20 @@ public abstract class ExportBaseCommand extends CamelCommand {
         return answer != null ? answer : "3.4.3";
     }
 
-    protected static String jkubeMavenPluginVersion(File settings, Properties prop) {
+    protected static String jkubeMavenPluginVersion(File settings, Properties props) {
         String answer = null;
-        if (prop != null) {
-            answer = prop.getProperty("camel.jbang.jkube-maven-plugin-version");
+        if (props != null) {
+            answer = props.getProperty("camel.jbang.jkube-maven-plugin-version");
         }
-        try {
-            List<String> lines = RuntimeUtil.loadPropertiesLines(settings);
-            answer = lines.stream()
-                    .filter(l -> l.startsWith("camel.jbang.jkube-maven-plugin-version=") || l.startsWith("jkube.version="))
-                    .map(s -> StringHelper.after(s, "=")).findFirst().orElse(null);
-        } catch (Exception e) {
-            // ignore
+        if (answer == null) {
+            try {
+                List<String> lines = RuntimeUtil.loadPropertiesLines(settings);
+                answer = lines.stream()
+                        .filter(l -> l.startsWith("camel.jbang.jkube-maven-plugin-version=") || l.startsWith("jkube.version="))
+                        .map(s -> StringHelper.after(s, "=")).findFirst().orElse(null);
+            } catch (Exception e) {
+                // ignore
+            }
         }
         return answer != null ? answer : "1.16.2";
     }

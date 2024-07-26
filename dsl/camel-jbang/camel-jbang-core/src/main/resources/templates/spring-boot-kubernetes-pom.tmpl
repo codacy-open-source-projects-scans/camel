@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>{{ .SpringBootVersion }}</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <groupId>{{ .GroupId }}</groupId>
+    <artifactId>{{ .ArtifactId }}</artifactId>
+    <version>{{ .Version }}</version>
+
+    <properties>
+        <java.version>{{ .JavaVersion }}</java.version>
+{{ .BuildProperties }}
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>{{ .SpringBootVersion }}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Camel BOM -->
+            <dependency>
+                <groupId>org.apache.camel.springboot</groupId>
+                <artifactId>camel-spring-boot-bom</artifactId>
+                <version>{{ .CamelSpringBootVersion }}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+{{ .MavenRepositories }}
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel.springboot</groupId>
+            <artifactId>camel-spring-boot-starter</artifactId>
+        </dependency>
+{{ .CamelDependencies }}
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-test-spring-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.eclipse.jkube</groupId>
+                <artifactId>kubernetes-maven-plugin</artifactId>
+                <version>${camel.springboot.jkube.version}</version>
+                <configuration>
+                    <imagePullPolicy>${camel.springboot.kubernetes.image-pull-policy}</imagePullPolicy>
+                    <buildStrategy>docker</buildStrategy>
+                    <images>
+                        <image>
+                            <name>${camel.springboot.kubernetes.image-name}</name>
+                            <build>
+                                <from>eclipse-temurin:{{ .JavaVersion }}</from>
+                                <createImageOptions>
+                                    <platform>linux/amd64</platform>
+                                    <platform>linux/arm64</platform>
+                                </createImageOptions>
+                                <ports>
+                                    <port>${camel.springboot.kubernetes.ports.http.container-port}</port>
+                                </ports>
+                                <entryPoint>
+                                    <exec>
+                                        <arg>java</arg>
+                                        <arg>-jar</arg>
+                                        <arg>/maven/${project.artifactId}-${project.version}.jar</arg>
+                                    </exec>
+                                </entryPoint>
+                            </build>
+                        </image>
+                    </images>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>resource</goal>
+                        </goals>
+                        <phase>package</phase>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <!-- For symmetry with Quarkus, copy kubernetes.yml to the same target location -->
+                            <outputDirectory>${project.build.directory}/kubernetes</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.build.directory}/classes/META-INF/jkube</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+    </profiles>
+
+</project>

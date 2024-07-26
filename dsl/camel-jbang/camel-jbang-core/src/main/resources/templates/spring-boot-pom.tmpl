@@ -16,8 +16,7 @@
 
     <properties>
         <java.version>{{ .JavaVersion }}</java.version>
-{{ .jkubeProperties }}
-{{ .AdditionalProperties }}
+{{ .BuildProperties }}
     </properties>
 
     <dependencyManagement>
@@ -52,13 +51,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
-
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-spring-boot-starter</artifactId>
         </dependency>
 {{ .CamelDependencies }}
-
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -81,7 +78,6 @@
     </build>
 
     <profiles>
-{{ .jkubeProfiles }}
         <profile>
             <id>camel.debug</id>
             <activation>

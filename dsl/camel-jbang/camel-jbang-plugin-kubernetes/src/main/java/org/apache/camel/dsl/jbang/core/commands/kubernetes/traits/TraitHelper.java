@@ -27,7 +27,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.camel.catalog.CamelCatalog;
 import org.apache.camel.dsl.jbang.core.commands.kubernetes.KubernetesHelper;
+import org.apache.camel.dsl.jbang.core.commands.kubernetes.MetadataHelper;
+import org.apache.camel.dsl.jbang.core.commands.kubernetes.support.SourceMetadata;
+import org.apache.camel.dsl.jbang.core.common.Source;
 import org.apache.camel.util.StringHelper;
 import org.apache.camel.v1.integrationspec.Traits;
 import org.apache.camel.v1.integrationspec.traits.AddonsBuilder;
@@ -291,20 +295,50 @@ public final class TraitHelper {
             containerTrait.setImage(image);
             traitsSpec.setContainer(containerTrait);
         } else if (containerTrait.getImage() == null) {
-            String resolvedRegistry = imageRegistry;
+            String registryPrefix = "";
             if ("minikube".equals(imageRegistry) || "minikube-registry".equals(imageRegistry)) {
-                resolvedRegistry = "localhost:5000";
+                registryPrefix = "localhost:5000/";
             } else if ("kind".equals(imageRegistry) || "kind-registry".equals(imageRegistry)) {
-                resolvedRegistry = "localhost:5001";
+                registryPrefix = "localhost:5001/";
+            } else if (imageRegistry != null && !imageRegistry.isEmpty()) {
+                registryPrefix = imageRegistry + "/";
             }
 
-            if (imageGroup != null) {
-                containerTrait.setImage("%s/%s/%s:%s".formatted(resolvedRegistry, imageGroup, imageName, version));
+            imageGroup = Optional.ofNullable(imageGroup).orElse("");
+            if (!imageGroup.isEmpty()) {
+                containerTrait.setImage("%s%s/%s:%s".formatted(registryPrefix, imageGroup, imageName, version));
             } else {
-                containerTrait.setImage("%s/%s:%s".formatted(resolvedRegistry, imageName, version));
+                containerTrait.setImage("%s%s:%s".formatted(registryPrefix, imageName, version));
             }
 
             traitsSpec.setContainer(containerTrait);
+        }
+    }
+
+    /**
+     * Inspect sources in context to retrieve routes that expose a Http service as an endpoint.
+     *
+     * @param  context the trait context holding all route sources.
+     * @return         true when routes expose a Http service, false otherwise.
+     */
+    public static boolean exposesHttpService(TraitContext context) {
+        try {
+            boolean exposesHttpServices = false;
+            CamelCatalog catalog = context.getCatalog();
+            if (context.getSources() != null) {
+                for (Source source : context.getSources()) {
+                    SourceMetadata metadata = context.inspectMetaData(source);
+                    if (MetadataHelper.exposesHttpServices(catalog, metadata)) {
+                        exposesHttpServices = true;
+                        break;
+                    }
+                }
+            }
+
+            return exposesHttpServices;
+        } catch (Exception e) {
+            context.printer().printf("Failed to apply service trait %s%n", e.getMessage());
+            return false;
         }
     }
 }
