@@ -1108,7 +1108,7 @@ public interface ComponentsBuilderFactory {
     }
     /**
      * Debezium Oracle Connector (camel-debezium-oracle)
-     * Capture changes from a Oracle database.
+     * Capture changes from an Oracle database.
      * 
      * Category: database
      * Since: 3.17
@@ -2800,7 +2800,7 @@ public interface ComponentsBuilderFactory {
         return KuduComponentBuilderFactory.kudu();
     }
     /**
-     * langChain4j Chat (camel-langchain4j-chat)
+     * LangChain4j Chat (camel-langchain4j-chat)
      * LangChain4j Chat component
      * 
      * Category: ai

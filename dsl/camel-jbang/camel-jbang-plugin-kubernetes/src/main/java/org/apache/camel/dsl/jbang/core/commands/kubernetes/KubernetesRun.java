@@ -68,7 +68,7 @@ public class KubernetesRun extends KubernetesBaseCommand {
     String[] resources;
 
     @CommandLine.Option(names = { "--open-api" }, description = "Add an OpenAPI spec (syntax: [configmap|file]:name).")
-    String[] openApis;
+    String openApi;
 
     @CommandLine.Option(names = { "--env" },
                         description = "Set an environment variable in the integration container, for instance \"-e MY_VAR=my-value\".")
@@ -120,13 +120,20 @@ public class KubernetesRun extends KubernetesBaseCommand {
     String image;
 
     @CommandLine.Option(names = { "--image-registry" },
-                        defaultValue = "quay.io",
                         description = "The image registry to hold the app container image.")
-    String imageRegistry = "quay.io";
+    String imageRegistry;
 
     @CommandLine.Option(names = { "--image-group" },
                         description = "The image registry group used to push images to.")
     String imageGroup;
+
+    @CommandLine.Option(names = { "--image-builder" },
+                        description = "The image builder used to build the container image (e.g. docker, jib, podman, s2i).")
+    String imageBuilder;
+
+    @CommandLine.Option(names = { "--cluster-type" },
+                        description = "The target cluster type. Special configurations may be applied to different cluster types such as Kind or Minikube.")
+    String clusterType;
 
     @CommandLine.Option(names = { "--image-build" },
                         defaultValue = "true",
@@ -175,6 +182,7 @@ public class KubernetesRun extends KubernetesBaseCommand {
                         workingDir,
                         List.of(filePaths),
                         gav,
+                        openApi,
                         true,
                         true,
                         true,
@@ -184,12 +192,13 @@ public class KubernetesRun extends KubernetesBaseCommand {
         export.image = image;
         export.imageRegistry = imageRegistry;
         export.imageGroup = imageGroup;
+        export.imageBuilder = imageBuilder;
+        export.clusterType = clusterType;
         export.traitProfile = traitProfile;
         export.serviceAccount = serviceAccount;
         export.properties = properties;
         export.configs = configs;
         export.resources = resources;
-        export.openApis = openApis;
         export.envVars = envVars;
         export.volumes = volumes;
         export.connects = connects;
