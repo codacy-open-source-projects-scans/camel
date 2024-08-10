@@ -36,6 +36,7 @@ import java.util.stream.Collectors;
 
 import org.apache.camel.CamelConfiguration;
 import org.apache.camel.CamelContext;
+import org.apache.camel.CamelContextAware;
 import org.apache.camel.Component;
 import org.apache.camel.Configuration;
 import org.apache.camel.ExtendedCamelContext;
@@ -2085,16 +2086,23 @@ public abstract class BaseMainSupport extends BaseService {
 
         for (String key : prop.stringPropertyNames()) {
             computeProperties("camel.component.", key, prop, properties, name -> {
+                boolean optional = name.startsWith("?");
+                if (optional) {
+                    name = name.substring(1);
+                }
                 if (reload) {
                     // force re-creating component on reload
                     camelContext.removeComponent(name);
                 }
                 // its an existing component name
-                Component target = camelContext.getComponent(name);
-                if (target == null) {
+                Component target = optional ? camelContext.hasComponent(name) : camelContext.getComponent(name);
+                if (target == null && !optional) {
                     throw new IllegalArgumentException(
                             "Error configuring property: " + key + " because cannot find component with name " + name
                                                        + ". Make sure you have the component on the classpath");
+                }
+                if (target == null) {
+                    return Collections.EMPTY_LIST;
                 }
                 return Collections.singleton(target);
             });
@@ -2105,7 +2113,6 @@ public abstract class BaseMainSupport extends BaseService {
                             "Error configuring property: " + key + " because cannot find dataformat with name " + name
                                                        + ". Make sure you have the dataformat on the classpath");
                 }
-
                 return Collections.singleton(target);
             });
             computeProperties("camel.language.", key, prop, properties, name -> {
@@ -2117,7 +2124,6 @@ public abstract class BaseMainSupport extends BaseService {
                             "Error configuring property: " + key + " because cannot find language with name " + name
                                                        + ". Make sure you have the language on the classpath");
                 }
-
                 return Collections.singleton(target);
             });
         }
@@ -2278,7 +2284,7 @@ public abstract class BaseMainSupport extends BaseService {
                     .orElseThrow(() -> new IllegalArgumentException(
                             "Cannot find MainHttpServerFactory on classpath. Add camel-platform-http-main to classpath."));
         }
-        return answer;
+        return CamelContextAware.trySetCamelContext(answer, camelContext);
     }
 
     private static final class PropertyPlaceholderListener implements PropertiesLookupListener {

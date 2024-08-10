@@ -152,10 +152,10 @@ public class Run extends CamelCommand {
             description = "Profile to run (dev, test, or prod).")
     String profile = "dev";
 
-    @Option(names = { "--dep", "--dependency" }, arity = "*", description = "Add additional dependencies")
+    @Option(names = { "--dep", "--dependency" }, description = "Add additional dependencies")
     List<String> dependencies = new ArrayList<>();
 
-    @CommandLine.Option(names = { "--repository" }, arity = "*", description = "Additional maven repositories")
+    @CommandLine.Option(names = { "--repository" }, description = "Additional maven repositories")
     List<String> repositories = new ArrayList<>();
 
     @Option(names = { "--gav" }, description = "The Maven group:artifact:version (used during exporting)")
@@ -193,7 +193,7 @@ public class Run extends CamelCommand {
     @Option(names = { "--name" }, defaultValue = "CamelJBang", description = "The name of the Camel application")
     String name;
 
-    @CommandLine.Option(names = { "--exclude" }, arity = "*", description = "Exclude files by name or pattern")
+    @CommandLine.Option(names = { "--exclude" }, description = "Exclude files by name or pattern")
     List<String> excludes = new ArrayList<>();
 
     @Option(names = { "--logging" }, defaultValue = "true", description = "Can be used to turn off logging")
@@ -883,20 +883,23 @@ public class Run extends CamelCommand {
             eq.gav = "org.example.project:jbang-run-dummy:1.0-SNAPSHOT";
         }
         eq.dependencies = this.dependencies;
-        eq.addDependencies("camel:cli-connector");
+        if (!this.exportRun) {
+            eq.addDependencies("camel:cli-connector");
+        }
         eq.fresh = this.fresh;
         eq.download = this.download;
         eq.quiet = true;
         eq.logging = false;
         eq.loggingLevel = "off";
 
-        System.out.println("Running using Quarkus v" + eq.quarkusVersion + " (preparing and downloading files)");
-
         // run export
         int exit = eq.export();
-        if (exit != 0) {
+        if (exit != 0 || this.exportRun) {
             return exit;
         }
+
+        System.out.println("Running using Quarkus v" + eq.quarkusVersion + " (preparing and downloading files)");
+
         // run quarkus via maven
         String mvnw = "/mvnw";
         if (FileUtil.isWindows()) {
@@ -947,7 +950,9 @@ public class Run extends CamelCommand {
             eq.gav = "org.example.project:jbang-run-dummy:1.0-SNAPSHOT";
         }
         eq.dependencies.addAll(dependencies);
-        eq.addDependencies("camel:cli-connector");
+        if (!this.exportRun) {
+            eq.addDependencies("camel:cli-connector");
+        }
         if (this.dev) {
             // hot-reload of spring-boot
             eq.addDependencies("mvn:org.springframework.boot:spring-boot-devtools");
@@ -958,13 +963,14 @@ public class Run extends CamelCommand {
         eq.logging = false;
         eq.loggingLevel = "off";
 
-        System.out.println("Running using Spring Boot v" + eq.springBootVersion + " (preparing and downloading files)");
-
         // run export
         int exit = eq.export();
-        if (exit != 0) {
+        if (exit != 0 || exportRun) {
             return exit;
         }
+
+        System.out.println("Running using Spring Boot v" + eq.springBootVersion + " (preparing and downloading files)");
+
         // prepare spring-boot for logging to file
         InputStream is = Run.class.getClassLoader().getResourceAsStream("spring-boot-logback.xml");
         eq.safeCopy(is, new File(eq.exportDir + "/src/main/resources/logback.xml"));
