@@ -78,8 +78,8 @@ public class PackageModelMojo extends AbstractGeneratorMojo {
         }
 
         if (!models.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("# " + GENERATED_MSG + NL);
+            StringBuilder sb = new StringBuilder(256);
+            sb.append("# ").append(GENERATED_MSG).append(NL);
             for (String name : models) {
                 sb.append(name).append(NL);
             }

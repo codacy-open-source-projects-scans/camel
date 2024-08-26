@@ -20,9 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.PrintWriter;
 import java.io.Reader;
-import java.io.StringWriter;
 import java.io.Writer;
 import java.lang.reflect.Array;
 import java.util.Collection;
@@ -77,8 +75,8 @@ public final class MessageHelper {
 
         // optimize if the body is a String type already
         Object body = message.getBody();
-        if (body instanceof String) {
-            return (String) body;
+        if (body instanceof String string) {
+            return string;
         }
 
         // we need to favor using stream cache so the body can be re-read later
@@ -135,8 +133,8 @@ public final class MessageHelper {
         } catch (Exception e) {
             // ignore
         }
-        if (body instanceof StreamCache) {
-            ((StreamCache) body).reset();
+        if (body instanceof StreamCache streamCache) {
+            streamCache.reset();
         }
     }
 
@@ -375,10 +373,10 @@ public final class MessageHelper {
         // is the body a stream cache or input stream
         StreamCache cache = null;
         InputStream is = null;
-        if (obj instanceof StreamCache) {
-            cache = (StreamCache) obj;
-        } else if (obj instanceof InputStream) {
-            is = (InputStream) obj;
+        if (obj instanceof StreamCache streamCache) {
+            cache = streamCache;
+        } else if (obj instanceof InputStream inputStream) {
+            is = inputStream;
         }
 
         // grab the message body as a string
@@ -630,8 +628,8 @@ public final class MessageHelper {
                 int size = Array.getLength(body);
                 sb.append(" size=\"").append(size).append("\"");
             }
-            if (body instanceof StreamCache) {
-                long pos = ((StreamCache) body).position();
+            if (body instanceof StreamCache streamCache) {
+                long pos = streamCache.position();
                 if (pos != -1) {
                     sb.append(" position=\"").append(pos).append("\"");
                 }
@@ -1081,8 +1079,8 @@ public final class MessageHelper {
                 int size = Array.getLength(body);
                 jb.put("size", size);
             }
-            if (body instanceof StreamCache) {
-                long pos = ((StreamCache) body).position();
+            if (body instanceof StreamCache streamCache) {
+                long pos = streamCache.position();
                 if (pos != -1) {
                     jb.put("position", pos);
                 }
@@ -1119,9 +1117,7 @@ public final class MessageHelper {
                 sb.append(" message=\"").append(msg).append("\"");
             }
             sb.append(">\n");
-            StringWriter sw = new StringWriter();
-            exception.printStackTrace(new PrintWriter(sw));
-            String trace = sw.toString();
+            final String trace = ExceptionHelper.stackTraceToString(exception);
             // must always xml encode
             sb.append(StringHelper.xmlEncode(trace));
             sb.append(prefix).append("</exception>");
@@ -1168,9 +1164,8 @@ public final class MessageHelper {
         }
         String msg = exception.getMessage();
         jo.put("message", msg);
-        StringWriter sw = new StringWriter();
-        exception.printStackTrace(new PrintWriter(sw));
-        String trace = sw.toString();
+
+        final String trace = ExceptionHelper.stackTraceToString(exception);
         try {
             jo.put("stackTrace", Jsoner.escape(trace));
         } catch (Exception e) {
