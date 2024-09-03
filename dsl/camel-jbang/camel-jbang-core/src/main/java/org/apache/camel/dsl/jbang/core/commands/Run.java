@@ -152,7 +152,8 @@ public class Run extends CamelCommand {
             description = "Profile to run (dev, test, or prod).")
     String profile = "dev";
 
-    @Option(names = { "--dep", "--dependency" }, description = "Add additional dependencies")
+    @Option(names = { "--dep", "--dependency" }, description = "Add additional dependencies",
+            split = ",")
     List<String> dependencies = new ArrayList<>();
 
     @CommandLine.Option(names = { "--repository" }, description = "Additional maven repositories")
@@ -319,6 +320,7 @@ public class Run extends CamelCommand {
     protected Integer runExport(boolean ignoreLoadingError) throws Exception {
         // just boot silently and exit
         this.exportRun = true;
+        this.ignoreLoadingError = ignoreLoadingError;
         return run();
     }
 
@@ -868,7 +870,8 @@ public class Run extends CamelCommand {
 
         // export to hidden folder
         ExportQuarkus eq = new ExportQuarkus(getMain());
-        eq.symbolicLink = true;
+        eq.javaLiveReload = this.dev;
+        eq.symbolicLink = this.dev;
         eq.mavenWrapper = true;
         eq.gradleWrapper = false;
         eq.quarkusVersion = this.quarkusVersion;
@@ -891,6 +894,7 @@ public class Run extends CamelCommand {
         eq.quiet = true;
         eq.logging = false;
         eq.loggingLevel = "off";
+        eq.ignoreLoadingError = this.ignoreLoadingError;
 
         // run export
         int exit = eq.export();
@@ -906,7 +910,7 @@ public class Run extends CamelCommand {
             mvnw = "/mvnw.cmd";
         }
         ProcessBuilder pb = new ProcessBuilder();
-        pb.command(runDir + mvnw, "--quiet", "--file", runDir.toString(), "quarkus:dev");
+        pb.command(runDir + mvnw, "--quiet", "--file", runDir.toString(), "package", "quarkus:" + (dev ? "dev" : "run"));
 
         if (background) {
             Process p = pb.start();
@@ -934,7 +938,9 @@ public class Run extends CamelCommand {
 
         // export to hidden folder
         ExportSpringBoot eq = new ExportSpringBoot(getMain());
-        eq.symbolicLink = true;
+        // Java codes reload is not supported in Spring Boot since it has to be recompiled to trigger the restart
+        eq.javaLiveReload = false;
+        eq.symbolicLink = this.dev;
         eq.mavenWrapper = true;
         eq.gradleWrapper = false;
         eq.springBootVersion = this.springBootVersion;
@@ -962,6 +968,7 @@ public class Run extends CamelCommand {
         eq.quiet = true;
         eq.logging = false;
         eq.loggingLevel = "off";
+        eq.ignoreLoadingError = this.ignoreLoadingError;
 
         // run export
         int exit = eq.export();

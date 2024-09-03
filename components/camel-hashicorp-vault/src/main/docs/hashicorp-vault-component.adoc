@@ -67,6 +67,9 @@ camel.vault.hashicorp.port = port
 camel.vault.hashicorp.scheme = scheme
 ----
 
+NOTE: `camel.vault.hashicorp` configuration only applies to the Hashicorp Vault properties function (E.g when resolving properties).
+When using the `operation` option to create, get, list secrets etc., you should provide the `host`, `port`, `scheme` (if required) & `token` options.
+
 At this point, you'll be able to reference a property in the following way:
 
 [source,xml]
@@ -176,3 +179,5 @@ This approach will return the route secret value with version '2' or default val
 This approach will return the username field of the database secret with version '2' or admin in case the secret doesn't exist or the version doesn't exist (in the 'secret' engine).
 
 The only requirement is adding the camel-hashicorp-vault jar to your Camel application.
+
+include::spring-boot:partial$starter.adoc[]

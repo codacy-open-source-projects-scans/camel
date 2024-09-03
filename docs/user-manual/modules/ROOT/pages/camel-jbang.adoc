@@ -26,6 +26,8 @@ jbang app install camel@apache/camel
 This will install Apache Camel as the `camel` command within JBang, meaning that you can run Camel from the command line
 by just executing `camel` (see more next).
 
+Note: It requires an access to internet, in case of the use of a proxy, please ensure that the proxy is configured for your system. If Camel JBang is not working with your current configuration, please look to https://www.jbang.dev/documentation/guide/latest/configuration.html#proxy-configuration[Proxy configuration in JBang documentation].
+
 == Container Image
 
 There is also a container image available in https://hub.docker.com/r/apache/camel-jbang/[Dockerhub]
@@ -404,7 +406,8 @@ camel run hello.java --dev
 ----
 
 NOTE: The live reload is meant for development purposes, and if you encounter problems with reloading
-such as JVM class loading issues, then you may need to restart the integration.
+such as JVM class loading issues, then you may need to restart the integration. Java files can not
+be supported in Spring Boot runtime since they have to be recompiled to trigger a restart.
 
 You can also run dev mode when running Camel with `--source-dir`, such as:
 
@@ -1608,19 +1611,50 @@ command but only display message tracing information. This allows you to see eve
 The `trace` command has many options and can be used to _filter_, _grep_ or output on different detail _levels`.
 The _exchange id_ is logged (and grouped by colour), so you can use that to correlate the events, when traces are interleaved.
 
-For example if an existing integration is running named chuck, you can trace it as follows:
-
-[source,bash]
-----
-camel trace chuck
-----
-
-You can also trace all running integrations
+The trace command will by default list the status of whether tracing is enabled or not in the integrations:
 
 [source,bash]
 ----
 camel trace
+ PID   NAME   AGE  STATUS   TOTAL  QUEUE  FILTER  PATTERN
+ 6911  chuck   5s  Standby      0      0
 ----
+
+Here we can see that the tracer is in standby mode, and you need to start the tracer before Camel will capture messages:
+
+TIP: Camel 4.8 onwards has tracing in standby mode (when using dev profile). You can enable tracing on startup by setting the configuration `camel.trace.enabled=true` in `application.properties`.
+
+[source,bash]
+----
+camel trace --action=start
+----
+
+And if you run `camel trace` again you can see the tracer is started:
+
+[source,bash]
+----
+camel trace
+PID   NAME   AGE   STATUS   TOTAL  QUEUE  FILTER  PATTERN
+6911  chuck  1m5s  Started     16      4
+----
+
+And to show the traces you need to use the `dump` action as follows:
+
+[source,bash]
+----
+camel trace chuck --action=dump
+----
+
+You can also dump traces from all running integrations:
+
+[source,bash]
+----
+camel trace --action=dump
+----
+
+To stop tracing use `--action=stop`.
+
+And you can also clear the already traced messages with `--action=clear`.
 
 ==== Running Camel integrations in background
 
@@ -2068,8 +2102,6 @@ Hello World%
 There is basic support for including regular Java source files together with Camel routes,
 and let Camel JBang runtime compile the Java source. This means you can include smaller utility
 classes, POJOs, Camel Processors and whatnot that the application needs.
-
-IMPORTANT: The Java source files cannot use package names. This may change in the future.
 
 === Dependency Injection in Java classes
 

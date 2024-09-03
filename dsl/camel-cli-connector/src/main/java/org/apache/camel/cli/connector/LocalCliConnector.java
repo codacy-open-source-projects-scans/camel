@@ -100,6 +100,7 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
     private final CliConnectorFactory cliConnectorFactory;
     private CamelContext camelContext;
     private int delay = 1000;
+    private long counter;
     private String platform;
     private String platformVersion;
     private String mainClass;
@@ -219,6 +220,11 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
 
         actionTask();
         statusTask();
+        // only run this every 2nd time as gathering this data has more overhead
+        // and are only needed when doing tracing or debugging
+        if (++counter % 2 == 0) {
+            traceTask();
+        }
     }
 
     protected void actionTask() {
@@ -268,6 +274,8 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 doActionBeanTask(root);
             } else if ("kafka".equals(action)) {
                 doActionKafkaTask();
+            } else if ("trace".equals(action)) {
+                doActionTraceTask(root);
             }
         } catch (Exception e) {
             // ignore
@@ -727,6 +735,24 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         }
     }
 
+    private void doActionTraceTask(JsonObject root) throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("trace");
+        if (dc != null) {
+            String enabled = root.getString("enabled");
+            JsonObject json;
+            if (enabled != null) {
+                json = (JsonObject) dc.call(DevConsole.MediaType.JSON, Map.of("enabled", enabled));
+            } else {
+                json = (JsonObject) dc.call(DevConsole.MediaType.JSON);
+            }
+            LOG.trace("Updating output file: {}", outputFile);
+            IOHelper.writeText(json.toJson(), outputFile);
+        } else {
+            IOHelper.writeText("{}", outputFile);
+        }
+    }
+
     private void doActionBeanTask(JsonObject root) throws IOException {
         String filter = root.getStringOrDefault("filter", "");
         String properties = root.getStringOrDefault("properties", "true");
@@ -971,42 +997,19 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                         root.put("fault-tolerance", json);
                     }
                 }
-                DevConsole dc12a = dcr.resolveById("circuit-breaker");
-                if (dc12a != null) {
-                    JsonObject json = (JsonObject) dc12a.call(DevConsole.MediaType.JSON);
+                DevConsole dc12 = dcr.resolveById("circuit-breaker");
+                if (dc12 != null) {
+                    JsonObject json = (JsonObject) dc12.call(DevConsole.MediaType.JSON);
                     if (json != null && !json.isEmpty()) {
                         root.put("circuit-breaker", json);
                     }
                 }
-                DevConsole dc12 = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
-                        .resolveById("trace");
-                if (dc12 != null) {
-                    JsonObject json = (JsonObject) dc12.call(DevConsole.MediaType.JSON);
-                    JsonArray arr = json.getCollection("traces");
-                    // filter based on last uid
-                    if (traceFilePos > 0) {
-                        arr.removeIf(r -> {
-                            JsonObject jo = (JsonObject) r;
-                            return jo.getLong("uid") <= traceFilePos;
-                        });
-                    }
-                    if (arr != null && !arr.isEmpty()) {
-                        // store traces in a special file
-                        LOG.trace("Updating trace file: {}", traceFile);
-                        String data = json.toJson() + System.lineSeparator();
-                        IOHelper.appendText(data, traceFile);
-                        json = arr.getMap(arr.size() - 1);
-                        traceFilePos = json.getLong("uid");
-                    }
-                }
-                DevConsole dc13 = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
-                        .resolveById("debug");
+                DevConsole dc13 = dcr.resolveById("trace");
                 if (dc13 != null) {
                     JsonObject json = (JsonObject) dc13.call(DevConsole.MediaType.JSON);
-                    // store debugs in a special file
-                    LOG.trace("Updating debug file: {}", debugFile);
-                    String data = json.toJson() + System.lineSeparator();
-                    IOHelper.writeText(data, debugFile);
+                    if (json != null && !json.isEmpty()) {
+                        root.put("trace", json);
+                    }
                 }
                 DevConsole dc14 = dcr.resolveById("consumer");
                 if (dc14 != null) {
@@ -1085,6 +1088,51 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             // ignore
             LOG.trace("Error updating status file: {} due to: {}. This exception is ignored.",
                     statusFile, e.getMessage(), e);
+        }
+    }
+
+    protected void traceTask() {
+        try {
+            DevConsole dc12 = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                    .resolveById("trace");
+            if (dc12 != null) {
+                JsonObject json = (JsonObject) dc12.call(DevConsole.MediaType.JSON, Map.of("dump", "true"));
+                JsonArray arr = json.getCollection("traces");
+                // filter based on last uid
+                if (traceFilePos > 0) {
+                    arr.removeIf(r -> {
+                        JsonObject jo = (JsonObject) r;
+                        return jo.getLong("uid") <= traceFilePos;
+                    });
+                }
+                if (arr != null && !arr.isEmpty()) {
+                    // store traces in a special file
+                    LOG.trace("Updating trace file: {}", traceFile);
+                    String data = json.toJson() + System.lineSeparator();
+                    IOHelper.appendText(data, traceFile);
+                    json = arr.getMap(arr.size() - 1);
+                    traceFilePos = json.getLong("uid");
+                }
+            }
+        } catch (Exception e) {
+            // ignore
+            LOG.trace("Error updating trace file: {} due to: {}. This exception is ignored.",
+                    traceFile, e.getMessage(), e);
+        }
+        try {
+            DevConsole dc13 = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                    .resolveById("debug");
+            if (dc13 != null) {
+                JsonObject json = (JsonObject) dc13.call(DevConsole.MediaType.JSON);
+                // store debugs in a special file
+                LOG.trace("Updating debug file: {}", debugFile);
+                String data = json.toJson() + System.lineSeparator();
+                IOHelper.writeText(data, debugFile);
+            }
+        } catch (Exception e) {
+            // ignore
+            LOG.trace("Error updating debug file: {} due to: {}. This exception is ignored.",
+                    debugFile, e.getMessage(), e);
         }
     }
 

@@ -91,7 +91,8 @@ public abstract class ExportBaseCommand extends CamelCommand {
     @CommandLine.Option(names = { "--repository" }, description = "Additional maven repositories")
     protected List<String> repositories = new ArrayList<>();
 
-    @CommandLine.Option(names = { "--dep", "--dependency" }, description = "Add additional dependencies")
+    @CommandLine.Option(names = { "--dep", "--dependency" }, description = "Add additional dependencies",
+                        split = ",")
     protected List<String> dependencies = new ArrayList<>();
 
     @CommandLine.Option(names = { "--runtime" },
@@ -219,6 +220,8 @@ public abstract class ExportBaseCommand extends CamelCommand {
 
     protected boolean symbolicLink;     // copy source files using symbolic link
 
+    protected boolean javaLiveReload; // reload java codes in dev
+
     public String pomTemplateName;   // support for specialised pom templates
 
     public ExportBaseCommand(CamelJBangMain main) {
@@ -307,6 +310,7 @@ public abstract class ExportBaseCommand extends CamelCommand {
         run.springBootVersion = springBootVersion;
         run.kameletsVersion = kameletsVersion;
         run.localKameletDir = localKameletDir;
+        run.ignoreLoadingError = ignoreLoadingError;
         return run.runExport(ignoreLoadingError);
     }
 
@@ -513,29 +517,37 @@ public abstract class ExportBaseCommand extends CamelCommand {
                         List<String> lines = Files.readAllLines(source.toPath());
                         Optional<String> hasPackage = lines.stream().filter(l -> l.trim().startsWith("package ")).findFirst();
                         FileOutputStream fos;
+
                         if (hasPackage.isPresent()) {
                             String pn = determinePackageName(hasPackage.get());
                             if (pn != null) {
                                 File dir = new File(srcJavaDirRoot, pn.replace('.', File.separatorChar));
                                 dir.mkdirs();
                                 out = new File(dir, source.getName());
-                                fos = new FileOutputStream(out);
                             } else {
                                 throw new IOException("Cannot determine package name from source: " + source);
                             }
                         } else {
-                            fos = new FileOutputStream(out);
-                            if (packageName != null && !"false".equalsIgnoreCase(packageName)) {
-                                lines.add(0, "");
-                                lines.add(0, "package " + packageName + ";");
+                            if (javaLiveReload) {
+                                out = new File(srcJavaDirRoot, source.getName());
+                            } else {
+                                if (packageName != null && !"false".equalsIgnoreCase(packageName)) {
+                                    lines.add(0, "");
+                                    lines.add(0, "package " + packageName + ";");
+                                }
                             }
                         }
-                        for (String line : lines) {
-                            adjustJavaSourceFileLine(line, fos);
-                            fos.write(line.getBytes(StandardCharsets.UTF_8));
-                            fos.write("\n".getBytes(StandardCharsets.UTF_8));
+                        if (javaLiveReload) {
+                            safeCopy(source, out, true);
+                        } else {
+                            fos = new FileOutputStream(out);
+                            for (String line : lines) {
+                                adjustJavaSourceFileLine(line, fos);
+                                fos.write(line.getBytes(StandardCharsets.UTF_8));
+                                fos.write("\n".getBytes(StandardCharsets.UTF_8));
+                            }
+                            IOHelper.close(fos);
                         }
-                        IOHelper.close(fos);
                     }
                 }
             }

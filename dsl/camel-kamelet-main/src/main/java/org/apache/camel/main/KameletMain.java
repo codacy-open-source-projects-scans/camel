@@ -67,6 +67,7 @@ import org.apache.camel.main.download.MavenDependencyDownloader;
 import org.apache.camel.main.download.PackageNameSourceLoader;
 import org.apache.camel.main.download.PromptPropertyPlaceholderSource;
 import org.apache.camel.main.download.StubBeanRepository;
+import org.apache.camel.main.download.TransactedDownloader;
 import org.apache.camel.main.download.TypeConverterLoaderDownloadListener;
 import org.apache.camel.main.injection.AnnotationDependencyInjection;
 import org.apache.camel.main.reload.OpenApiGeneratorReloadStrategy;
@@ -453,6 +454,9 @@ public class KameletMain extends MainCommandLineSupport {
         // in case we use circuit breakers
         CircuitBreakerDownloader.registerDownloadReifiers();
 
+        // in case we use transacted
+        TransactedDownloader.registerDownloadReifiers(this);
+
         if (silent || "*".equals(stubPattern)) {
             // turn off auto-wiring when running in silent mode (or stub = *)
             mainConfigurationProperties.setAutowiredEnabled(false);
@@ -636,10 +640,11 @@ public class KameletMain extends MainCommandLineSupport {
             // reloader
             if (sourceDir != null) {
                 if (console || health) {
-                    // allow to upload source via http when HTTP console enabled
+                    // allow to upload/download source (source-dir is intended to be dynamic) via http when HTTP console enabled
                     configure().httpServer().withEnabled(true);
                     configure().httpServer().withUploadEnabled(true);
                     configure().httpServer().withUploadSourceDir(sourceDir);
+                    configure().httpServer().withDownloadEnabled(true);
                 }
                 RouteOnDemandReloadStrategy reloader = new RouteOnDemandReloadStrategy(sourceDir, true);
                 reloader.setPattern("*");
@@ -780,6 +785,13 @@ public class KameletMain extends MainCommandLineSupport {
             routesLoader = new DependencyDownloaderRoutesLoader(camelContext);
         }
         routesLoader.setIgnoreLoadingError(this.mainConfigurationProperties.isRoutesCollectorIgnoreLoadingError());
+
+        // routes loader should ignore unknown extensions when using --source-dir as users may drop files
+        // in this folder that are not Camel routes but resource files.
+        String sourceDir = getInitialProperties().getProperty("camel.jbang.sourceDir");
+        if (sourceDir != null) {
+            routesLoader.setIgnoreUnknownExtensions(true);
+        }
 
         // use resolvers that can auto downloaded
         ecc.addContextPlugin(RoutesLoader.class, routesLoader);
