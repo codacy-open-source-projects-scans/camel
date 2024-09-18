@@ -6,10 +6,22 @@ from both 4.0 to 4.1 and 4.1 to 4.2.
 
 == Upgrading Camel 4.8 to 4.9
 
+=== camel-api
+
+Added `setLazyBeanStrategy`/`getLazyBeanStrategy` methods to `org.apache.camel.spi.CamelBeanPostProcessor`.
+
 === camel-management
 
 The `queueSize` attribute on endpoints which are `ManagedBrowseableEndpoint` is changed from returning a `Long` value
 to an `Integer` value.
+
+=== camel-jms
+
+The camel-jms component has changed its default `HeaderFilterStrategy` to also remove any `Camel...` headers,
+to act similar to other Camel components. If the old classic behavior is needed then you can configure the `JmsComponent` to use `org.apache.camel.component.jms.ClassicJmsHeaderFilterStrategy`
+as header filter strategy which is the old implementation.
+
+Added `int limit` as parameter to the `browse` method in `org.apache.camel.component.jms.QueueBrowseStrategy`.
 
 === camel-hashicorp-vault properties function
 
@@ -24,3 +36,75 @@ to this
 `{{hashicorp:secret:database#username}}`
 
 You could find more details on CAMEL-21179 issue
+
+=== camel-aws-secrets-manager properties function
+
+The syntax for retrieving a single field of a secret has been changed.
+
+From this
+
+`{{aws:database/username}}`
+
+to this
+
+`{{aws:database#username}}`
+
+You could find more details on CAMEL-21179 issue
+
+=== camel-google-secret-manager properties function
+
+The syntax for retrieving a single field of a secret has been changed.
+
+From this
+
+`{{gcp:database/username}}`
+
+to this
+
+`{{gcp:database#username}}`
+
+You could find more details on CAMEL-21179 issue
+
+=== camel-azure-key-vault properties function
+
+The syntax for retrieving a single field of a secret has been changed.
+
+From this
+
+`{{azure:database/username}}`
+
+to this
+
+`{{azure:database#username}}`
+
+You could find more details on CAMEL-21179 issue
+
+=== camel-test
+
+The `CamelTestSupport` class was modified so that the JUnit 5 extension code that was part of the class itself,
+was moved to a separate class. This is part of the work being done on https://issues.apache.org/jira/browse/CAMEL-20837[CAMEL-20837]
+to modernize the base test code.
+
+In many cases, code should work with no changes provided they are not using any of the API methods that
+were deprecated in Camel 4.7.0.
+Additionally, starting with Camel 4.9, we strongly recommend users to avoid relying on single-instance contexts (created
+via `@TestInstance(TestInstance.Lifecycle.PER_CLASS)`), as this is considered a deprecated functionality that will be removed in the
+future.
+The logs will print a warning message if this behavior is detected.
+
+=== Removed API
+
+==== Kotlin DSL
+
+The Kotlin DSL which was deprecated in Camel 4.7.0 has now been removed. The routes must be migrated to another DSL such as Java, Yaml or xml.
+
+The following modules has been removed:
+
+* camel-kotlin-dsl
+* camel-kotlin-api
+
+=== Deprecated Components
+
+The following components that were marked as deprecated:
+
+* 

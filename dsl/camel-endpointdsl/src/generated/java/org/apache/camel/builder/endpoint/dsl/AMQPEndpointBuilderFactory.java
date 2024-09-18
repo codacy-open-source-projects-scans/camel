@@ -312,8 +312,7 @@ public interface AMQPEndpointBuilderFactory {
          * the Exchange is fully processed before the JmsConsumer will pickup
          * the next message from the JMS queue. Note if transacted has been
          * enabled, then asyncConsumer=true does not run asynchronously, as
-         * transaction must be executed synchronously (Camel 3.0 may support
-         * async transactions).
+         * transaction must be executed synchronously.
          * 
          * The option is a: <code>boolean</code> type.
          * 
@@ -336,8 +335,7 @@ public interface AMQPEndpointBuilderFactory {
          * the Exchange is fully processed before the JmsConsumer will pickup
          * the next message from the JMS queue. Note if transacted has been
          * enabled, then asyncConsumer=true does not run asynchronously, as
-         * transaction must be executed synchronously (Camel 3.0 may support
-         * async transactions).
+         * transaction must be executed synchronously.
          * 
          * The option will be converted to a <code>boolean</code> type.
          * 
@@ -7277,7 +7275,7 @@ public interface AMQPEndpointBuilderFactory {
          * 
          * The option is a: {@code long} type.
          * 
-         * Default: 20_000
+         * Default: 20000
          * Group: producer
          * 
          * @return the name of the header {@code JmsRequestTimeout}.

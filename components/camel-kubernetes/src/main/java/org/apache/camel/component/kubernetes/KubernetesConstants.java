@@ -53,6 +53,9 @@ public final class KubernetesConstants {
     @Metadata(label = "producer", description = "The namespace labels", javaType = "Map<String, String>",
               applicableFor = SCHEME_NAMESPACES)
     public static final String KUBERNETES_NAMESPACE_LABELS = "CamelKubernetesNamespaceLabels";
+    @Metadata(label = "producer", description = "The namespace annotations", javaType = "Map<String, String>",
+              applicableFor = SCHEME_NAMESPACES)
+    public static final String KUBERNETES_NAMESPACE_ANNOTATIONS = "CamelKubernetesNamespaceAnnotations";
     @Metadata(label = "producer", description = "The service labels", javaType = "Map<String, String>",
               applicableFor = SCHEME_SERVICES)
     public static final String KUBERNETES_SERVICE_LABELS = "CamelKubernetesServiceLabels";
@@ -278,6 +281,9 @@ public final class KubernetesConstants {
     @Metadata(label = "producer", description = "The spec for a Job.",
               javaType = "io.fabric8.kubernetes.api.model.batch.v1.CronJobSpec", applicableFor = SCHEME_CRON_JOB)
     public static final String KUBERNETES_CRON_JOB_SPEC = "CamelKubernetesCronJobSpec";
+    @Metadata(label = "producer", description = "The Cron Job annotations.", javaType = "Map<String, String>",
+              applicableFor = SCHEME_CRON_JOB)
+    public static final String KUBERNETES_CRON_JOB_ANNOTATIONS = "CamelKubernetesCronJobAnnotations";
 
     private KubernetesConstants() {
 

@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.StringJoiner;
 
 import com.github.freva.asciitable.AsciiTable;
 import com.github.freva.asciitable.Column;
@@ -31,6 +32,7 @@ import org.apache.camel.dsl.jbang.core.common.ProcessHelper;
 import org.apache.camel.util.FileUtil;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.TimeUtils;
+import org.apache.camel.util.URISupport;
 import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
 import org.fusesource.jansi.Ansi;
@@ -67,13 +69,25 @@ public class CamelBrowseAction extends ActionBaseCommand {
                         description = "List endpoint URI in full details")
     boolean wideUri;
 
-    @CommandLine.Option(names = { "--limit" }, defaultValue = "100",
-                        description = "Limits the number of messages to dump per endpoint")
-    int limit;
+    @CommandLine.Option(names = { "--mask" },
+                        description = "Whether to mask endpoint URIs to avoid printing sensitive information such as password or access keys")
+    boolean mask;
 
     @CommandLine.Option(names = { "--dump" }, defaultValue = "false",
                         description = "Whether to include message dumps")
     boolean dump;
+
+    @CommandLine.Option(names = { "--limit" }, defaultValue = "100",
+                        description = "Limits the number of messages to dump per endpoint")
+    int limit;
+
+    @CommandLine.Option(names = { "--tail" },
+                        description = "The number of messages from the end (latest) to dump")
+    int tail;
+
+    @CommandLine.Option(names = { "--fresh-size" }, defaultValue = "false",
+                        description = "Whether to calculate fresh queue size information (performance overhead)")
+    boolean freshSize;
 
     @CommandLine.Option(names = { "--sort" }, completionCandidates = UriSizeCompletionCandidates.class,
                         description = "Sort by uri, or size", defaultValue = "uri")
@@ -129,6 +143,8 @@ public class CamelBrowseAction extends ActionBaseCommand {
         root.put("action", "browse");
         root.put("filter", endpoint == null ? "*" : endpoint);
         root.put("limit", limit);
+        root.put("tail", tail);
+        root.put("freshSize", freshSize);
         root.put("dump", dump);
         root.put("includeBody", showBody);
         if (bodyMaxChars > 0) {
@@ -164,8 +180,14 @@ public class CamelBrowseAction extends ActionBaseCommand {
                 for (int i = 0; arr != null && i < arr.size(); i++) {
                     JsonObject o = (JsonObject) arr.get(i);
                     row.uri = o.getString("endpointUri");
+                    if (mask) {
+                        row.uri = URISupport.sanitizeUri(row.uri);
+                    }
                     row.queueSize = o.getInteger("queueSize");
-                    row.limit = o.getInteger("limit");
+                    row.limit = o.getIntegerOrDefault("limit", 0);
+                    row.position = o.getIntegerOrDefault("position", 0);
+                    row.firstTimestamp = o.getLongOrDefault("firstTimestamp", 0);
+                    row.lastTimestamp = o.getLongOrDefault("lastTimestamp", 0);
                     if (dump) {
                         row.messages = o.getCollection("messages");
                     }
@@ -187,6 +209,16 @@ public class CamelBrowseAction extends ActionBaseCommand {
         // delete output file after use
         FileUtil.deleteFile(outputFile);
 
+        return 0;
+    }
+
+    private static long getLongValueFromCollection(JsonArray arr, String key) {
+        for (Object o : arr) {
+            JsonObject jo = (JsonObject) o;
+            if (key.equalsIgnoreCase(jo.getString("key"))) {
+                return jo.getLong("value");
+            }
+        }
         return 0;
     }
 
@@ -214,10 +246,14 @@ public class CamelBrowseAction extends ActionBaseCommand {
                             message.remove("body");
                         }
                     }
+                    if (mask) {
+                        row.uri = URISupport.sanitizeUri(row.uri);
+                    }
                     JsonObject ep = new JsonObject();
                     ep.put("endpoint", row.uri);
                     String table = tableHelper.getDataAsTable(exchangeId, null, ep, null, message, null);
-                    String header = String.format("Browse Message: (%s/%s)", i + 1, row.messages.size());
+                    String header = String.format("Browse Message: (%s/%s)", row.position + i + 1,
+                            row.position + row.messages.size());
                     if (loggingColor) {
                         printer().println(Ansi.ansi().fgGreen().a(header).reset().toString());
                     } else {
@@ -236,8 +272,9 @@ public class CamelBrowseAction extends ActionBaseCommand {
                         .maxWidth(40, OverflowBehaviour.ELLIPSIS_RIGHT)
                         .with(r -> r.name),
                 new Column().header("AGE").headerAlign(HorizontalAlign.CENTER).with(r -> r.ago),
-                new Column().header("SIZE").with(r -> "" + r.queueSize),
-                new Column().header("LIMIT").with(r -> "" + r.limit),
+                new Column().header("SIZE").headerAlign(HorizontalAlign.RIGHT).with(this::getQueueSize),
+                new Column().header("SINCE").headerAlign(HorizontalAlign.CENTER).dataAlign(HorizontalAlign.LEFT)
+                        .with(this::getMessageAgo),
                 new Column().header("ENDPOINT").visible(!wideUri).dataAlign(HorizontalAlign.LEFT)
                         .maxWidth(90, OverflowBehaviour.ELLIPSIS_RIGHT)
                         .with(this::getEndpointUri),
@@ -263,6 +300,27 @@ public class CamelBrowseAction extends ActionBaseCommand {
         }
     }
 
+    protected String getMessageAgo(Row r) {
+        StringJoiner sj = new StringJoiner("/");
+        if (r.firstTimestamp > 0) {
+            sj.add(TimeUtils.printSince(r.firstTimestamp));
+        }
+        if (r.lastTimestamp > 0) {
+            sj.add(TimeUtils.printSince(r.lastTimestamp));
+        }
+        return sj.toString();
+    }
+
+    protected String getQueueSize(Row r) {
+        if (freshSize) {
+            return "" + r.queueSize;
+        }
+        if (r.limit > 0 && r.queueSize >= r.limit) {
+            return r.queueSize + "+";
+        }
+        return "" + r.queueSize;
+    }
+
     protected String getEndpointUri(Row r) {
         String u = r.uri;
         if (shortUri) {
@@ -282,6 +340,9 @@ public class CamelBrowseAction extends ActionBaseCommand {
         String uri;
         int queueSize;
         int limit;
+        int position;
+        long firstTimestamp;
+        long lastTimestamp;
         List<JsonObject> messages;
 
         Row copy() {

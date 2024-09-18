@@ -83,6 +83,7 @@ public abstract class DefaultConfigurationProperties<T> {
     private boolean logMask;
     private boolean logExhaustedMessageBody;
     private String logName;
+    private String logLanguage;
     private boolean autoStartup = true;
     private boolean allowUseOriginalMessage;
     private boolean caseInsensitiveHeaders = true;
@@ -708,7 +709,7 @@ public abstract class DefaultConfigurationProperties<T> {
     /**
      * Whether to capture precise source location:line-number for all EIPs in Camel routes.
      *
-     * Enabling this will impact parsing Java based routes (also Groovy, Kotlin, etc.) on startup as this uses JDK
+     * Enabling this will impact parsing Java based routes (also Groovy etc.) on startup as this uses JDK
      * StackTraceElement to calculate the location from the Camel route, which comes with a performance cost. This only
      * impact startup, not the performance of the routes at runtime.
      */
@@ -767,6 +768,18 @@ public abstract class DefaultConfigurationProperties<T> {
      */
     public void setLogName(String logName) {
         this.logName = logName;
+    }
+
+    public String getLogLanguage() {
+        return logLanguage;
+    }
+
+    /**
+     * To configure the language to use for Log EIP. By default, the simple language is used. However, Camel also
+     * supports other languages such as groovy.
+     */
+    public void setLogLanguage(String logLanguage) {
+        this.logLanguage = logLanguage;
     }
 
     public boolean isAutoStartup() {
@@ -2003,7 +2016,7 @@ public abstract class DefaultConfigurationProperties<T> {
     /**
      * Whether to capture precise source location:line-number for all EIPs in Camel routes.
      *
-     * Enabling this will impact parsing Java based routes (also Groovy, Kotlin, etc.) on startup as this uses JDK
+     * Enabling this will impact parsing Java based routes (also Groovy, etc.) on startup as this uses JDK
      * StackTraceElement to calculate the location from the Camel route, which comes with a performance cost. This only
      * impact startup, not the performance of the routes at runtime.
      */
@@ -2053,6 +2066,15 @@ public abstract class DefaultConfigurationProperties<T> {
      */
     public T withLogName(String logName) {
         this.logName = logName;
+        return (T) this;
+    }
+
+    /**
+     * To configure the language to use for Log EIP. By default, the simple language is used. However, Camel also
+     * supports other languages such as groovy.
+     */
+    public T withLogLanguage(String logLanguage) {
+        this.logLanguage = logLanguage;
         return (T) this;
     }
 

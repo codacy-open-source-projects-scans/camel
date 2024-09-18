@@ -51,6 +51,11 @@ public class BrowseDevConsole extends AbstractDevConsole {
     public static final String LIMIT = "limit";
 
     /**
+     * To receive N last messages from the tail
+     */
+    public static final String TAIL = "tail";
+
+    /**
      * Whether to include message dumps
      */
     public static final String DUMP = "dump";
@@ -59,6 +64,11 @@ public class BrowseDevConsole extends AbstractDevConsole {
      * Whether to include message body in dumps
      */
     public static final String INCLUDE_BODY = "includeBody";
+
+    /**
+     * Whether to calculate fresh queue size (can cause performance overhead)
+     */
+    public static final String FRESH_SIZE = "freshSize";
 
     /**
      * Maximum size of the message body to include in the dump
@@ -95,7 +105,10 @@ public class BrowseDevConsole extends AbstractDevConsole {
 
         String filter = (String) options.get(FILTER);
         String lim = (String) options.get(LIMIT);
+        String tail = (String) options.get(TAIL);
+        final int pos = tail == null ? 0 : Integer.parseInt(tail);
         final int max = lim == null ? limit : Integer.parseInt(lim);
+        boolean freshSize = "true".equals(options.getOrDefault(FRESH_SIZE, "false"));
         boolean dump = "true".equals(options.getOrDefault(DUMP, "true"));
         boolean includeBody = "true".equals(options.getOrDefault(INCLUDE_BODY, "true"));
         int maxChars = Integer.parseInt((String) options.getOrDefault(BODY_MAX_CHARS, "" + bodyMaxChars));
@@ -105,11 +118,19 @@ public class BrowseDevConsole extends AbstractDevConsole {
         for (Endpoint endpoint : endpoints) {
             if (endpoint instanceof BrowsableEndpoint be
                     && (filter == null || PatternHelper.matchPattern(endpoint.getEndpointUri(), filter))) {
-                List<Exchange> list = be.getExchanges(max, null);
-                if (list != null) {
-                    sb.append("\n");
-                    sb.append(String.format("Browse: %s (size: %d limit: %d)%n", endpoint.getEndpointUri(), list.size(), max));
-                    if (dump) {
+
+                if (dump) {
+                    List<Exchange> list = freshSize ? be.getExchanges(Integer.MAX_VALUE, null) : be.getExchanges(max, null);
+                    int queueSize = list != null ? list.size() : 0;
+                    int begin = 0;
+                    if (list != null && pos > 0) {
+                        begin = Math.max(0, list.size() - pos);
+                        list = list.subList(begin, list.size());
+                    }
+                    if (list != null) {
+                        sb.append("\n");
+                        sb.append(String.format("Browse: %s (size: %d limit: %d position: %d)%n", endpoint.getEndpointUri(),
+                                queueSize, max, begin));
                         for (Exchange e : list) {
                             String json
                                     = MessageHelper.dumpAsJSon(e.getMessage(), false, false, includeBody, 2, true, true, true,
@@ -118,6 +139,9 @@ public class BrowseDevConsole extends AbstractDevConsole {
                             sb.append("\n");
                         }
                     }
+                } else {
+                    BrowsableEndpoint.BrowseStatus status = be.getBrowseStatus(Integer.MAX_VALUE);
+                    sb.append(String.format("Browse: %s (size: %d%n", endpoint.getEndpointUri(), status.size()));
                 }
             }
         }
@@ -133,7 +157,10 @@ public class BrowseDevConsole extends AbstractDevConsole {
 
         String filter = (String) options.get(FILTER);
         String lim = (String) options.get(LIMIT);
+        String tail = (String) options.get(TAIL);
+        final int pos = tail == null ? 0 : Integer.parseInt(tail);
         final int max = lim == null ? limit : Integer.parseInt(lim);
+        boolean freshSize = "true".equals(options.getOrDefault(FRESH_SIZE, "false"));
         boolean dump = "true".equals(options.getOrDefault(DUMP, "true"));
         boolean includeBody = "true".equals(options.getOrDefault(INCLUDE_BODY, "true"));
         int maxChars = Integer.parseInt((String) options.getOrDefault(BODY_MAX_CHARS, "" + bodyMaxChars));
@@ -143,14 +170,34 @@ public class BrowseDevConsole extends AbstractDevConsole {
         for (Endpoint endpoint : endpoints) {
             if (endpoint instanceof BrowsableEndpoint be
                     && (filter == null || PatternHelper.matchPattern(endpoint.getEndpointUri(), filter))) {
-                List<Exchange> list = be.getExchanges(max, null);
-                if (list != null) {
-                    JsonObject jo = new JsonObject();
-                    jo.put("endpointUri", endpoint.getEndpointUri());
-                    jo.put("queueSize", list.size());
-                    jo.put("limit", max);
-                    arr.add(jo);
-                    if (dump) {
+                if (dump) {
+                    List<Exchange> list = freshSize ? be.getExchanges(Integer.MAX_VALUE, null) : be.getExchanges(max, null);
+                    int queueSize = list != null ? list.size() : 0;
+                    int begin = 0;
+                    if (list != null && pos > 0) {
+                        begin = Math.max(0, list.size() - pos);
+                        list = list.subList(begin, list.size());
+                    }
+                    if (list != null) {
+                        JsonObject jo = new JsonObject();
+                        jo.put("endpointUri", endpoint.getEndpointUri());
+                        jo.put("queueSize", queueSize);
+                        jo.put("limit", max);
+                        jo.put("position", begin);
+                        if (!list.isEmpty()) {
+                            long ts = list.get(0).getMessage().getHeader(Exchange.MESSAGE_TIMESTAMP, 0, long.class);
+                            if (ts > 0) {
+                                jo.put("firstTimestamp", ts);
+                            }
+                            if (list.size() > 1) {
+                                ts = list.get(list.size() - 1).getMessage().getHeader(Exchange.MESSAGE_TIMESTAMP, 0,
+                                        long.class);
+                                if (ts > 0) {
+                                    jo.put("lastTimestamp", ts);
+                                }
+                            }
+                        }
+                        arr.add(jo);
                         JsonArray arr2 = new JsonArray();
                         for (Exchange e : list) {
                             arr2.add(MessageHelper.dumpAsJSonObject(e.getMessage(), false, false, includeBody, true, true, true,
@@ -160,6 +207,18 @@ public class BrowseDevConsole extends AbstractDevConsole {
                             jo.put("messages", arr2);
                         }
                     }
+                } else {
+                    BrowsableEndpoint.BrowseStatus status = be.getBrowseStatus(Integer.MAX_VALUE);
+                    JsonObject jo = new JsonObject();
+                    jo.put("endpointUri", endpoint.getEndpointUri());
+                    jo.put("queueSize", status.size());
+                    if (status.firstTimestamp() > 0) {
+                        jo.put("firstTimestamp", status.firstTimestamp());
+                    }
+                    if (status.lastTimestamp() > 0) {
+                        jo.put("lastTimestamp", status.lastTimestamp());
+                    }
+                    arr.add(jo);
                 }
             }
         }
