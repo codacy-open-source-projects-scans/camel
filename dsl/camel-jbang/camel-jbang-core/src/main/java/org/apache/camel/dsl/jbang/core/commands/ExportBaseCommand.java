@@ -187,6 +187,10 @@ public abstract class ExportBaseCommand extends CamelCommand {
             "--directory" }, description = "Directory where the project will be exported", defaultValue = ".")
     protected String exportDir;
 
+    @CommandLine.Option(names = { "--clean-dir" },
+                        description = "If exporting to current directory (default) then all existing files are preserved. Enabling this option will force cleaning current directory including all sub dirs (use this with care)")
+    protected boolean cleanExportDir;
+
     @CommandLine.Option(names = { "--logging-level" }, defaultValue = "info", description = "Logging level")
     protected String loggingLevel = "info";
 
@@ -447,6 +451,19 @@ public abstract class ExportBaseCommand extends CamelCommand {
             RuntimeUtil.loadProperties(prop, profile);
             for (String d : RuntimeUtil.getDependenciesAsArray(prop)) {
                 answer.add(d.trim());
+            }
+            // automatic add needed dependencies when dev-console is enabled
+            if ("true".equalsIgnoreCase(prop.getProperty("camel.main.devConsoleEnabled"))
+                    || "true".equalsIgnoreCase(prop.getProperty("camel.server.devConsoleEnabled"))) {
+                answer.add("camel:console");
+                answer.add("camel:management");
+            }
+            // automatic add needed dependencies when main server enabled plugins
+            if ("true".equalsIgnoreCase(prop.getProperty("camel.server.jolokiaEnabled"))) {
+                answer.add("camel:platform-http-jolokia");
+            }
+            if ("true".equalsIgnoreCase(prop.getProperty("camel.server.metricsEnabled"))) {
+                answer.add("camel:micrometer-prometheus");
             }
         }
 

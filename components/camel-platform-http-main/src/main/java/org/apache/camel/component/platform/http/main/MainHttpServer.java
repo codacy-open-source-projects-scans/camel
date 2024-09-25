@@ -918,7 +918,10 @@ public class MainHttpServer extends ServiceSupport implements CamelContextAware,
                     ctx.end("Developer Console is not enabled on CamelContext. Set camel.context.dev-console=true in application.properties");
                 }
                 DevConsoleRegistry dcr = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class);
-                if (dcr == null || !dcr.isEnabled()) {
+                if (dcr == null) {
+                    ctx.end("Developer Console is not included. Add camel-console to classpath.");
+                    return;
+                } else if (!dcr.isEnabled()) {
                     ctx.end("Developer Console is not enabled");
                     return;
                 }
@@ -1165,9 +1168,13 @@ public class MainHttpServer extends ServiceSupport implements CamelContextAware,
                     ctx.response().setStatusCode(200);
                     ctx.end(sj.toString());
                 } else {
-                    // load file as resource
+                    // load file as resource (try both classpath and file)
                     ResourceLoader loader = PluginHelper.getResourceLoader(camelContext);
                     Resource res = loader.resolveResource("classpath:" + name);
+                    if (res == null || !res.exists()) {
+                        // attempt without path
+                        res = loader.resolveResource("classpath:" + FileUtil.stripPath(name));
+                    }
                     if (res == null || !res.exists()) {
                         for (org.apache.camel.Route route : camelContext.getRoutes()) {
                             String loc = route.getSourceLocation();
