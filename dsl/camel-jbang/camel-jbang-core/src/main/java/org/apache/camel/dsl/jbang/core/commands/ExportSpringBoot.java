@@ -98,9 +98,7 @@ class ExportSpringBoot extends Export {
         File srcResourcesDir = new File(BUILD_DIR, "src/main/resources");
         srcResourcesDir.mkdirs();
         File srcCamelResourcesDir = new File(BUILD_DIR, "src/main/resources/camel");
-        srcCamelResourcesDir.mkdirs();
         File srcKameletsResourcesDir = new File(BUILD_DIR, "src/main/resources/kamelets");
-        srcKameletsResourcesDir.mkdirs();
         // copy application properties files
         copyApplicationPropertiesFiles(srcResourcesDir);
 
@@ -133,7 +131,9 @@ class ExportSpringBoot extends Export {
                 copyGradleWrapper();
             }
         }
-
+        copyDockerFiles(BUILD_DIR);
+        String appJar = "target" + File.separator + ids[1] + "-" + ids[2] + ".jar";
+        copyReadme(BUILD_DIR, appJar);
         if (cleanExportDir || !exportDir.equals(".")) {
             // cleaning current dir can be a bit dangerous so only clean if explicit enabled
             // otherwise always clean export-dir to avoid stale data
@@ -351,7 +351,8 @@ class ExportSpringBoot extends Export {
         // remove out of the box dependencies
         answer.removeIf(s -> s.contains("camel-core"));
 
-        if (openapi != null) {
+        boolean http = answer.stream().anyMatch(s -> s.contains("mvn:org.apache.camel:camel-platform-http"));
+        if (openapi != null && !http) {
             // include http server if using openapi
             answer.add("mvn:org.apache.camel:camel-platform-http");
         }

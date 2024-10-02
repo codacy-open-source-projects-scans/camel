@@ -54,7 +54,7 @@ public final class SensitiveUtils {
                     "consumersecret",
                     "emailaddress",
                     "httpproxypassword",
-                    "keystore",
+                    "keystorePassword",
                     "login",
                     "oauthclientid",
                     "oauthclientsecret",
@@ -87,7 +87,6 @@ public final class SensitiveUtils {
                     "sharedaccesskey",
                     "sourceblobaccesskey",
                     "sslkeypassword",
-                    "sslkeystore",
                     "sslkeystorepassword",
                     "sslpassword",
                     "ssltruststorepassword",
@@ -133,7 +132,7 @@ public final class SensitiveUtils {
                                                     + "|\\Qconsumersecret\\E"
                                                     + "|\\Qemailaddress\\E"
                                                     + "|\\Qhttpproxypassword\\E"
-                                                    + "|\\Qkeystore\\E"
+                                                    + "|\\QkeystorePassword\\E"
                                                     + "|\\Qlogin\\E"
                                                     + "|\\Qoauthclientid\\E"
                                                     + "|\\Qoauthclientsecret\\E"
@@ -166,7 +165,6 @@ public final class SensitiveUtils {
                                                     + "|\\Qsharedaccesskey\\E"
                                                     + "|\\Qsourceblobaccesskey\\E"
                                                     + "|\\Qsslkeypassword\\E"
-                                                    + "|\\Qsslkeystore\\E"
                                                     + "|\\Qsslkeystorepassword\\E"
                                                     + "|\\Qsslpassword\\E"
                                                     + "|\\Qssltruststorepassword\\E"

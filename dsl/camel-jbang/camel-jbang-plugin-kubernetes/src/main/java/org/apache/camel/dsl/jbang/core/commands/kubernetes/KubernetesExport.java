@@ -39,6 +39,8 @@ import org.apache.camel.dsl.jbang.core.commands.kubernetes.traits.TraitCatalog;
 import org.apache.camel.dsl.jbang.core.commands.kubernetes.traits.TraitContext;
 import org.apache.camel.dsl.jbang.core.commands.kubernetes.traits.TraitHelper;
 import org.apache.camel.dsl.jbang.core.commands.kubernetes.traits.TraitProfile;
+import org.apache.camel.dsl.jbang.core.commands.kubernetes.traits.model.Container;
+import org.apache.camel.dsl.jbang.core.commands.kubernetes.traits.model.Traits;
 import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
 import org.apache.camel.dsl.jbang.core.common.RuntimeType;
 import org.apache.camel.dsl.jbang.core.common.RuntimeUtil;
@@ -46,8 +48,6 @@ import org.apache.camel.dsl.jbang.core.common.Source;
 import org.apache.camel.dsl.jbang.core.common.SourceHelper;
 import org.apache.camel.util.CamelCaseOrderedProperties;
 import org.apache.camel.util.StringHelper;
-import org.apache.camel.v1.integrationspec.Traits;
-import org.apache.camel.v1.integrationspec.traits.Container;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
@@ -173,6 +173,10 @@ public class KubernetesExport extends Export {
     public Integer export() throws Exception {
         if (runtime == null) {
             runtime = RuntimeType.quarkus;
+        }
+
+        if (!quiet) {
+            printer().println("Exporting application ...");
         }
 
         if (!buildTool.equals("maven")) {
@@ -423,8 +427,11 @@ public class KubernetesExport extends Export {
     private void addLabel(String key, String value) {
         var labelArray = Optional.ofNullable(labels).orElse(new String[0]);
         var labelList = new ArrayList<>(Arrays.asList(labelArray));
-        labelList.add("%s=%s".formatted(key, value));
-        labels = labelList.toArray(new String[0]);
+        var labelEntry = "%s=%s".formatted(key, value);
+        if (!labelList.contains(labelEntry)) {
+            labelList.add(labelEntry);
+            labels = labelList.toArray(new String[0]);
+        }
     }
 
     private String resolveImageGroup() {
@@ -522,7 +529,7 @@ public class KubernetesExport extends Export {
             String quarkusVersion,
             List<String> files,
             String gav,
-            List<String> repositories,
+            String repositories,
             List<String> dependencies,
             List<String> excludes,
             String mavenSettings,

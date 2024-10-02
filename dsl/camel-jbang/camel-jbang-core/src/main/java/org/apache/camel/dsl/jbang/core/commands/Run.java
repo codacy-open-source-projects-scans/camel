@@ -153,8 +153,9 @@ public class Run extends CamelCommand {
             split = ",")
     List<String> dependencies = new ArrayList<>();
 
-    @CommandLine.Option(names = { "--repository" }, description = "Additional maven repositories")
-    List<String> repositories = new ArrayList<>();
+    @CommandLine.Option(names = { "--repos" },
+                        description = "Additional maven repositories (Use commas to separate multiple repositories)")
+    String repositories;
 
     @Option(names = { "--gav" }, description = "The Maven group:artifact:version (used during exporting)")
     String gav;
@@ -486,7 +487,9 @@ public class Run extends CamelCommand {
 
         final KameletMain main = createMainInstance();
         main.setProfile(profile);
-        main.setRepositories(String.join(",", repositories));
+        if (repositories != null && !repositories.isBlank()) {
+            main.setRepositories(String.join(",", repositories));
+        }
         main.setDownload(download);
         main.setFresh(fresh);
         main.setMavenSettings(mavenSettings);
@@ -546,7 +549,7 @@ public class Run extends CamelCommand {
             writeSetting(main, profileProperties, "camel.jbang.gav", gav);
         }
         writeSetting(main, profileProperties, "camel.jbang.open-api", openapi);
-        writeSetting(main, profileProperties, "camel.jbang.repositories", String.join(",", repositories));
+        writeSetting(main, profileProperties, "camel.jbang.repos", String.join(",", repositories));
         writeSetting(main, profileProperties, "camel.jbang.health", health ? "true" : "false");
         writeSetting(main, profileProperties, "camel.jbang.metrics", metrics ? "true" : "false");
         writeSetting(main, profileProperties, "camel.jbang.console", console ? "true" : "false");
@@ -1106,7 +1109,7 @@ public class Run extends CamelCommand {
                     = "true".equals(answer.getProperty("loggingColor", loggingColor ? "true" : "false"));
             loggingJson
                     = "true".equals(answer.getProperty("loggingJson", loggingJson ? "true" : "false"));
-            repositories = RuntimeUtil.getCommaSeparatedPropertyAsList(answer, "camel.jbang.repositories", repositories);
+            repositories = answer.getProperty("camel.jbang.repos", repositories);
             mavenSettings = answer.getProperty("camel.jbang.maven-settings", mavenSettings);
             mavenSettingsSecurity = answer.getProperty("camel.jbang.maven-settings-security", mavenSettingsSecurity);
             mavenCentralEnabled = "true"
@@ -1560,10 +1563,13 @@ public class Run extends CamelCommand {
                     }
                     return ACCEPTED_XML_ROOT_ELEMENTS.contains(info.getRootElementName());
                 } else {
-                    // also support Camel K integrations and Pipes. And KameletBinding for backward compatibility
-                    return source.content().contains("- from:") || source.content().contains("- route:")
+                    // TODO: we probably need a way to parse the content and match against the YAML DSL expected by Camel
+                    // This check looks very fragile
+                    return source.content().contains("from:") || source.content().contains("- from:")
+                            || source.content().contains("- route:")
                             || source.content().contains("- route-configuration:")
                             || source.content().contains("- rest:") || source.content().contains("- beans:")
+                            // also support Camel K integrations and Pipes. And KameletBinding for backward compatibility
                             || source.content().contains("KameletBinding")
                             || source.content().contains("Pipe")
                             || source.content().contains("kind: Integration");

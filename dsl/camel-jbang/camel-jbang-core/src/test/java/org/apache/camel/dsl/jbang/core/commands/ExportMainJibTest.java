@@ -21,6 +21,8 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.stream.Stream;
 
@@ -44,7 +46,8 @@ class ExportMainJibTest {
 
     @BeforeEach
     public void setup() throws IOException {
-        workingDir = Files.createTempDirectory("camel-export").toFile();
+        Path base = Paths.get("target");
+        workingDir = Files.createTempDirectory(base, "camel-export").toFile();
     }
 
     @AfterEach
@@ -66,7 +69,7 @@ class ExportMainJibTest {
         Files.copy(new File("src/test/resources/application-jib.properties").toPath(), profile.toPath(),
                 StandardCopyOption.REPLACE_EXISTING);
 
-        Export command = new ExportCamelMain(new CamelJBangMain());
+        Export command = new Export(new CamelJBangMain());
         CommandLine.populateCommand(command, "--gav=examples:route:1.0.0", "--dir=" + workingDir,
                 "--runtime=%s".formatted(rt.runtime()), "target/test-classes/route.yaml");
         int exit = command.doCall();
