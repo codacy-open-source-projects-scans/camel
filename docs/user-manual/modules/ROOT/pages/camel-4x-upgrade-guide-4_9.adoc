@@ -23,6 +23,12 @@ as header filter strategy which is the old implementation.
 
 Added `int limit` as parameter to the `browse` method in `org.apache.camel.component.jms.QueueBrowseStrategy`.
 
+=== camel-opentelemetry
+
+The `camel-opentelemetry` component has had significant bug fixes to handle span activation/deactivations
+better when Camel route messages synchronously and asynchronously. This component should also work better
+on Spring Boot.
+
 === camel-hashicorp-vault properties function
 
 The syntax for retrieving a single field of a secret has been changed.
@@ -91,6 +97,16 @@ Additionally, starting with Camel 4.9, we strongly recommend users to avoid rely
 via `@TestInstance(TestInstance.Lifecycle.PER_CLASS)`), as this is considered a deprecated functionality that will be removed in the
 future.
 The logs will print a warning message if this behavior is detected.
+
+=== Removed deprecated components
+
+The following experimental DSL has been removed:
+
+- `camel-groovy-dsl`
+- `camel-js-dsl`
+- `camel-jsh-dsl`
+
+The Camel team is only focusing on Java, XML and YAML DSL.
 
 === Removed API
 
