@@ -14,7 +14,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/**
- * Classes in this package are missing implementation from OpenTelemetry.
- */
-package org.apache.camel.opentelemetry.internal;
+package org.apache.camel.component.kamelet.utils.transform;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.camel.Exchange;
+import org.apache.camel.ExchangeProperty;
+import org.apache.camel.InvalidPayloadException;
+
+public class HoistField {
+
+    public JsonNode process(@ExchangeProperty("field") String field, Exchange ex) throws InvalidPayloadException {
+        ObjectMapper mapper = new ObjectMapper();
+        Object body = ex.getMessage().getBody();
+        Map<Object, Object> updatedBody = new HashMap<>();
+        updatedBody.put(field, body);
+        return mapper.valueToTree(updatedBody);
+    }
+
+}
