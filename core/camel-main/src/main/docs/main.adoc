@@ -49,7 +49,7 @@ The camel.main supports 122 options, which are listed below.
 | *camel.main.devConsoleEnabled* | Whether to enable developer console (requires camel-console on classpath). The developer console is only for assisting during development. This is NOT for production usage. | false | boolean
 | *camel.main.dumpRoutes* | If dumping is enabled then Camel will during startup dump all loaded routes (incl rests and route templates) represented as XML/YAML DSL into the log. This is intended for trouble shooting or to assist during development. Sensitive information that may be configured in the route endpoints could potentially be included in the dump output and is therefore not recommended being used for production usage. This requires to have camel-xml-io/camel-yaml-io on the classpath to be able to dump the routes as XML/YAML. |  | String
 | *camel.main.dumpRoutesGenerated{zwsp}Ids* | Whether to include auto generated IDs in the dumped output. Default is false. | false | boolean
-| *camel.main.dumpRoutesInclude* | Controls what to include in output for route dumping. Possible values: all, routes, rests, routeConfigurations, routeTemplates, beans. Multiple values can be separated by comma. Default is routes. | routes | String
+| *camel.main.dumpRoutesInclude* | Controls what to include in output for route dumping. Possible values: all, routes, rests, routeConfigurations, routeTemplates, beans, dataFormats. Multiple values can be separated by comma. Default is routes. | routes | String
 | *camel.main.dumpRoutesLog* | Whether to log route dumps to Logger | true | boolean
 | *camel.main.dumpRoutesOutput* | Whether to save route dumps to an output file. If the output is a filename, then all content is saved to this file. If the output is a directory name, then one or more files are saved to the directory, where the names are based on the original source file names, or auto generated names. |  | String
 | *camel.main.dumpRoutesResolve{zwsp}Placeholders* | Whether to resolve property placeholders in the dumped output. Default is true. | true | boolean
@@ -187,7 +187,7 @@ The camel.routecontroller supports 12 options, which are listed below.
 
 
 === Camel Embedded HTTP Server (only for standalone; not Spring Boot or Quarkus) configurations
-The camel.server supports 23 options, which are listed below.
+The camel.server supports 24 options, which are listed below.
 
 [width="100%",cols="2,5,^1,2",options="header"]
 |===
@@ -198,7 +198,8 @@ The camel.server supports 23 options, which are listed below.
 | *camel.server.devConsoleEnabled* | Whether to enable developer console (not intended for production use). Dev console must also be enabled on CamelContext. For example by setting camel.context.dev-console=true in application.properties, or via code camelContext.setDevConsole(true); If enabled then you can access a basic developer console on context-path: /q/dev. | false | boolean
 | *camel.server.downloadEnabled* | Whether to enable file download via HTTP. This makes it possible to browse and download resource source files such as Camel XML or YAML routes. Only enable this for development, troubleshooting or special situations for management and monitoring. | false | boolean
 | *camel.server.enabled* | Whether embedded HTTP server is enabled. By default, the server is not enabled. | false | boolean
-| *camel.server.healthCheck{zwsp}Enabled* | Whether to enable health-check console. If enabled then you can access health-check status on context-path: /q/health | false | boolean
+| *camel.server.healthCheck{zwsp}Enabled* | Whether to enable health-check console. If enabled then you can access health-check status on context-path: /q/health (default) | false | boolean
+| *camel.server.healthPath* | The path endpoint used to expose the health status | /q/health | String
 | *camel.server.host* | Hostname to use for binding embedded HTTP server | 0.0.0.0 | String
 | *camel.server.infoEnabled* | Whether to enable info console. If enabled then you can see some basic Camel information at /q/info | false | boolean
 | *camel.server.jolokiaEnabled* | Whether to enable jolokia. If enabled then you can access jolokia api on context-path: /q/jolokia | false | boolean
@@ -206,7 +207,7 @@ The camel.server supports 23 options, which are listed below.
 | *camel.server.jwtKeystorePath* | Path to the keystore file used for JWT tokens validation. |  | String
 | *camel.server.jwtKeystoreType* | Type of the keystore used for JWT tokens validation (jks, pkcs12, etc.). |  | String
 | *camel.server.maxBodySize* | Maximum HTTP body size the embedded HTTP server can accept. |  | Long
-| *camel.server.metricsEnabled* | Whether to enable metrics. If enabled then you can access metrics on context-path: /q/metrics | false | boolean
+| *camel.server.metricsEnabled* | Whether to enable metrics. If enabled then you can access metrics on context-path: /q/metrics (default) | false | boolean
 | *camel.server.path* | Context-path to use for embedded HTTP server | / | String
 | *camel.server.port* | Port to use for binding embedded HTTP server | 8080 | int
 | *camel.server.sendEnabled* | Whether to enable sending messages to Camel via HTTP. This makes it possible to use Camel to send messages to Camel endpoint URIs via HTTP. | false | boolean
@@ -426,13 +427,26 @@ The camel.vault.azure supports 12 options, which are listed below.
 
 
 === Camel Kubernetes Vault configurations
-The camel.vault.kubernetes supports 2 options, which are listed below.
+The camel.vault.kubernetes supports 4 options, which are listed below.
 
 [width="100%",cols="2,5,^1,2",options="header"]
 |===
 | Name | Description | Default | Type
-| *camel.vault.kubernetes.refresh{zwsp}Enabled* | Whether to automatically reload Camel upon secrets being updated in Kubernetes Cluster. | true | boolean
+| *camel.vault.kubernetes.refresh{zwsp}Enabled* | Whether to automatically reload Camel upon secrets being updated in Kubernetes Cluster. | false | boolean
 | *camel.vault.kubernetes.secrets* | Specify the secret names (or pattern) to check for updates. Multiple secrets can be separated by comma. |  | String
+| *camel.vault.kubernetescm.configmaps* | Specify the configmap names (or pattern) to check for updates. Multiple configmaps can be separated by comma. |  | String
+| *camel.vault.kubernetescm.refresh{zwsp}Enabled* | Whether to automatically reload Camel upon configmaps being updated in Kubernetes Cluster. | false | boolean
+|===
+
+
+=== Camel Kubernetes Configmaps Vault configurations
+The camel.vault.kubernetescm supports 2 options, which are listed below.
+
+[width="100%",cols="2,5,^1,2",options="header"]
+|===
+| Name | Description | Default | Type
+| *camel.vault.kubernetescm.configmaps* | Specify the configmap names (or pattern) to check for updates. Multiple configmaps can be separated by comma. |  | String
+| *camel.vault.kubernetescm.refresh{zwsp}Enabled* | Whether to automatically reload Camel upon configmaps being updated in Kubernetes Cluster. | false | boolean
 |===
 
 
@@ -464,7 +478,7 @@ The camel.opentelemetry supports 5 options, which are listed below.
 
 
 === Camel Micrometer Metrics configurations
-The camel.metrics supports 10 options, which are listed below.
+The camel.metrics supports 11 options, which are listed below.
 
 [width="100%",cols="2,5,^1,2",options="header"]
 |===
@@ -477,6 +491,7 @@ The camel.metrics supports 10 options, which are listed below.
 | *camel.metrics.enableRouteEvent{zwsp}Notifier* | Set whether to enable the MicrometerRouteEventNotifier for capturing metrics on the total number of routes and total number of routes running. | true | boolean
 | *camel.metrics.enableRoute{zwsp}Policy* | Set whether to enable the MicrometerRoutePolicyFactory for capturing metrics on route processing times. | true | boolean
 | *camel.metrics.namingStrategy* | Controls the name style to use for metrics. Default = uses micrometer naming convention. Legacy = uses the classic naming style (camelCase) | default | String
+| *camel.metrics.path* | The path endpoint used to expose the metrics. | /q/metrics | String
 | *camel.metrics.routePolicyLevel* | Sets the level of information to capture. all = both context and routes. | all | String
 | *camel.metrics.textFormat{zwsp}Version* | The text-format version to use with Prometheus scraping. 0.0.4 = text/plain; version=0.0.4; charset=utf-8 1.0.0 = application/openmetrics-text; version=1.0.0; charset=utf-8 | 0.0.4 | String
 |===

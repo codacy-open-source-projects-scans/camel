@@ -810,7 +810,7 @@ public interface ComponentsBuilderFactory {
      * Receives events from ClickUp
      * 
      * Category: cloud
-     * Since: 4.9.0-SNAPSHOT
+     * Since: 4.9
      * Maven coordinates: org.apache.camel:camel-clickup
      * 
      * @return the dsl builder
@@ -1452,6 +1452,19 @@ public interface ComponentsBuilderFactory {
      */
     static FlinkComponentBuilderFactory.FlinkComponentBuilder flink() {
         return FlinkComponentBuilderFactory.flink();
+    }
+    /**
+     * Flowable (camel-flowable)
+     * Send and receive messages from the Flowable BPMN and CMMN engines.
+     * 
+     * Category: workflow
+     * Since: 4.9
+     * Maven coordinates: org.apache.camel:camel-flowable
+     * 
+     * @return the dsl builder
+     */
+    static FlowableComponentBuilderFactory.FlowableComponentBuilder flowable() {
+        return FlowableComponentBuilderFactory.flowable();
     }
     /**
      * FOP (camel-fop)
@@ -3900,7 +3913,8 @@ public interface ComponentsBuilderFactory {
     }
     /**
      * Smooks (camel-smooks)
-     * EDI, XML, CSV, etc. based data transformation using Smooks.
+     * Use Smooks to transform, route, and bind both XML and non-XML data,
+     * including EDI, CSV, JSON, and YAML.
      * 
      * Category: transformation
      * Since: 4.7

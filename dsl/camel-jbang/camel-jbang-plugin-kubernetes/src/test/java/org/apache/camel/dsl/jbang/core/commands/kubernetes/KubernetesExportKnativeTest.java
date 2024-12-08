@@ -29,10 +29,13 @@ import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.dsl.jbang.core.commands.kubernetes.traits.BaseTrait;
 import org.apache.camel.dsl.jbang.core.common.RuntimeType;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*",
+                          disabledReason = "Requires too much network resources")
 public class KubernetesExportKnativeTest extends KubernetesExportBaseTest {
 
     private static Stream<Arguments> runtimeProvider() {
@@ -56,7 +59,8 @@ public class KubernetesExportKnativeTest extends KubernetesExportBaseTest {
                 "knative-service.min-scale=1",
                 "knative-service.max-scale=10",
                 "knative-service.rollout-duration=60",
-                "knative-service.visibility=cluster-local" };
+                "knative-service.visibility=cluster-local",
+                "knative-service.timeout-seconds=300" };
         int exit = command.doCall();
         Assertions.assertEquals(0, exit);
 
@@ -72,19 +76,20 @@ public class KubernetesExportKnativeTest extends KubernetesExportBaseTest {
         Map<String, String> annotations = service.getSpec().getTemplate().getMetadata().getAnnotations();
         Assertions.assertEquals("route-service", service.getMetadata().getName());
         Assertions.assertEquals(3, labelsA.size());
-        Assertions.assertEquals("route-service", labelsA.get(BaseTrait.KUBERNETES_NAME_LABEL));
+        Assertions.assertEquals("route-service", labelsA.get(BaseTrait.KUBERNETES_LABEL_NAME));
         Assertions.assertEquals("true", labelsA.get("bindings.knative.dev/include"));
         Assertions.assertEquals("cluster-local", labelsA.get("networking.knative.dev/visibility"));
         Assertions.assertEquals(1, service.getMetadata().getAnnotations().size());
         Assertions.assertEquals("60", service.getMetadata().getAnnotations().get("serving.knative.dev/rolloutDuration"));
         Assertions.assertEquals(1, labelsB.size());
-        Assertions.assertEquals("route-service", labelsB.get(BaseTrait.KUBERNETES_NAME_LABEL));
+        Assertions.assertEquals("route-service", labelsB.get(BaseTrait.KUBERNETES_LABEL_NAME));
         Assertions.assertEquals(5, annotations.size());
         Assertions.assertEquals("cpu", annotations.get("autoscaling.knative.dev/metric"));
         Assertions.assertEquals("hpa.autoscaling.knative.dev", annotations.get("autoscaling.knative.dev/class"));
         Assertions.assertEquals("80", annotations.get("autoscaling.knative.dev/target"));
         Assertions.assertEquals("1", annotations.get("autoscaling.knative.dev/minScale"));
         Assertions.assertEquals("10", annotations.get("autoscaling.knative.dev/maxScale"));
+        Assertions.assertEquals(300, service.getSpec().getTemplate().getSpec().getTimeoutSeconds());
     }
 
     @ParameterizedTest

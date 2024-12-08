@@ -72,15 +72,14 @@ NOTE: You would still need OpenTelemetry to instrument your code, which can be d
 
 == Spring Boot
 
-If you are using Spring Boot, then you can add
-the `camel-opentelemetry-starter` dependency, and turn on OpenTelemetry by annotating
-the main class with `@CamelOpenTelemetry`.
+When running on Spring Boot, add the `camel-opentelemetry-starter` dependency to get started.
 
-The `OpenTelemetryTracer` will be implicitly obtained from the camel context's `Registry`, unless
-a `OpenTelemetryTracer` bean has been defined by the application.
+There are several ways to configure instrumentation of your Camel application running on Spring Boot with OpenTelemetry.
+The first and easiest one is by using the https://opentelemetry.io/docs/zero-code/java/agent/[OpenTelemetry Java agent].
+The other one is through Spring Boot's Actuator. We'll cover both.
 
 [[OpenTelemetry-JavaAgent]]
-== Java Agent
+=== Java Agent
 
 Download the https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/[latest version].
 
@@ -108,6 +107,48 @@ java -javaagent:path/to/opentelemetry-javaagent.jar \
 ----
 
 include::spring-boot:partial$starter.adoc[]
+
+
+=== Spring Boot's Actuator
+
+To have Spring Boot's Actuator configure OpenTelemetry, you need to add
+`org.springframework.boot:spring-boot-starter-actuator` and `io.micrometer:micrometer-tracing-bridge-otel` to your project.
+OpenTelemetry's `Tracer` will then be
+https://docs.spring.io/spring-boot/reference/actuator/tracing.html[configured] through `spring-boot-starter-actuator` unless a `Tracer` is already defined.
+
+*Noteworthy*: by default, this will sample only 10% of requests to prevent overwhelming the trace backend.
+Set the property `management.tracing.sampling.probability` to `1.0` if you want to see all traces.
+
+=== SpanExporters
+
+You'll probably want to configure at least one https://opentelemetry.io/docs/languages/java/sdk/#spanexporter[SpanExporter]
+as they allow you to export your traces to various backends (e.g., Zipkin and Jaeger), or log them. For example, to export your traces to Jaeger using OTLP via gRPC,
+add `io.opentelemetry:opentelemetry-exporter-otlp` as a dependency to your project. To configure it, you can
+use the `management.otlp.tracing` properties or register a new `SpanExporter` bean yourself:
+
+[source,java]
+--------------------------------------------------------------------------------------------------
+@Bean
+public SpanExporter OtlpGrpcSpanExporter(@Value("${tracing.url}") String url) {
+    return OtlpGrpcSpanExporter.builder().setEndpoint(url).build();
+}
+--------------------------------------------------------------------------------------------------
+
+Spring Boot's Actuator will take care of the wiring for you.
+
+Alternatively if you just want to log your traces in OTLP JSON format,
+add `io.opentelemetry:opentelemetry-exporter-logging-otlp` as a dependency to your project and also register a new `SpanExporter` bean:
+
+[source,java]
+--------------------------------------------------------------------------------------------------
+@Bean
+public SpanExporter logTraces() {
+    return OtlpJsonLoggingSpanExporter.create();
+}
+--------------------------------------------------------------------------------------------------
+
+Multiple `SpanExporters` can be used at the same time.
+
 
 == MDC Logging
 

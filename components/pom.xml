@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.apache.camel</groupId>
         <artifactId>camel-parent</artifactId>
-        <version>4.9.0-SNAPSHOT</version>
+        <version>4.10.0-SNAPSHOT</version>
         <relativePath>../parent</relativePath>
     </parent>
 
@@ -134,9 +134,11 @@
         <module>camel-file-watch</module>
         <module>camel-flatpack</module>
         <module>camel-flink</module>
+        <module>camel-flowable</module>
         <module>camel-fop</module>
         <module>camel-freemarker</module>
         <module>camel-ftp</module>
+        <module>camel-fury</module>
         <module>camel-geocoder</module>
         <module>camel-git</module>
         <module>camel-github</module>
@@ -276,7 +278,7 @@
         <module>camel-snakeyaml</module>
         <module>camel-snmp</module>
         <module>camel-soap</module>
-        <module>camel-solr</module>        
+        <module>camel-solr</module>
         <module>camel-splunk</module>
         <module>camel-splunk-hec</module>
         <module>camel-spring-batch</module>
@@ -335,6 +337,8 @@
         <module>camel-rest-openapi</module>
         <!-- build jooq last as it cause component builds to be slower afterwards -->
         <module>camel-jooq</module>
+        <!-- observability-services requires the availability of other components -->
+        <module>camel-observability-services</module>
     </modules>
 
     <properties>

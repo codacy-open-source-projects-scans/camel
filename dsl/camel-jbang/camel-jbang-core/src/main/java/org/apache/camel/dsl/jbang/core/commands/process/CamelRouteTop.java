@@ -27,7 +27,7 @@ import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import picocli.CommandLine.Command;
 
 @Command(name = "route", description = "Top performing routes",
-         sortOptions = false)
+         sortOptions = false, showDefaultValues = true)
 public class CamelRouteTop extends CamelRouteStatus {
 
     public CamelRouteTop(CamelJBangMain main) {
@@ -93,7 +93,7 @@ public class CamelRouteTop extends CamelRouteStatus {
             long m1 = o1.mean != null ? Long.parseLong(o1.mean) : 0;
             long m2 = o2.mean != null ? Long.parseLong(o2.mean) : 0;
             if (m1 < m2) {
-                answer = 1 * negate;
+                answer = negate;
             } else if (m1 > m2) {
                 answer = -1 * negate;
             }

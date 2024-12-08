@@ -145,7 +145,9 @@ public abstract class BaseMainSupport extends BaseService {
     protected final OrderedLocationProperties wildcardProperties = new OrderedLocationProperties();
     protected RoutesCollector routesCollector = new DefaultRoutesCollector();
     protected String propertyPlaceholderLocations;
-    protected String defaultPropertyPlaceholderLocation = MainConstants.DEFAULT_PROPERTY_PLACEHOLDER_LOCATION;
+    protected String defaultPropertyPlaceholderLocation
+            = MainConstants.DEFAULT_PROPERTY_PLACEHOLDER_LOCATION + ","
+              + MainConstants.DEFAULT_OBSERVABILITY_SERVICES_PROPERTY_LOCATION;
     protected Properties initialProperties;
     protected Properties overrideProperties;
     protected boolean standalone = true;
@@ -316,41 +318,11 @@ public abstract class BaseMainSupport extends BaseService {
         // auto-detect camel configurations via base package scanning
         String basePackage = camelContext.getCamelContextExtension().getBasePackageScan();
         if (basePackage != null) {
-            PackageScanClassResolver pscr = PluginHelper.getPackageScanClassResolver(camelContext);
-            Set<Class<?>> found1 = pscr.findImplementations(CamelConfiguration.class, basePackage);
-            Set<Class<?>> found2 = pscr.findAnnotated(Configuration.class, basePackage);
-            Set<Class<?>> found = new LinkedHashSet<>();
-            found.addAll(found1);
-            found.addAll(found2);
-            for (Class<?> clazz : found) {
-                // lets use Camel's injector so the class has some support for dependency injection
-                Object config = camelContext.getInjector().newInstance(clazz);
-                if (config instanceof CamelConfiguration cc) {
-                    LOG.debug("Discovered CamelConfiguration class: {}", cc);
-                    mainConfigurationProperties.addConfiguration(cc);
-                }
-            }
+            setupBasePackage(camelContext, basePackage);
         }
 
         if (mainConfigurationProperties.getConfigurationClasses() != null) {
-            String[] configClasses = mainConfigurationProperties.getConfigurationClasses().split(",");
-            for (String configClass : configClasses) {
-                Class<CamelConfiguration> configClazz
-                        = camelContext.getClassResolver().resolveClass(configClass, CamelConfiguration.class);
-                // skip main classes
-                boolean mainClass = false;
-                try {
-                    configClazz.getDeclaredMethod("main", String[].class);
-                    mainClass = true;
-                } catch (NoSuchMethodException e) {
-                    // ignore
-                }
-                if (!mainClass) {
-                    // let's use Camel's injector so the class has some support for dependency injection
-                    CamelConfiguration config = camelContext.getInjector().newInstance(configClazz);
-                    mainConfigurationProperties.addConfiguration(config);
-                }
-            }
+            setupConfigurationClasses(camelContext);
         }
 
         // lets use Camel's bean post processor on any existing configuration classes
@@ -377,6 +349,44 @@ public abstract class BaseMainSupport extends BaseService {
         // invoke configure on configurations that are from registry
         for (CamelConfiguration config : registryConfigurations) {
             config.configure(camelContext);
+        }
+    }
+
+    private void setupConfigurationClasses(CamelContext camelContext) {
+        String[] configClasses = mainConfigurationProperties.getConfigurationClasses().split(",");
+        for (String configClass : configClasses) {
+            Class<CamelConfiguration> configClazz
+                    = camelContext.getClassResolver().resolveClass(configClass, CamelConfiguration.class);
+            // skip main classes
+            boolean mainClass = false;
+            try {
+                configClazz.getDeclaredMethod("main", String[].class);
+                mainClass = true;
+            } catch (NoSuchMethodException e) {
+                // ignore
+            }
+            if (!mainClass) {
+                // let's use Camel's injector so the class has some support for dependency injection
+                CamelConfiguration config = camelContext.getInjector().newInstance(configClazz);
+                mainConfigurationProperties.addConfiguration(config);
+            }
+        }
+    }
+
+    private void setupBasePackage(CamelContext camelContext, String basePackage) {
+        PackageScanClassResolver pscr = PluginHelper.getPackageScanClassResolver(camelContext);
+        Set<Class<?>> found1 = pscr.findImplementations(CamelConfiguration.class, basePackage);
+        Set<Class<?>> found2 = pscr.findAnnotated(Configuration.class, basePackage);
+        Set<Class<?>> found = new LinkedHashSet<>();
+        found.addAll(found1);
+        found.addAll(found2);
+        for (Class<?> clazz : found) {
+            // lets use Camel's injector so the class has some support for dependency injection
+            Object config = camelContext.getInjector().newInstance(clazz);
+            if (config instanceof CamelConfiguration cc) {
+                LOG.debug("Discovered CamelConfiguration class: {}", cc);
+                mainConfigurationProperties.addConfiguration(cc);
+            }
         }
     }
 
@@ -1759,6 +1769,9 @@ public abstract class BaseMainSupport extends BaseService {
             }
             if ("kubernetes".equalsIgnoreCase(name)) {
                 target = target.kubernetes();
+            }
+            if ("kubernetescm".equalsIgnoreCase(name)) {
+                target = target.kubernetesConfigmaps();
             }
             // configure all the properties on the vault at once (to ensure they are configured in right order)
             OrderedLocationProperties config = MainHelper.extractProperties(properties, name + ".");

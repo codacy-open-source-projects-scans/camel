@@ -38,10 +38,13 @@ import org.apache.camel.util.IOHelper;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*",
+                          disabledReason = "Requires too much network resources")
 class KubernetesExportTest extends KubernetesExportBaseTest {
 
     private static Stream<Arguments> runtimeProvider() {
@@ -49,12 +52,6 @@ class KubernetesExportTest extends KubernetesExportBaseTest {
                 Arguments.of(RuntimeType.main),
                 Arguments.of(RuntimeType.springBoot),
                 Arguments.of(RuntimeType.quarkus));
-    }
-
-    private static Stream<Arguments> runtimeProviderOpenshift() {
-        return Stream.of(
-                Arguments.of(RuntimeType.main),
-                Arguments.of(RuntimeType.springBoot));
     }
 
     @ParameterizedTest
@@ -85,9 +82,9 @@ class KubernetesExportTest extends KubernetesExportBaseTest {
         var matchLabels = deployment.getSpec().getSelector().getMatchLabels();
         Assertions.assertEquals("route", deployment.getMetadata().getName());
         Assertions.assertEquals(1, containers.size());
-        Assertions.assertEquals("route", labels.get(BaseTrait.KUBERNETES_NAME_LABEL));
+        Assertions.assertEquals("route", labels.get(BaseTrait.KUBERNETES_LABEL_NAME));
         Assertions.assertEquals("route", containers.get(0).getName());
-        Assertions.assertEquals("route", matchLabels.get(BaseTrait.KUBERNETES_NAME_LABEL));
+        Assertions.assertEquals("route", matchLabels.get(BaseTrait.KUBERNETES_LABEL_NAME));
         Assertions.assertEquals("quay.io/camel-test/route:1.0-SNAPSHOT", containers.get(0).getImage());
 
         Assertions.assertTrue(hasService(rt, ClusterType.KUBERNETES));
@@ -110,9 +107,9 @@ class KubernetesExportTest extends KubernetesExportBaseTest {
         var containers = deployment.getSpec().getTemplate().getSpec().getContainers();
         Assertions.assertEquals("route", deployment.getMetadata().getName());
         Assertions.assertEquals(1, containers.size());
-        Assertions.assertEquals("route", labels.get(BaseTrait.KUBERNETES_NAME_LABEL));
+        Assertions.assertEquals("route", labels.get(BaseTrait.KUBERNETES_LABEL_NAME));
         Assertions.assertEquals("route", containers.get(0).getName());
-        Assertions.assertEquals("route", matchLabels.get(BaseTrait.KUBERNETES_NAME_LABEL));
+        Assertions.assertEquals("route", matchLabels.get(BaseTrait.KUBERNETES_LABEL_NAME));
         Assertions.assertEquals("camel-test/route:1.0-SNAPSHOT", containers.get(0).getImage());
 
         Assertions.assertTrue(hasService(rt, ClusterType.KUBERNETES));
@@ -197,6 +194,8 @@ class KubernetesExportTest extends KubernetesExportBaseTest {
                 "--trait", "ingress.pathType=ImplementationSpecific",
                 "--trait", "ingress.annotations=nginx.ingress.kubernetes.io/rewrite-target=/$2",
                 "--trait", "ingress.annotations=nginx.ingress.kubernetes.io/use-regex=true",
+                "--trait", "ingress.tls-hosts=acme.com,acme2.com",
+                "--trait", "ingress.tls-secret-name=acme-tls-secret",
                 "--runtime=" + rt.runtime());
         var exit = command.doCall();
         Assertions.assertEquals(0, exit);
@@ -228,10 +227,14 @@ class KubernetesExportTest extends KubernetesExportBaseTest {
         Assertions.assertEquals("/$2",
                 ingress.getMetadata().getAnnotations().get("nginx.ingress.kubernetes.io/rewrite-target"));
         Assertions.assertEquals("true", ingress.getMetadata().getAnnotations().get("nginx.ingress.kubernetes.io/use-regex"));
+        Assertions.assertTrue(ingress.getSpec().getTls().get(0).getHosts().contains("acme.com"));
+        Assertions.assertTrue(ingress.getSpec().getTls().get(0).getHosts().contains("acme2.com"));
+        Assertions.assertEquals("acme-tls-secret", ingress.getSpec().getTls().get(0).getSecretName());
+
     }
 
     @ParameterizedTest
-    @MethodSource("runtimeProviderOpenshift")
+    @MethodSource("runtimeProvider")
     public void shouldAddRouteSpec(RuntimeType rt) throws Exception {
         String certificate = IOHelper.loadText(new FileInputStream("src/test/resources/route/tls.pem"));
         String key = IOHelper.loadText(new FileInputStream("src/test/resources/route/tls.key"));
@@ -400,7 +403,7 @@ class KubernetesExportTest extends KubernetesExportBaseTest {
         Assertions.assertEquals("route", deployment.getMetadata().getName());
         Assertions.assertEquals(3, labels.size());
         Assertions.assertEquals("camel", labels.get("app.kubernetes.io/runtime"));
-        Assertions.assertEquals("route", labels.get(BaseTrait.KUBERNETES_NAME_LABEL));
+        Assertions.assertEquals("route", labels.get(BaseTrait.KUBERNETES_LABEL_NAME));
         Assertions.assertEquals("bar", labels.get("foo"));
     }
 

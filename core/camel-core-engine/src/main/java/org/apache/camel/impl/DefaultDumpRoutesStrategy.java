@@ -32,6 +32,7 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.CamelContextAware;
 import org.apache.camel.NamedNode;
 import org.apache.camel.model.BeanFactoryDefinition;
+import org.apache.camel.model.DataFormatDefinition;
 import org.apache.camel.model.Model;
 import org.apache.camel.model.RouteConfigurationDefinition;
 import org.apache.camel.model.RouteConfigurationsDefinition;
@@ -192,34 +193,60 @@ public class DefaultDumpRoutesStrategy extends ServiceSupport implements DumpRou
             }
         }
 
-        if (include.contains("*") || include.contains("all") || include.contains("routes")) {
-            int size = model.getRouteDefinitions().size();
+        if (include.contains("*") || include.contains("all") || include.contains("dataFormats")) {
+            int size = model.getDataFormats().size();
             if (size > 0) {
-                Map<Resource, RoutesDefinition> groups = new LinkedHashMap<>();
-                for (RouteDefinition route : model.getRouteDefinitions()) {
-                    if ((route.isRest() != null && route.isRest()) || (route.isTemplate() != null && route.isTemplate())) {
-                        // skip routes that are rest/templates
-                        continue;
-                    }
-                    Resource res = route.getResource();
+                Map<Resource, Map<String, DataFormatDefinition>> groups = new LinkedHashMap<>();
+                for (Map.Entry<String, DataFormatDefinition> entry : model.getDataFormats().entrySet()) {
+                    Resource res = entry.getValue().getResource();
                     if (res == null) {
                         res = dummy;
                     }
-                    RoutesDefinition routes = groups.computeIfAbsent(res, resource -> new RoutesDefinition());
-                    routes.getRoutes().add(route);
+                    Map<String, DataFormatDefinition> dfs = groups.computeIfAbsent(res, resource -> new LinkedHashMap<>());
+                    dfs.put(entry.getKey(), entry.getValue());
                 }
                 StringBuilder sbLog = new StringBuilder();
-                for (Map.Entry<Resource, RoutesDefinition> entry : groups.entrySet()) {
-                    RoutesDefinition def = entry.getValue();
+                for (Map.Entry<Resource, Map<String, DataFormatDefinition>> entry : groups.entrySet()) {
+                    Map<String, DataFormatDefinition> dfs = entry.getValue();
                     Resource resource = entry.getKey();
 
                     StringBuilder sbLocal = new StringBuilder();
-                    doDumpYaml(camelContext, def, resource == dummy ? null : resource, dumper, "routes", sbLocal, sbLog);
+                    doDumpYamlDataFormats(camelContext, dfs, resource == dummy ? null : resource, dumper, "dataFormats",
+                            sbLocal, sbLog);
                     // dump each resource into its own file
-                    doDumpToDirectory(resource, sbLocal, "routes", "yaml", files);
+                    doDumpToDirectory(resource, sbLocal, "dataFormats", "yaml", files);
                 }
                 if (!sbLog.isEmpty() && log) {
-                    LOG.info("Dumping {} routes as YAML", size);
+                    LOG.info("Dumping {} data formats as YAML", size);
+                    LOG.info("{}", sbLog);
+                }
+            }
+        }
+
+        if (include.contains("*") || include.contains("all") || include.contains("rests")) {
+            int size = model.getRestDefinitions().size();
+            if (size > 0) {
+                Map<Resource, RestsDefinition> groups = new LinkedHashMap<>();
+                for (RestDefinition rest : model.getRestDefinitions()) {
+                    Resource res = rest.getResource();
+                    if (res == null) {
+                        res = dummy;
+                    }
+                    RestsDefinition rests = groups.computeIfAbsent(res, resource -> new RestsDefinition());
+                    rests.getRests().add(rest);
+                }
+                StringBuilder sbLog = new StringBuilder();
+                for (Map.Entry<Resource, RestsDefinition> entry : groups.entrySet()) {
+                    RestsDefinition def = entry.getValue();
+                    Resource resource = entry.getKey();
+
+                    StringBuilder sbLocal = new StringBuilder();
+                    doDumpYaml(camelContext, def, resource == dummy ? null : resource, dumper, "rests", sbLocal, sbLog);
+                    // dump each resource into its own file
+                    doDumpToDirectory(resource, sbLocal, "rests", "yaml", files);
+                }
+                if (!sbLog.isEmpty() && log) {
+                    LOG.info("Dumping {} rests as YAML", size);
                     LOG.info("{}", sbLog);
                 }
             }
@@ -257,35 +284,6 @@ public class DefaultDumpRoutesStrategy extends ServiceSupport implements DumpRou
             }
         }
 
-        if (include.contains("*") || include.contains("all") || include.contains("rests")) {
-            int size = model.getRestDefinitions().size();
-            if (size > 0) {
-                Map<Resource, RestsDefinition> groups = new LinkedHashMap<>();
-                for (RestDefinition rest : model.getRestDefinitions()) {
-                    Resource res = rest.getResource();
-                    if (res == null) {
-                        res = dummy;
-                    }
-                    RestsDefinition rests = groups.computeIfAbsent(res, resource -> new RestsDefinition());
-                    rests.getRests().add(rest);
-                }
-                StringBuilder sbLog = new StringBuilder();
-                for (Map.Entry<Resource, RestsDefinition> entry : groups.entrySet()) {
-                    RestsDefinition def = entry.getValue();
-                    Resource resource = entry.getKey();
-
-                    StringBuilder sbLocal = new StringBuilder();
-                    doDumpYaml(camelContext, def, resource == dummy ? null : resource, dumper, "rests", sbLocal, sbLog);
-                    // dump each resource into its own file
-                    doDumpToDirectory(resource, sbLocal, "rests", "yaml", files);
-                }
-                if (!sbLog.isEmpty() && log) {
-                    LOG.info("Dumping {} rests as YAML", size);
-                    LOG.info("{}", sbLog);
-                }
-            }
-        }
-
         if (include.contains("*") || include.contains("all") || include.contains("routeTemplates")
                 || include.contains("route-templates")) {
             int size = model.getRouteTemplateDefinitions().size();
@@ -316,6 +314,40 @@ public class DefaultDumpRoutesStrategy extends ServiceSupport implements DumpRou
                 }
             }
         }
+
+        if (include.contains("*") || include.contains("all") || include.contains("routes")) {
+            int size = model.getRouteDefinitions().size();
+            if (size > 0) {
+                Map<Resource, RoutesDefinition> groups = new LinkedHashMap<>();
+                for (RouteDefinition route : model.getRouteDefinitions()) {
+                    if ((route.isRest() != null && route.isRest()) || (route.isTemplate() != null && route.isTemplate())) {
+                        // skip routes that are rest/templates
+                        continue;
+                    }
+                    Resource res = route.getResource();
+                    if (res == null) {
+                        res = dummy;
+                    }
+                    RoutesDefinition routes = groups.computeIfAbsent(res, resource -> new RoutesDefinition());
+                    routes.getRoutes().add(route);
+                }
+                StringBuilder sbLog = new StringBuilder();
+                for (Map.Entry<Resource, RoutesDefinition> entry : groups.entrySet()) {
+                    RoutesDefinition def = entry.getValue();
+                    Resource resource = entry.getKey();
+
+                    StringBuilder sbLocal = new StringBuilder();
+                    doDumpYaml(camelContext, def, resource == dummy ? null : resource, dumper, "routes", sbLocal, sbLog);
+                    // dump each resource into its own file
+                    doDumpToDirectory(resource, sbLocal, "routes", "yaml", files);
+                }
+                if (!sbLog.isEmpty() && log) {
+                    LOG.info("Dumping {} routes as YAML", size);
+                    LOG.info("{}", sbLog);
+                }
+            }
+        }
+
     }
 
     protected void doDumpYaml(
@@ -339,6 +371,30 @@ public class DefaultDumpRoutesStrategy extends ServiceSupport implements DumpRou
             appendLogDump(resource, dump, sbLog);
         } catch (Exception e) {
             LOG.warn("Error dumping {}} to YAML due to {}. This exception is ignored.", kind, e.getMessage(), e);
+        }
+    }
+
+    protected void doDumpYamlDataFormats(
+            CamelContext camelContext, Map dataFormats, Resource resource,
+            ModelToYAMLDumper dumper, String kind, StringBuilder sbLocal, StringBuilder sbLog) {
+        try {
+            String dump = dumper.dumpDataFormatsAsYaml(camelContext, dataFormats);
+            sbLocal.append(dump);
+            appendLogDump(resource, dump, sbLog);
+        } catch (Exception e) {
+            LOG.warn("Error dumping {}} to YAML due to {}. This exception is ignored.", kind, e.getMessage(), e);
+        }
+    }
+
+    protected void doDumpXmlDataFormats(
+            CamelContext camelContext, Map dataFormats, Resource resource,
+            ModelToXMLDumper dumper, String kind, StringBuilder sbLocal, StringBuilder sbLog) {
+        try {
+            String dump = dumper.dumpDataFormatsAsXml(camelContext, dataFormats);
+            sbLocal.append(dump);
+            appendLogDump(resource, dump, sbLog);
+        } catch (Exception e) {
+            LOG.warn("Error dumping {}} to XML due to {}. This exception is ignored.", kind, e.getMessage(), e);
         }
     }
 
@@ -377,35 +433,60 @@ public class DefaultDumpRoutesStrategy extends ServiceSupport implements DumpRou
             }
         }
 
-        if (include.contains("*") || include.contains("all") || include.contains("routes")) {
-            int size = model.getRouteDefinitions().size();
+        if (include.contains("*") || include.contains("all") || include.contains("dataFormats")) {
+            int size = model.getDataFormats().size();
             if (size > 0) {
-                Map<Resource, RoutesDefinition> groups = new LinkedHashMap<>();
-                for (RouteDefinition route : model.getRouteDefinitions()) {
-                    if ((route.isRest() != null && route.isRest()) || (route.isTemplate() != null && route.isTemplate())) {
-                        // skip routes that are rest/templates
-                        continue;
-                    }
-                    Resource res = route.getResource();
+                Map<Resource, Map<String, DataFormatDefinition>> groups = new LinkedHashMap<>();
+                for (Map.Entry<String, DataFormatDefinition> entry : model.getDataFormats().entrySet()) {
+                    Resource res = entry.getValue().getResource();
                     if (res == null) {
                         res = dummy;
                     }
-                    RoutesDefinition routes = groups.computeIfAbsent(res, resource -> new RoutesDefinition());
-                    routes.getRoutes().add(route);
+                    Map<String, DataFormatDefinition> dfs = groups.computeIfAbsent(res, resource -> new LinkedHashMap<>());
+                    dfs.put(entry.getKey(), entry.getValue());
                 }
                 StringBuilder sbLog = new StringBuilder();
-                for (Map.Entry<Resource, RoutesDefinition> entry : groups.entrySet()) {
-                    RoutesDefinition def = entry.getValue();
+                for (Map.Entry<Resource, Map<String, DataFormatDefinition>> entry : groups.entrySet()) {
+                    Map<String, DataFormatDefinition> dfs = entry.getValue();
                     Resource resource = entry.getKey();
 
                     StringBuilder sbLocal = new StringBuilder();
-                    doDumpXml(camelContext, def, resource == dummy ? null : resource, dumper, "route", "routes", sbLocal,
+                    doDumpXmlDataFormats(camelContext, dfs, resource == dummy ? null : resource, dumper, "dataFormats", sbLocal,
                             sbLog);
                     // dump each resource into its own file
-                    doDumpToDirectory(resource, sbLocal, "routes", "xml", files);
+                    doDumpToDirectory(resource, sbLocal, "dataFormats", "xml", files);
                 }
                 if (!sbLog.isEmpty() && log) {
-                    LOG.info("Dumping {} routes as XML", size);
+                    LOG.info("Dumping {} data formats as XML", size);
+                    LOG.info("{}", sbLog);
+                }
+            }
+        }
+
+        if (include.contains("*") || include.contains("all") || include.contains("rests")) {
+            int size = model.getRestDefinitions().size();
+            if (size > 0) {
+                Map<Resource, RestsDefinition> groups = new LinkedHashMap<>();
+                for (RestDefinition rest : model.getRestDefinitions()) {
+                    Resource res = rest.getResource();
+                    if (res == null) {
+                        res = dummy;
+                    }
+                    RestsDefinition routes = groups.computeIfAbsent(res, resource -> new RestsDefinition());
+                    routes.getRests().add(rest);
+                }
+                StringBuilder sbLog = new StringBuilder();
+                for (Map.Entry<Resource, RestsDefinition> entry : groups.entrySet()) {
+                    RestsDefinition def = entry.getValue();
+                    Resource resource = entry.getKey();
+
+                    StringBuilder sbLocal = new StringBuilder();
+                    doDumpXml(camelContext, def, resource == dummy ? null : resource, dumper, "rest", "rests", sbLocal, sbLog);
+                    // dump each resource into its own file
+                    doDumpToDirectory(resource, sbLocal, "rests", "xml", files);
+                }
+                if (!sbLog.isEmpty() && log) {
+                    LOG.info("Dumping {} rests as XML", size);
                     LOG.info("{}", sbLog);
                 }
             }
@@ -444,35 +525,6 @@ public class DefaultDumpRoutesStrategy extends ServiceSupport implements DumpRou
             }
         }
 
-        if (include.contains("*") || include.contains("all") || include.contains("rests")) {
-            int size = model.getRestDefinitions().size();
-            if (size > 0) {
-                Map<Resource, RestsDefinition> groups = new LinkedHashMap<>();
-                for (RestDefinition rest : model.getRestDefinitions()) {
-                    Resource res = rest.getResource();
-                    if (res == null) {
-                        res = dummy;
-                    }
-                    RestsDefinition routes = groups.computeIfAbsent(res, resource -> new RestsDefinition());
-                    routes.getRests().add(rest);
-                }
-                StringBuilder sbLog = new StringBuilder();
-                for (Map.Entry<Resource, RestsDefinition> entry : groups.entrySet()) {
-                    RestsDefinition def = entry.getValue();
-                    Resource resource = entry.getKey();
-
-                    StringBuilder sbLocal = new StringBuilder();
-                    doDumpXml(camelContext, def, resource == dummy ? null : resource, dumper, "rest", "rests", sbLocal, sbLog);
-                    // dump each resource into its own file
-                    doDumpToDirectory(resource, sbLocal, "rests", "xml", files);
-                }
-                if (!sbLog.isEmpty() && log) {
-                    LOG.info("Dumping {} rests as XML", size);
-                    LOG.info("{}", sbLog);
-                }
-            }
-        }
-
         if (include.contains("*") || include.contains("all") || include.contains("routeTemplates")
                 || include.contains("route-templates")) {
             int size = model.getRouteTemplateDefinitions().size();
@@ -499,6 +551,40 @@ public class DefaultDumpRoutesStrategy extends ServiceSupport implements DumpRou
                 }
                 if (!sbLog.isEmpty() && log) {
                     LOG.info("Dumping {} route-templates as XML", size);
+                    LOG.info("{}", sbLog);
+                }
+            }
+        }
+
+        if (include.contains("*") || include.contains("all") || include.contains("routes")) {
+            int size = model.getRouteDefinitions().size();
+            if (size > 0) {
+                Map<Resource, RoutesDefinition> groups = new LinkedHashMap<>();
+                for (RouteDefinition route : model.getRouteDefinitions()) {
+                    if ((route.isRest() != null && route.isRest()) || (route.isTemplate() != null && route.isTemplate())) {
+                        // skip routes that are rest/templates
+                        continue;
+                    }
+                    Resource res = route.getResource();
+                    if (res == null) {
+                        res = dummy;
+                    }
+                    RoutesDefinition routes = groups.computeIfAbsent(res, resource -> new RoutesDefinition());
+                    routes.getRoutes().add(route);
+                }
+                StringBuilder sbLog = new StringBuilder();
+                for (Map.Entry<Resource, RoutesDefinition> entry : groups.entrySet()) {
+                    RoutesDefinition def = entry.getValue();
+                    Resource resource = entry.getKey();
+
+                    StringBuilder sbLocal = new StringBuilder();
+                    doDumpXml(camelContext, def, resource == dummy ? null : resource, dumper, "route", "routes", sbLocal,
+                            sbLog);
+                    // dump each resource into its own file
+                    doDumpToDirectory(resource, sbLocal, "routes", "xml", files);
+                }
+                if (!sbLog.isEmpty() && log) {
+                    LOG.info("Dumping {} routes as XML", size);
                     LOG.info("{}", sbLog);
                 }
             }

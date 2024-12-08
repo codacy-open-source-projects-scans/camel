@@ -27,19 +27,22 @@ import java.util.Map;
 import jakarta.activation.DataHandler;
 import jakarta.activation.DataSource;
 
-import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-
+import org.apache.camel.CamelContext;
 import org.apache.camel.EndpointInject;
 import org.apache.camel.Exchange;
+import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Processor;
 import org.apache.camel.attachment.AttachmentMessage;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
+import org.apache.camel.converter.stream.InputStreamCache;
 import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.test.junit5.CamelTestSupport;
 import org.junit.jupiter.api.Test;
 import org.smooks.Smooks;
+import org.smooks.SmooksFactory;
+import org.smooks.api.ExecutionContext;
+import org.smooks.api.NotAppContextScoped;
 import org.smooks.cartridges.javabean.Bean;
 import org.smooks.cartridges.javabean.Value;
 import org.smooks.io.payload.Exports;
@@ -60,6 +63,10 @@ import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SmooksProcessorTest extends CamelTestSupport {
@@ -67,24 +74,25 @@ public class SmooksProcessorTest extends CamelTestSupport {
     @EndpointInject(value = "mock:result")
     private MockEndpoint result;
 
-    @Override
-    protected boolean useJmx() {
-        return true;
-    }
-
-    @Override
-    public boolean isUseRouteBuilder() {
-        return false;
+    public SmooksProcessorTest() {
+        super();
+        testConfigurationBuilder.withUseRouteBuilder(false);
+        testConfigurationBuilder.withJMX(true);
     }
 
     private void assertOneProcessedMessage() throws Exception {
         result.expectedMessageCount(1);
         template.sendBody("direct://input", getOrderEdi());
 
+        assertPostCondition();
+    }
+
+    private void assertPostCondition() throws InterruptedException, IOException {
         assertIsSatisfied();
 
         Exchange exchange = result.assertExchangeReceived(0);
-        assertIsInstanceOf(Document.class, exchange.getIn().getBody());
+        assertNotNull(exchange.getMessage().getHeader(SmooksConstants.SMOOKS_EXECUTION_CONTEXT, ExecutionContext.class));
+        assertIsInstanceOf(InputStreamCache.class, exchange.getIn().getBody());
         assertFalse(DiffBuilder.compare(getExpectedOrderXml()).withTest(exchange.getIn().getBody(String.class)).ignoreComments()
                 .ignoreWhitespace().build().hasDifferences());
     }
@@ -94,6 +102,94 @@ public class SmooksProcessorTest extends CamelTestSupport {
         context.addRoutes(createEdiToXmlRouteBuilder());
         context.start();
         assertOneProcessedMessage();
+    }
+
+    @Test
+    public void testProcessUsesExistingExecutionContextWhenExecutionContextIsInHeaderAndAllowExecutionContextFromHeaderIsTrue()
+            throws Exception {
+        Smooks smooks = new Smooks();
+        SmooksProcessor processor = new SmooksProcessor("edi-to-xml-smooks-config.xml", context);
+        processor.setSmooksFactory(new SmooksFactory() {
+            @Override
+            public Smooks createInstance() {
+                return smooks;
+            }
+
+            @Override
+            public Smooks createInstance(InputStream config) {
+                return null;
+            }
+
+            @Override
+            public Smooks createInstance(String config) {
+                return null;
+            }
+        });
+        processor.setAllowExecutionContextFromHeader(true);
+
+        final ExecutionContext[] executionContext = new ExecutionContext[1];
+        context.addRoutes(new RouteBuilder() {
+            @Override
+            public void configure() {
+                from("direct:input")
+                        .setHeader(SmooksConstants.SMOOKS_EXECUTION_CONTEXT, () -> {
+                            executionContext[0] = smooks.createExecutionContext();
+                            return executionContext[0];
+                        })
+                        .process(processor)
+                        .to("mock:result");
+            }
+
+        });
+        context.start();
+        template.sendBody("direct://input", getOrderEdi());
+
+        Exchange exchange = result.assertExchangeReceived(0);
+        assertEquals(executionContext[0], exchange.getMessage().getHeader(SmooksConstants.SMOOKS_EXECUTION_CONTEXT));
+    }
+
+    @Test
+    public void testProcessDoesNotUseExistingExecutionContextWhenExecutionContextIsInHeaderAndAllowExecutionContextFromHeaderIsFalse()
+            throws Exception {
+        Smooks smooks = new Smooks();
+        SmooksProcessor processor = new SmooksProcessor("edi-to-xml-smooks-config.xml", context);
+        processor.setSmooksFactory(new SmooksFactory() {
+            @Override
+            public Smooks createInstance() {
+                return smooks;
+            }
+
+            @Override
+            public Smooks createInstance(InputStream config) {
+                return null;
+            }
+
+            @Override
+            public Smooks createInstance(String config) {
+                return null;
+            }
+        });
+        processor.setAllowExecutionContextFromHeader(false);
+
+        final ExecutionContext[] executionContext = new ExecutionContext[1];
+        context.addRoutes(new RouteBuilder() {
+            @Override
+            public void configure() {
+                from("direct:input")
+                        .setHeader(SmooksConstants.SMOOKS_EXECUTION_CONTEXT, () -> {
+                            executionContext[0] = smooks.createExecutionContext();
+                            return executionContext[0];
+                        })
+                        .process(processor)
+                        .to("mock:result");
+            }
+
+        });
+        context.start();
+        template.sendBody("direct://input", getOrderEdi());
+
+        Exchange exchange = result.assertExchangeReceived(0);
+        assertNotEquals(executionContext[0], exchange.getMessage().getHeader(SmooksConstants.SMOOKS_EXECUTION_CONTEXT));
     }
 
     @Test
@@ -155,7 +251,47 @@ public class SmooksProcessorTest extends CamelTestSupport {
     }
 
     @Test
-    public void testProcessGivenFileWhenSmooksExportIsStringResult() throws Exception {
+    public void testProcessWhenBodyIsByteArray() throws Exception {
+        context.addRoutes(createEdiToXmlRouteBuilder());
+        context.start();
+
+        result.expectedMessageCount(1);
+        template.sendBody("direct://input", getOrderEdi().getBytes());
+
+        assertPostCondition();
+    }
+
+    @Test
+    public void testProcessWhenBodyIsNotSource() throws Exception {
+        context.addRoutes(createEdiToXmlRouteBuilder());
+        context.start();
+
+        RuntimeException runtimeException
+                = assertThrows(RuntimeException.class, () -> template.sendBody("direct://input", new Object()));
+        assertEquals(InvalidPayloadException.class, runtimeException.getCause().getCause().getClass());
+    }
+
+    @Test
+    public void testRegisteredCamelContextIsNotAppContextScoped() throws Exception {
+        context.addRoutes(createEdiToXmlRouteBuilder());
+        context.start();
+
+        result.expectedMessageCount(1);
+        template.sendBody("direct://input", getOrderEdi());
+
+        Exchange exchange = result.assertExchangeReceived(0);
+        ExecutionContext executionContext
+                = exchange.getMessage().getHeader(SmooksConstants.SMOOKS_EXECUTION_CONTEXT, ExecutionContext.class);
+        Object camelContextRef
+                = executionContext.getApplicationContext().getRegistry()
+                        .lookup(registryEntries -> registryEntries.entrySet().stream()
+                                .filter(e -> e.getKey().equals(CamelContext.class)).findFirst().get().getValue());
+        assertInstanceOf(NotAppContextScoped.Ref.class, camelContextRef);
+
+    }
+
+    @Test
+    public void testProcessWhenBodyIsFileAndSmooksExportIsStringSink() throws Exception {
         deleteDirectory("target/smooks");
         context.addRoutes(new RouteBuilder() {
             public void configure() {
@@ -176,7 +312,7 @@ public class SmooksProcessorTest extends CamelTestSupport {
     }
 
     @Test
-    public void testProcessWhenSmooksExportIsJavaResultAndBodyIsVisitedByJavaBeanValue() throws Exception {
+    public void testProcessWhenSmooksExportIsJavaSinkAndBodyIsVisitedByJavaBeanValue() throws Exception {
         Smooks smooks = new Smooks().setExports(new Exports(JavaSink.class));
         context.addRoutes(new RouteBuilder() {
             @Override
@@ -195,7 +331,7 @@ public class SmooksProcessorTest extends CamelTestSupport {
     }
 
     @Test
-    public void testProcessWhenSmooksExportIsJavaResultAndBodyIsVisitedByMultipleJavaBeanValues() throws Exception {
+    public void testProcessWhenSmooksExportIsJavaSinkAndBodyIsVisitedByMultipleJavaBeanValues() throws Exception {
         Smooks smooks = new Smooks().setExports(new Exports(JavaSink.class));
         context.addRoutes(new RouteBuilder() {
             @Override
@@ -216,7 +352,7 @@ public class SmooksProcessorTest extends CamelTestSupport {
     }
 
     @Test
-    public void testProcessWhenSmooksExportIsJavaResultAndBodyIsVisitedByBean() throws Exception {
+    public void testProcessWhenSmooksExportIsJavaSinkAndBodyIsVisitedByBean() throws Exception {
         Smooks smooks = new Smooks().setExports(new Exports(JavaSink.class));
         context.addRoutes(new RouteBuilder() {
             @Override
@@ -237,7 +373,7 @@ public class SmooksProcessorTest extends CamelTestSupport {
     }
 
     @Test
-    public void testProcessWhenSmooksExportIsStringResult() throws Exception {
+    public void testProcessWhenSmooksExportIsStringSink() throws Exception {
         context.addRoutes(new RouteBuilder() {
             public void configure() {
                 from("direct:a")
@@ -278,7 +414,7 @@ public class SmooksProcessorTest extends CamelTestSupport {
                 SmooksProcessor processor = new SmooksProcessor("edi-to-xml-smooks-config.xml", context);
                 processor.setReportPath("target/smooks-report.html");
 
-                from("direct:input").process(processor).convertBodyTo(Node.class).to("mock:result");
+                from("direct:input").process(processor).to("mock:result");
             }
         };
     }

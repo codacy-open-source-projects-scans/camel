@@ -26,6 +26,7 @@ public class KubernetesVaultConfigurationPropertiesConfigurer extends org.apache
         map.put("AzureVaultConfiguration", org.apache.camel.vault.AzureVaultConfiguration.class);
         map.put("GcpVaultConfiguration", org.apache.camel.vault.GcpVaultConfiguration.class);
         map.put("HashicorpVaultConfiguration", org.apache.camel.vault.HashicorpVaultConfiguration.class);
+        map.put("KubernetesConfigMapVaultConfiguration", org.apache.camel.vault.KubernetesConfigMapVaultConfiguration.class);
         map.put("KubernetesVaultConfiguration", org.apache.camel.vault.KubernetesVaultConfiguration.class);
         map.put("RefreshEnabled", boolean.class);
         map.put("Secrets", java.lang.String.class);
@@ -45,6 +46,8 @@ public class KubernetesVaultConfigurationPropertiesConfigurer extends org.apache
         case "gcpVaultConfiguration": target.setGcpVaultConfiguration(property(camelContext, org.apache.camel.vault.GcpVaultConfiguration.class, value)); return true;
         case "hashicorpvaultconfiguration":
         case "hashicorpVaultConfiguration": target.setHashicorpVaultConfiguration(property(camelContext, org.apache.camel.vault.HashicorpVaultConfiguration.class, value)); return true;
+        case "kubernetesconfigmapvaultconfiguration":
+        case "kubernetesConfigMapVaultConfiguration": target.setKubernetesConfigMapVaultConfiguration(property(camelContext, org.apache.camel.vault.KubernetesConfigMapVaultConfiguration.class, value)); return true;
         case "kubernetesvaultconfiguration":
         case "kubernetesVaultConfiguration": target.setKubernetesVaultConfiguration(property(camelContext, org.apache.camel.vault.KubernetesVaultConfiguration.class, value)); return true;
         case "refreshenabled":
@@ -74,6 +77,8 @@ public class KubernetesVaultConfigurationPropertiesConfigurer extends org.apache
         case "gcpVaultConfiguration": return org.apache.camel.vault.GcpVaultConfiguration.class;
         case "hashicorpvaultconfiguration":
         case "hashicorpVaultConfiguration": return org.apache.camel.vault.HashicorpVaultConfiguration.class;
+        case "kubernetesconfigmapvaultconfiguration":
+        case "kubernetesConfigMapVaultConfiguration": return org.apache.camel.vault.KubernetesConfigMapVaultConfiguration.class;
         case "kubernetesvaultconfiguration":
         case "kubernetesVaultConfiguration": return org.apache.camel.vault.KubernetesVaultConfiguration.class;
         case "refreshenabled":
@@ -95,6 +100,8 @@ public class KubernetesVaultConfigurationPropertiesConfigurer extends org.apache
         case "gcpVaultConfiguration": return target.getGcpVaultConfiguration();
         case "hashicorpvaultconfiguration":
         case "hashicorpVaultConfiguration": return target.getHashicorpVaultConfiguration();
+        case "kubernetesconfigmapvaultconfiguration":
+        case "kubernetesConfigMapVaultConfiguration": return target.getKubernetesConfigMapVaultConfiguration();
         case "kubernetesvaultconfiguration":
         case "kubernetesVaultConfiguration": return target.getKubernetesVaultConfiguration();
         case "refreshenabled":

@@ -25,15 +25,19 @@ import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.commands.kubernetes.traits.BaseTrait;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
+@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*",
+                          disabledReason = "Requires too much network resources")
 class PodLogsTest extends KubernetesBaseTest {
 
     @Test
     public void shouldHandlePodNotFound() throws Exception {
         PodLogs command = createCommand();
         command.name = "mickey-mouse";
-        command.maxWaitAttempts = 2; // total timeout of 4 seconds
-        command.doCall();
+        command.maxRetryAttempts = 2; // total timeout of 4 seconds
+        int exit = command.doCall();
+        Assertions.assertEquals(0, exit);
 
         Assertions.assertTrue(
                 printer.getOutput().contains("Pod for label app.kubernetes.io/name=mickey-mouse not available"));
@@ -44,7 +48,7 @@ class PodLogsTest extends KubernetesBaseTest {
         Pod pod = new PodBuilder()
                 .withNewMetadata()
                 .withName("pod")
-                .withLabels(Map.of(BaseTrait.KUBERNETES_NAME_LABEL, "routes"))
+                .withLabels(Map.of(BaseTrait.KUBERNETES_LABEL_NAME, "routes"))
                 .endMetadata()
                 .withNewStatus()
                 .withPhase("Running")
@@ -54,7 +58,7 @@ class PodLogsTest extends KubernetesBaseTest {
         kubernetesClient.pods().resource(pod).create();
 
         var podLog = createCommand();
-        podLog.maxLogMessages = 10;
+        podLog.maxMessageCount = 10;
         podLog.name = "routes";
         int exit = podLog.doCall();
         Assertions.assertEquals(0, exit);

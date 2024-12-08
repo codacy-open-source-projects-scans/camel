@@ -623,6 +623,12 @@ public final class DefaultConfigurationConfigurer {
             VaultConfiguration vault = camelContext.getVaultConfiguration();
             vault.setKubernetesVaultConfiguration(kubernetes);
         }
+        KubernetesConfigMapVaultConfiguration kubernetesConfigmaps
+                = getSingleBeanOfType(registry, KubernetesConfigMapVaultConfiguration.class);
+        if (kubernetesConfigmaps != null) {
+            VaultConfiguration vault = camelContext.getVaultConfiguration();
+            vault.setKubernetesConfigMapVaultConfiguration(kubernetesConfigmaps);
+        }
         configureVault(camelContext);
 
         // apply custom configurations if any
@@ -703,6 +709,24 @@ public final class DefaultConfigurationConfigurer {
         if (vc.kubernetes().isRefreshEnabled()) {
             Optional<Runnable> task = PluginHelper.getPeriodTaskResolver(camelContext)
                     .newInstance("kubernetes-secret-refresh", Runnable.class);
+            if (task.isPresent()) {
+                Runnable r = task.get();
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Scheduling: {} ", r);
+                }
+                if (camelContext.hasService(ContextReloadStrategy.class) == null) {
+                    // refresh is enabled then we need to automatically enable context-reload as well
+                    ContextReloadStrategy reloader = new DefaultContextReloadStrategy();
+                    camelContext.addService(reloader);
+                }
+                PeriodTaskScheduler scheduler = PluginHelper.getPeriodTaskScheduler(camelContext);
+                scheduler.scheduledTask(r);
+            }
+        }
+
+        if (vc.kubernetesConfigmaps().isRefreshEnabled()) {
+            Optional<Runnable> task = PluginHelper.getPeriodTaskResolver(camelContext)
+                    .newInstance("kubernetes-configmaps-refresh", Runnable.class);
             if (task.isPresent()) {
                 Runnable r = task.get();
                 if (LOG.isDebugEnabled()) {

@@ -49,12 +49,14 @@ import org.apache.camel.spi.PropertiesComponent;
 import org.apache.camel.spi.Registry;
 import org.apache.camel.spi.UnitOfWork;
 import org.apache.camel.support.ConstantExpressionAdapter;
+import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.ExpressionAdapter;
 import org.apache.camel.support.GroupIterator;
 import org.apache.camel.support.GroupTokenIterator;
 import org.apache.camel.support.LanguageHelper;
 import org.apache.camel.support.LanguageSupport;
+import org.apache.camel.support.PropertyBindingSupport;
 import org.apache.camel.support.SingleInputTypedLanguageSupport;
 import org.apache.camel.util.InetAddressUtil;
 import org.apache.camel.util.ObjectHelper;
@@ -1008,6 +1010,64 @@ public class ExpressionBuilder {
             @Override
             public String toString() {
                 return "language[" + language + ":" + expression + "]";
+            }
+        };
+    }
+
+    /**
+     * Returns an expression for evaluating the expression/predicate using the given language
+     *
+     * @param  expression the expression providing the input
+     * @param  language   the language
+     * @param  value      the value to use for evaluation
+     * @return            an expression object which will evaluate the expression/predicate using the given language
+     */
+    public static Expression languageExpression(
+            final Expression expression, final String language, final String value, Class<?> resultType) {
+        return new ExpressionAdapter() {
+            private Expression expr;
+            private Predicate pred;
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                Object result = expression.evaluate(exchange, Object.class);
+                if (result != null) {
+                    Exchange dummy = new DefaultExchange(exchange);
+                    dummy.getMessage().setBody(result);
+                    return expr.evaluate(dummy, resultType);
+                }
+                return null;
+            }
+
+            @Override
+            public boolean matches(Exchange exchange) {
+                Object result = expression.evaluate(exchange, Object.class);
+                if (result != null) {
+                    Exchange dummy = new DefaultExchange(exchange);
+                    dummy.getMessage().setBody(result);
+                    return pred.matches(dummy);
+                }
+                return false;
+            }
+
+            @Override
+            public void init(CamelContext context) {
+                super.init(context);
+                Language lan = context.resolveLanguage(language);
+                if (lan != null) {
+                    pred = lan.createPredicate(value);
+                    pred.init(context);
+                    expr = lan.createExpression(value);
+                    expr.init(context);
+                    PropertyBindingSupport.build().bind(context, expr, "resultQName", "string");
+                } else {
+                    throw new NoSuchLanguageException(language);
+                }
+            }
+
+            @Override
+            public String toString() {
+                return language + "(" + expression + ")";
             }
         };
     }
@@ -2385,6 +2445,29 @@ public class ExpressionBuilder {
         };
     }
 
+    public static Expression beanExpression(final Class<?> bean, final String method) {
+        return new ExpressionAdapter() {
+            private Language language;
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                Expression exp = language.createExpression(null, new Object[] { null, null, method, bean });
+                exp.init(exchange.getContext());
+                return exp.evaluate(exchange, Object.class);
+            }
+
+            @Override
+            public void init(CamelContext context) {
+                super.init(context);
+                this.language = context.resolveLanguage("bean");
+            }
+
+            public String toString() {
+                return "bean(" + bean + ", " + method + ")";
+            }
+        };
+    }
+
     public static Expression propertiesComponentExpression(final String key, final String defaultValue) {
         return new ExpressionAdapter() {
             private Expression exp;
@@ -2503,6 +2586,21 @@ public class ExpressionBuilder {
             @Override
             public String toString() {
                 return "xtokenize(" + path + ")";
+            }
+        };
+    }
+
+    public static Expression customExpression(final Expression expression, final Function<Object, Object> function) {
+        return new ExpressionAdapter() {
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                Object input = expression.evaluate(exchange, Object.class);
+                return function.apply(input);
+            }
+
+            public String toString() {
+                return "custom(" + expression + ")";
             }
         };
     }

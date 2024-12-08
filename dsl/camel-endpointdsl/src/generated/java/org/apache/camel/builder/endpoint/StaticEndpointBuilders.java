@@ -2567,7 +2567,7 @@ public class StaticEndpointBuilders {
      * Receives events from ClickUp
      * 
      * Category: cloud
-     * Since: 4.9.0-SNAPSHOT
+     * Since: 4.9
      * Maven coordinates: org.apache.camel:camel-clickup
      * 
      * Syntax: <code>clickup:workspaceId</code>
@@ -2586,7 +2586,7 @@ public class StaticEndpointBuilders {
      * Receives events from ClickUp
      * 
      * Category: cloud
-     * Since: 4.9.0-SNAPSHOT
+     * Since: 4.9
      * Maven coordinates: org.apache.camel:camel-clickup
      * 
      * Syntax: <code>clickup:workspaceId</code>
@@ -4379,6 +4379,7 @@ public class StaticEndpointBuilders {
      * @param path path
      * @return the dsl builder
      */
+    @Deprecated
     public static Etcd3EndpointBuilderFactory.Etcd3EndpointBuilder etcd3(String path) {
         return etcd3("etcd3", path);
     }
@@ -4400,6 +4401,7 @@ public class StaticEndpointBuilders {
      * @param path path
      * @return the dsl builder
      */
+    @Deprecated
     public static Etcd3EndpointBuilderFactory.Etcd3EndpointBuilder etcd3(String componentName, String path) {
         return Etcd3EndpointBuilderFactory.endpointBuilder(componentName, path);
     }
@@ -4676,6 +4678,46 @@ public class StaticEndpointBuilders {
      */
     public static FlinkEndpointBuilderFactory.FlinkEndpointBuilder flink(String componentName, String path) {
         return FlinkEndpointBuilderFactory.endpointBuilder(componentName, path);
+    }
+    /**
+     * Flowable (camel-flowable)
+     * Send and receive messages from the Flowable BPMN and CMMN engines.
+     * 
+     * Category: workflow
+     * Since: 4.9
+     * Maven coordinates: org.apache.camel:camel-flowable
+     * 
+     * Syntax: <code>flowable:channelKey</code>
+     * 
+     * Path parameter: channelKey (required)
+     * The channel key
+     * 
+     * @param path channelKey
+     * @return the dsl builder
+     */
+    public static FlowableEndpointBuilderFactory.FlowableEndpointBuilder flowable(String path) {
+        return flowable("flowable", path);
+    }
+    /**
+     * Flowable (camel-flowable)
+     * Send and receive messages from the Flowable BPMN and CMMN engines.
+     * 
+     * Category: workflow
+     * Since: 4.9
+     * Maven coordinates: org.apache.camel:camel-flowable
+     * 
+     * Syntax: <code>flowable:channelKey</code>
+     * 
+     * Path parameter: channelKey (required)
+     * The channel key
+     * 
+     * @param componentName to use a custom component name for the endpoint
+     * instead of the default name
+     * @param path channelKey
+     * @return the dsl builder
+     */
+    public static FlowableEndpointBuilderFactory.FlowableEndpointBuilder flowable(String componentName, String path) {
+        return FlowableEndpointBuilderFactory.endpointBuilder(componentName, path);
     }
     /**
      * FOP (camel-fop)
@@ -5488,6 +5530,7 @@ public class StaticEndpointBuilders {
      * @param path projectId:location:destinationName
      * @return the dsl builder
      */
+    @Deprecated
     public static GooglePubsubLiteEndpointBuilderFactory.GooglePubsubLiteEndpointBuilder googlePubsubLite(String path) {
         return googlePubsubLite("google-pubsub-lite", path);
     }
@@ -5518,6 +5561,7 @@ public class StaticEndpointBuilders {
      * @param path projectId:location:destinationName
      * @return the dsl builder
      */
+    @Deprecated
     public static GooglePubsubLiteEndpointBuilderFactory.GooglePubsubLiteEndpointBuilder googlePubsubLite(String componentName, String path) {
         return GooglePubsubLiteEndpointBuilderFactory.endpointBuilder(componentName, path);
     }
@@ -13162,7 +13206,8 @@ public class StaticEndpointBuilders {
     }
     /**
      * Smooks (camel-smooks)
-     * EDI, XML, CSV, etc. based data transformation using Smooks.
+     * Use Smooks to transform, route, and bind both XML and non-XML data,
+     * including EDI, CSV, JSON, and YAML.
      * 
      * Category: transformation
      * Since: 4.7
@@ -13171,7 +13216,7 @@ public class StaticEndpointBuilders {
      * Syntax: <code>smooks:smooksConfig</code>
      * 
      * Path parameter: smooksConfig (required)
-     * Smooks XML configuration file
+     * Path to the Smooks configuration file
      * This option can also be loaded from an existing file, by prefixing with
      * file: or classpath: followed by the location of the file.
      * 
@@ -13183,7 +13228,8 @@ public class StaticEndpointBuilders {
     }
     /**
      * Smooks (camel-smooks)
-     * EDI, XML, CSV, etc. based data transformation using Smooks.
+     * Use Smooks to transform, route, and bind both XML and non-XML data,
+     * including EDI, CSV, JSON, and YAML.
      * 
      * Category: transformation
      * Since: 4.7
@@ -13192,7 +13238,7 @@ public class StaticEndpointBuilders {
      * Syntax: <code>smooks:smooksConfig</code>
      * 
      * Path parameter: smooksConfig (required)
-     * Smooks XML configuration file
+     * Path to the Smooks configuration file
      * This option can also be loaded from an existing file, by prefixing with
      * file: or classpath: followed by the location of the file.
      * 

@@ -34,7 +34,7 @@ import org.apache.camel.util.json.JsonObject;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
-@Command(name = "properties", description = "List configuration properties", sortOptions = false)
+@Command(name = "properties", description = "List configuration properties", sortOptions = false, showDefaultValues = true)
 public class ListProperties extends ProcessWatchCommand {
 
     public static class PidNameKeyCompletionCandidates implements Iterable<String> {
@@ -200,14 +200,11 @@ public class ListProperties extends ProcessWatchCommand {
         if (loc == null) {
             return "";
         }
-        if ("initial".equals(loc) || "override".equals(loc)) {
-            loc = "camel-main";
-        } else if ("SYS".equals(loc)) {
-            loc = "JVM System Property";
-        } else if ("ENV".equals(loc) || "env".equals(loc)) {
-            loc = "OS Environment Variable";
-        } else if ("arguments".equals(loc) || "CLI".equals(loc)) {
-            loc = "Command Line";
+        switch (loc) {
+            case "initial", "override" -> loc = "camel-main";
+            case "SYS" -> loc = "JVM System Property";
+            case "ENV", "env" -> loc = "OS Environment Variable";
+            case "arguments", "CLI" -> loc = "Command Line";
         }
         return loc;
     }

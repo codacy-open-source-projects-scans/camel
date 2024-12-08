@@ -39,6 +39,7 @@ import org.apache.camel.model.dataformat.FhirDataformat;
 import org.apache.camel.model.dataformat.FhirJsonDataFormat;
 import org.apache.camel.model.dataformat.FhirXmlDataFormat;
 import org.apache.camel.model.dataformat.FlatpackDataFormat;
+import org.apache.camel.model.dataformat.FuryDataFormat;
 import org.apache.camel.model.dataformat.GrokDataFormat;
 import org.apache.camel.model.dataformat.GzipDeflaterDataFormat;
 import org.apache.camel.model.dataformat.HL7DataFormat;
@@ -53,6 +54,7 @@ import org.apache.camel.model.dataformat.PGPDataFormat;
 import org.apache.camel.model.dataformat.ParquetAvroDataFormat;
 import org.apache.camel.model.dataformat.ProtobufDataFormat;
 import org.apache.camel.model.dataformat.RssDataFormat;
+import org.apache.camel.model.dataformat.SmooksDataFormat;
 import org.apache.camel.model.dataformat.SoapDataFormat;
 import org.apache.camel.model.dataformat.SwiftMtDataFormat;
 import org.apache.camel.model.dataformat.SwiftMxDataFormat;
@@ -204,6 +206,8 @@ public abstract class DataFormatReifier<T extends DataFormatDefinition> extends 
             return new FhirDataFormatReifier<>(camelContext, definition);
         } else if (definition instanceof FlatpackDataFormat) {
             return new FlatpackDataFormatReifier(camelContext, definition);
+        } else if (definition instanceof FuryDataFormat) {
+            return new FuryDataFormatReifier(camelContext, definition);
         } else if (definition instanceof GrokDataFormat) {
             return new GrokDataFormatReifier(camelContext, definition);
         } else if (definition instanceof GzipDeflaterDataFormat) {
@@ -232,6 +236,8 @@ public abstract class DataFormatReifier<T extends DataFormatDefinition> extends 
             return new ProtobufDataFormatReifier(camelContext, definition);
         } else if (definition instanceof RssDataFormat) {
             return new RssDataFormatReifier(camelContext, definition);
+        } else if (definition instanceof SmooksDataFormat) {
+            return new SmooksDataFormatReifier(camelContext, definition);
         } else if (definition instanceof SoapDataFormat) {
             return new SoapDataFormatReifier(camelContext, definition);
         } else if (definition instanceof SyslogDataFormat) {

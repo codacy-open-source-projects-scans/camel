@@ -24,12 +24,12 @@
     <parent>
         <groupId>org.apache.camel</groupId>
         <artifactId>camel-google-parent</artifactId>
-        <version>4.9.0-SNAPSHOT</version>
+        <version>4.10.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>camel-google-pubsub-lite</artifactId>
     <packaging>jar</packaging>
-    <name>Camel :: Google :: PubSub Lite</name>
+    <name>Camel :: Google :: PubSub Lite (deprecated)</name>
     <description>Camel Component for Google Cloud Platform PubSub Lite</description>
 
     <properties>

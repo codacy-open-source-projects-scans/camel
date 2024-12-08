@@ -50,7 +50,8 @@ import picocli.CommandLine;
 import static org.apache.camel.dsl.jbang.core.commands.catalog.CatalogBaseCommand.findComponentNames;
 
 @CommandLine.Command(name = "doc",
-                     description = "Shows documentation for kamelet, component, and other Camel resources", sortOptions = false)
+                     description = "Shows documentation for kamelet, component, and other Camel resources", sortOptions = false,
+                     showDefaultValues = true)
 public class CatalogDoc extends CamelCommand {
 
     @CommandLine.Parameters(description = "Name of kamelet, component, dataformat, or other Camel resource",
@@ -98,7 +99,7 @@ public class CatalogDoc extends CamelCommand {
     boolean headers;
 
     @CommandLine.Option(names = {
-            "--kamelets-version" }, description = "Apache Camel Kamelets version", defaultValue = "4.8.0")
+            "--kamelets-version" }, description = "Apache Camel Kamelets version", defaultValue = "4.9.0")
     String kameletsVersion;
 
     CamelCatalog catalog;
