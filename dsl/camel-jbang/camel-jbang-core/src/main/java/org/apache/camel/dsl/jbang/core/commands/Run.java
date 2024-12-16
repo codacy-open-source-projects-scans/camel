@@ -932,9 +932,13 @@ public class Run extends CamelCommand {
         eq.excludes = this.excludes;
         eq.filePaths = this.filePaths;
         eq.files = this.files;
+        eq.name = this.name;
         eq.gav = this.gav;
         if (eq.gav == null) {
-            eq.gav = "org.example.project:jbang-run-dummy:1.0-SNAPSHOT";
+            if (eq.name == null) {
+                eq.name = "jbang-run-dummy";
+            }
+            eq.gav = "org.example.project:" + eq.name + ":1.0-SNAPSHOT";
         }
         eq.dependencies = this.dependencies;
         if (!this.exportRun) {
@@ -999,9 +1003,13 @@ public class Run extends CamelCommand {
         eq.excludes = this.excludes;
         eq.filePaths = this.filePaths;
         eq.files = this.files;
+        eq.name = this.name;
         eq.gav = this.gav;
         if (eq.gav == null) {
-            eq.gav = "org.example.project:jbang-run-dummy:1.0-SNAPSHOT";
+            if (eq.name == null) {
+                eq.name = "jbang-run-dummy";
+            }
+            eq.gav = "org.example.project:" + eq.name + ":1.0-SNAPSHOT";
         }
         eq.dependencies.addAll(dependencies);
         if (!this.exportRun) {
@@ -1560,7 +1568,7 @@ public class Run extends CamelCommand {
                 }
                 sj.add(part);
             }
-            main = new KameletMain(sj.toString());
+            main = new KameletMain(CAMEL_INSTANCE_TYPE, sj.toString());
             writeSettings("camel.jbang.localKameletDir", sj.toString());
         }
         return main;

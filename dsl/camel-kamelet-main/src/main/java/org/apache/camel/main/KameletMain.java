@@ -61,6 +61,7 @@ import org.apache.camel.main.download.DownloadListener;
 import org.apache.camel.main.download.DownloadModelineParser;
 import org.apache.camel.main.download.ExportPropertiesParser;
 import org.apache.camel.main.download.ExportTypeConverter;
+import org.apache.camel.main.download.JavaKnownImportsDownloader;
 import org.apache.camel.main.download.KameletAutowiredLifecycleStrategy;
 import org.apache.camel.main.download.KameletMainInjector;
 import org.apache.camel.main.download.KnownDependenciesResolver;
@@ -606,6 +607,8 @@ public class KameletMain extends MainCommandLineSupport {
                     .bind(DependencyDownloaderPropertyBindingListener.class.getSimpleName(), listener);
             answer.getCamelContextExtension().getRegistry().bind(DependencyDownloaderStrategy.class.getSimpleName(),
                     new DependencyDownloaderStrategy(answer));
+            // add support for automatic downloaded needed JARs from java imports
+            new JavaKnownImportsDownloader(answer, knownDeps);
 
             // download class-resolver
             ClassResolver classResolver = new DependencyDownloaderClassResolver(answer, knownDeps, silent);

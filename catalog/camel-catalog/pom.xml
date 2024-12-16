@@ -104,6 +104,12 @@
             <artifactId>camel-jsonpath</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- for testing groovy language -->
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-groovy</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <!-- for testing activemq component -->
         <dependency>
@@ -126,6 +132,12 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
 
             <!-- generate and include all components in the catalog -->
@@ -168,6 +180,14 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <configuration>
+                    <delimiters>
+                        <delimiter>@</delimiter>
+                    </delimiters>
+                </configuration>
             </plugin>
         </plugins>
     </build>

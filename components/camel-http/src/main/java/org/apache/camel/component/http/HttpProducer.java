@@ -37,6 +37,7 @@ import java.util.Map.Entry;
 import org.apache.camel.CamelExchangeException;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePropertyKey;
+import org.apache.camel.LineNumberAware;
 import org.apache.camel.Message;
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.TypeConverter;
@@ -82,12 +83,11 @@ import org.apache.hc.core5.http.protocol.HttpContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class HttpProducer extends DefaultProducer {
+public class HttpProducer extends DefaultProducer implements LineNumberAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(HttpProducer.class);
 
     private static final Integer OK_RESPONSE_CODE = 200;
-    private static final int BUFFER_SIZE = 1024 * 2;
 
     private HttpClient httpClient;
     private final HttpContext httpContext;
@@ -244,7 +244,7 @@ public class HttpProducer extends DefaultProducer {
 
         // lets store the result in the output message.
         try {
-            executeMethod(
+            executeMethod(exchange,
                     httpHost, httpRequest,
                     httpResponse -> {
                         try {
@@ -473,13 +473,19 @@ public class HttpProducer extends DefaultProducer {
      * @return             the response
      * @throws IOException can be thrown
      */
-    protected <T> T executeMethod(HttpHost httpHost, HttpUriRequest httpRequest, HttpClientResponseHandler<T> handler)
+    protected <T> T executeMethod(
+            Exchange exchange, HttpHost httpHost, HttpUriRequest httpRequest, HttpClientResponseHandler<T> handler)
             throws IOException, HttpException {
+        // use a local context per execution
         HttpContext localContext;
         if (httpContext != null) {
             localContext = new BasicHttpContext(httpContext);
         } else {
             localContext = HttpClientContext.create();
+        }
+        if (getEndpoint().getHttpActivityListener() != null) {
+            localContext.setAttribute("org.apache.camel.Exchange", exchange);
+            localContext.setAttribute("org.apache.hc.core5.http.HttpHost", httpHost);
         }
         // execute open that does not automatic close response input-stream (this is done in exchange on-completion by Camel)
         ClassicHttpResponse res = httpClient.executeOpen(httpHost, httpRequest, localContext);
@@ -802,4 +808,23 @@ public class HttpProducer extends DefaultProducer {
         this.httpClient = httpClient;
     }
 
+    @Override
+    public int getLineNumber() {
+        return getEndpoint().getLineNumber();
+    }
+
+    @Override
+    public void setLineNumber(int lineNumber) {
+        // noop
+    }
+
+    @Override
+    public String getLocation() {
+        return getEndpoint().getLocation();
+    }
+
+    @Override
+    public void setLocation(String location) {
+        // noop
+    }
 }

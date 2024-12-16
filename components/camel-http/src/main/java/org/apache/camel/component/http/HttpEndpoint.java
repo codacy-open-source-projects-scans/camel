@@ -17,13 +17,17 @@
 package org.apache.camel.component.http;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.net.URI;
 import java.util.Map;
 
 import javax.net.ssl.HostnameVerifier;
 
+import org.apache.camel.CamelContextAware;
 import org.apache.camel.Category;
 import org.apache.camel.Consumer;
+import org.apache.camel.Exchange;
+import org.apache.camel.LineNumberAware;
 import org.apache.camel.PollingConsumer;
 import org.apache.camel.Processor;
 import org.apache.camel.Producer;
@@ -36,8 +40,10 @@ import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.UriEndpoint;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.support.jsse.SSLContextParameters;
+import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.ObjectHelper;
+import org.apache.camel.util.StopWatch;
 import org.apache.hc.client5.http.classic.HttpClient;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.cookie.BasicCookieStore;
@@ -45,7 +51,14 @@ import org.apache.hc.client5.http.cookie.CookieStore;
 import org.apache.hc.client5.http.impl.DefaultRedirectStrategy;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.client5.http.io.HttpClientConnectionManager;
+import org.apache.hc.core5.http.EntityDetails;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.HttpException;
 import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.http.HttpRequest;
+import org.apache.hc.core5.http.HttpRequestInterceptor;
+import org.apache.hc.core5.http.HttpResponse;
+import org.apache.hc.core5.http.HttpResponseInterceptor;
 import org.apache.hc.core5.http.protocol.HttpContext;
 import org.apache.hc.core5.pool.ConnPoolControl;
 import org.apache.hc.core5.pool.PoolStats;
@@ -62,9 +75,12 @@ import org.slf4j.LoggerFactory;
         "protocol=http"
 })
 @ManagedResource(description = "Managed HttpEndpoint")
-public class HttpEndpoint extends HttpCommonEndpoint {
+public class HttpEndpoint extends HttpCommonEndpoint implements LineNumberAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(HttpEndpoint.class);
+
+    private int lineNumber;
+    private String location;
 
     @UriParam(label = "security", description = "To configure security using SSLContextParameters."
                                                 + " Important: Only one instance of org.apache.camel.util.jsse.SSLContextParameters is supported per HttpComponent."
@@ -162,6 +178,11 @@ public class HttpEndpoint extends HttpCommonEndpoint {
     private boolean followRedirects;
     @UriParam(label = "producer,advanced", description = "To set a custom HTTP User-Agent request header")
     private String userAgent;
+    @UriParam(label = "producer,advanced", description = "To use a custom activity listener")
+    private HttpActivityListener httpActivityListener;
+    @UriParam(label = "producer",
+              description = "To enable logging HTTP request and response. You can use a custom LoggingHttpActivityListener as httpActivityListener to control logging options.")
+    private boolean logHttpActivity;
 
     public HttpEndpoint() {
     }
@@ -292,6 +313,33 @@ public class HttpEndpoint extends HttpCommonEndpoint {
             configurer.configureHttpClient(clientBuilder);
         }
 
+        if (httpActivityListener != null) {
+            clientBuilder.addRequestInterceptorLast(new HttpRequestInterceptor() {
+                @Override
+                public void process(HttpRequest request, EntityDetails entity, HttpContext context)
+                        throws HttpException, IOException {
+                    Exchange exchange = (Exchange) context.getAttribute("org.apache.camel.Exchange");
+                    HttpHost host = (HttpHost) context.getAttribute("org.apache.hc.core5.http.HttpHost");
+                    context.setAttribute("org.apache.camel.util.StopWatch", new StopWatch());
+                    httpActivityListener.onRequestSubmitted(this, exchange, host, request, (HttpEntity) entity);
+                }
+            });
+            clientBuilder.addResponseInterceptorFirst(new HttpResponseInterceptor() {
+                @Override
+                public void process(HttpResponse response, EntityDetails entity, HttpContext context)
+                        throws HttpException, IOException {
+                    long elapsed = -1;
+                    StopWatch watch = (StopWatch) context.removeAttribute("org.apache.camel.util.StopWatch");
+                    if (watch != null) {
+                        elapsed = watch.taken();
+                    }
+                    Exchange exchange = (Exchange) context.removeAttribute("org.apache.camel.Exchange");
+                    HttpHost host = (HttpHost) context.removeAttribute("org.apache.hc.core5.http.HttpHost");
+                    httpActivityListener.onResponseReceived(this, exchange, host, response, (HttpEntity) entity, elapsed);
+                }
+            });
+        }
+
         LOG.debug("Setup the HttpClientBuilder {}", clientBuilder);
 
         return clientBuilder.build();
@@ -303,6 +351,16 @@ public class HttpEndpoint extends HttpCommonEndpoint {
     }
 
     @Override
+    protected void doStart() throws Exception {
+        super.doStart();
+        if (logHttpActivity && httpActivityListener == null) {
+            httpActivityListener = new LoggingHttpActivityListener();
+        }
+        CamelContextAware.trySetCamelContext(httpActivityListener, getCamelContext());
+        ServiceHelper.startService(httpActivityListener);
+    }
+
+    @Override
     protected void doStop() throws Exception {
         if (getComponent() != null && getComponent().getClientConnectionManager() != clientConnectionManager) {
             // need to shutdown the ConnectionManager
@@ -311,10 +369,32 @@ public class HttpEndpoint extends HttpCommonEndpoint {
         if (httpClient instanceof Closeable closeable) {
             IOHelper.close(closeable);
         }
+        ServiceHelper.stopService(httpActivityListener);
+        super.doStop();
     }
 
     // Properties
     //-------------------------------------------------------------------------
+
+    @Override
+    public int getLineNumber() {
+        return lineNumber;
+    }
+
+    @Override
+    public void setLineNumber(int lineNumber) {
+        this.lineNumber = lineNumber;
+    }
+
+    @Override
+    public String getLocation() {
+        return location;
+    }
+
+    @Override
+    public void setLocation(String location) {
+        this.location = location;
+    }
 
     public HttpClientBuilder getClientBuilder() {
         return clientBuilder;
@@ -646,6 +726,22 @@ public class HttpEndpoint extends HttpCommonEndpoint {
      */
     public void setUserAgent(String userAgent) {
         this.userAgent = userAgent;
+    }
+
+    public HttpActivityListener getHttpActivityListener() {
+        return httpActivityListener;
+    }
+
+    public void setHttpActivityListener(HttpActivityListener httpActivityListener) {
+        this.httpActivityListener = httpActivityListener;
+    }
+
+    public boolean isLogHttpActivity() {
+        return logHttpActivity;
+    }
+
+    public void setLogHttpActivity(boolean logHttpActivity) {
+        this.logHttpActivity = logHttpActivity;
     }
 
     @ManagedAttribute(description = "Maximum number of allowed persistent connections")
