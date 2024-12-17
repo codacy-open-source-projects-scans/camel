@@ -76,7 +76,7 @@
         <avro-ipc-jetty-version>1.12.0</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.0</avro-ipc-netty-version>
         <awaitility-version>4.2.2</awaitility-version>
-        <aws-java-sdk2-version>2.29.34</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.29.35</aws-java-sdk2-version>
         <aws-xray-version>2.18.2</aws-xray-version>
         <azure-sdk-bom-version>1.2.30</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.27</azure-storage-blob-changefeed-version>
@@ -188,11 +188,11 @@
         <google-api-services-calendar-version>v3-rev20241101-2.0.0</google-api-services-calendar-version>
         <google-api-services-sheets-version>v4-rev20241203-2.0.0</google-api-services-sheets-version>
         <google-api-services-mail-version>v1-rev20240520-2.0.0</google-api-services-mail-version>
-        <google-oauth-client-version>1.36.0</google-oauth-client-version>
+        <google-oauth-client-version>1.37.0</google-oauth-client-version>
         <google-cloud-bom-version>26.51.0</google-cloud-bom-version>
-        <google-cloud-functions-bom-version>2.56.0</google-cloud-functions-bom-version>
+        <google-cloud-functions-bom-version>2.57.0</google-cloud-functions-bom-version>
         <google-cloud-http-client-version>1.45.3</google-cloud-http-client-version>
-        <google-cloud-secretmanager-bom-version>2.54.0</google-cloud-secretmanager-bom-version>
+        <google-cloud-secretmanager-bom-version>2.55.0</google-cloud-secretmanager-bom-version>
         <graaljs-version>24.1.1</graaljs-version>
         <graphql-java-version>22.3</graphql-java-version>
         <greenmail-version>2.1.2</greenmail-version>
@@ -203,7 +203,7 @@
         <grpc-java-jwt-version>4.4.0</grpc-java-jwt-version>
         <grpc-netty-tcnative-boringssl-static-version>2.0.59.Final</grpc-netty-tcnative-boringssl-static-version>
         <gson-version>2.11.0</gson-version>
-        <guava-version>33.3.1-jre</guava-version>
+        <guava-version>33.4.0-jre</guava-version>
         <guice3-version>3.0</guice3-version>
         <h2-version>2.3.232</h2-version>
         <hadoop3-version>3.4.1</hadoop3-version>
@@ -225,7 +225,7 @@
         <httpasyncclient-version>4.1.5</httpasyncclient-version>
         <huaweicloud-obs-version>3.24.9</huaweicloud-obs-version>
         <huaweicloud-sdk-version>3.1.127</huaweicloud-sdk-version>
-        <ical4j-version>4.0.6</ical4j-version>
+        <ical4j-version>4.0.7</ical4j-version>
         <icu4j-version>76.1</icu4j-version>
         <ignite-version>2.16.0</ignite-version>
         <impsort-maven-plugin-version>1.12.0</impsort-maven-plugin-version>
@@ -310,7 +310,7 @@
         <jt400-version>20.0.8</jt400-version>
         <jte-version>3.1.15</jte-version>
         <junit-toolbox-version>2.4</junit-toolbox-version>
-        <junit-jupiter-version>5.11.3</junit-jupiter-version>
+        <junit-jupiter-version>5.11.4</junit-jupiter-version>
         <junit-pioneer-version>2.3.0</junit-pioneer-version>
         <jxmpp-version>1.1.0</jxmpp-version>
         <jython-version>2.7.4</jython-version>
@@ -422,7 +422,7 @@
         <protonpack-version>1.8</protonpack-version>
         <protostream-version>5.0.12.Final</protostream-version>
         <prowide-version>SRU2024-10.2.4</prowide-version>
-        <pubnub-version>10.3.1</pubnub-version>
+        <pubnub-version>10.3.2</pubnub-version>
         <pulsar-version>3.3.1</pulsar-version>
         <qdrant-client-version>1.12.0</qdrant-client-version>
         <qpid-broker-version>9.2.0</qpid-broker-version>
@@ -467,8 +467,8 @@
         <spring-ldap-version>3.2.10</spring-ldap-version>
         <spring-vault-core-version>3.1.2</spring-vault-core-version>
         <spring-version>6.2.1</spring-version>
-        <spring-rabbitmq-version>3.2.0</spring-rabbitmq-version>
-        <spring-security-version>6.4.1</spring-security-version>
+        <spring-rabbitmq-version>3.2.1</spring-rabbitmq-version>
+        <spring-security-version>6.4.2</spring-security-version>
         <spring-ws-version>4.0.11</spring-ws-version>
         <sql-maven-plugin-version>3.0.0</sql-maven-plugin-version>
         <squareup-okhttp-version>3.14.9</squareup-okhttp-version>
