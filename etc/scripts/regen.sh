@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+set -e
+
+# Move to top directory
+cd `dirname "$0"`/../..
+
+# Force clean
+git clean -fdx
+rm -Rf **/src/generated/
+
+# Regenerate everything
+if ./mvnw --batch-mode -Pregen -DskipTests install >> build.log 2>&1; then
+  echo "✅ mvn -Pregen succeeded."
+else
+  echo "❌ mvn -Pregen failed. Last 50 lines of build.log:"
+  tail -n 50 build.log
+  exit 1
+fi
+
+# One additional pass to get the info for the 'others' jars
+if ./mvnw --batch-mode install -f catalog/camel-catalog >> build.log 2>&1; then
+  echo "✅ mvn install for camel-catalog succeeded."
+else
+  echo "❌ mvn install for camel-catalog failed. Last 50 lines of build.log:"
+  tail -n 50 build.log
+  exit 1
+fi
