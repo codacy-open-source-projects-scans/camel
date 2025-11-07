@@ -118,7 +118,7 @@ import org.apache.camel.tooling.maven.MavenGav;
  */
 public class KameletMain extends MainCommandLineSupport {
 
-    public static final String DEFAULT_KAMELETS_LOCATION = "classpath:kamelets,github:apache:camel-kamelets/kamelets";
+    public static final String DEFAULT_KAMELETS_LOCATION = "classpath:kamelets";
 
     private final String instanceType;
     protected final MainRegistry registry = new MainRegistry();
@@ -496,7 +496,7 @@ public class KameletMain extends MainCommandLineSupport {
             configure().httpManagementServer().withEnabled(false);
         }
 
-        if (silent || "*".equals(stubPattern)) {
+        if (silent || "*".equals(stubPattern) || "component:*".equals(stubPattern)) {
             // turn off auto-wiring when running in silent mode (or stub = *)
             mainConfigurationProperties.setAutowiredEnabled(false);
             // and turn off fail fast as we stub components

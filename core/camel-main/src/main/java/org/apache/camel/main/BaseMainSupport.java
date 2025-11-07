@@ -493,9 +493,9 @@ public abstract class BaseMainSupport extends BaseService {
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                             if (!Files.isDirectory(file)) {
                                 if (file.getFileName().toString().endsWith(".properties")) {
-                                    try {
+                                    try (InputStream is = Files.newInputStream(file)) {
                                         Properties prop = new Properties();
-                                        prop.load(Files.newInputStream(file));
+                                        prop.load(is);
                                         cp.putAll(loc, prop);
                                     } catch (IOException e) {
                                         LOG.warn(
@@ -2055,6 +2055,9 @@ public abstract class BaseMainSupport extends BaseService {
             }
             if ("ibm".equalsIgnoreCase(name)) {
                 target = target.ibmSecretsManager();
+            }
+            if ("cyberark".equalsIgnoreCase(name)) {
+                target = target.cyberark();
             }
             // configure all the properties on the vault at once (to ensure they are configured in right order)
             OrderedLocationProperties config = MainHelper.extractProperties(properties, name + ".");

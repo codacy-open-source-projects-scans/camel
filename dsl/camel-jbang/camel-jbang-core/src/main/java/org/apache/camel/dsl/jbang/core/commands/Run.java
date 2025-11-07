@@ -275,8 +275,8 @@ public class Run extends CamelCommand {
     @Option(names = { "--prop", "--property" }, description = "Additional properties (override existing)", arity = "0")
     String[] property;
 
-    @Option(names = { "--stub" }, description = "Stubs all the matching endpoint with the given component name or pattern."
-                                                + " Multiple names can be separated by comma. (all = everything).")
+    @Option(names = { "--stub" }, description = "Stubs all the matching endpoint uri with the given component name or pattern."
+                                                + " Multiple names can be separated by comma. (all = stub all endpoints).")
     String stub;
 
     @Option(names = { "--jfr" }, defaultValue = "false",
@@ -589,16 +589,17 @@ public class Run extends CamelCommand {
 
         if (stub != null) {
             if ("all".equals(stub)) {
-                stub = "*";
+                // stub all components only
+                stub = "component:*";
             }
             // we need to match by wildcard, to make it easier
             StringJoiner sj = new StringJoiner(",");
             for (String n : stub.split(",")) {
                 // you can either refer to a name or a specific endpoint
-                // if there is a colon then we assume its a specific endpoint then we should not add wildcard
+                // if there is a colon then we assume it's a specific endpoint then we should not add wildcard
                 boolean colon = n.contains(":");
                 if (!colon && !n.endsWith("*")) {
-                    n = n + "*";
+                    n = "component:" + n + "*";
                 }
                 sj.add(n);
             }
@@ -1430,6 +1431,9 @@ public class Run extends CamelCommand {
         if (camelVersion != null) {
             cmds.remove("--camel-version=" + camelVersion);
         }
+        if (kameletsVersion != null) {
+            cmds.remove("--kamelets-version=" + kameletsVersion);
+        }
         // need to use jbang command to specify camel version
         List<String> jbangArgs = new ArrayList<>();
         jbangArgs.add("jbang");
@@ -1438,7 +1442,11 @@ public class Run extends CamelCommand {
             jbangArgs.add("-Dcamel.jbang.version=" + camelVersion);
         }
         if (kameletsVersion != null) {
-            jbangArgs.add("-Dcamel-kamelets.version=" + kameletsVersion);
+            if (camelVersion != null && VersionHelper.isLE(camelVersion, "4.16.0")) {
+                jbangArgs.add("-Dcamel-kamelets.version=" + camelVersion);
+            } else {
+                cmds.add("--kamelets-version=" + kameletsVersion);
+            }
         }
         // tooling may signal to run JMX debugger in suspended mode via JVM system property
         // which we must include in args as well
@@ -1459,6 +1467,10 @@ public class Run extends CamelCommand {
 
         ProcessBuilder pb = new ProcessBuilder();
         pb.command(jbangArgs);
+
+        if (verbose) {
+            printer().println(String.join(" ", jbangArgs));
+        }
 
         if (background) {
             return runBackgroundProcess(pb, "Camel Main");
@@ -1494,6 +1506,9 @@ public class Run extends CamelCommand {
         ProcessBuilder pb = new ProcessBuilder();
         pb.command(cmds);
 
+        if (verbose) {
+            printer().println(String.join(" ", cmds));
+        }
         return runBackgroundProcess(pb, "Camel Main");
     }
 
@@ -1640,6 +1655,10 @@ public class Run extends CamelCommand {
         jbangArgs.add(CommandLineHelper.CAMEL_JBANG_WORK_DIR + "/CustomCamelJBang.java");
 
         jbangArgs.addAll(cmds);
+
+        if (verbose) {
+            printer().println(String.join(" ", jbangArgs));
+        }
 
         ProcessBuilder pb = new ProcessBuilder();
         pb.command(jbangArgs);

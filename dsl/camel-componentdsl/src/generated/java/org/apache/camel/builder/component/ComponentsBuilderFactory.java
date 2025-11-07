@@ -1068,6 +1068,19 @@ public interface ComponentsBuilderFactory {
         return CxfrsComponentBuilderFactory.cxfrs();
     }
     /**
+     * CyberArk Vault (camel-cyberark-vault)
+     * Retrieve secrets from CyberArk Conjur Vault.
+     * 
+     * Category: cloud,security
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-cyberark-vault
+     * 
+     * @return the dsl builder
+     */
+    static CyberarkVaultComponentBuilderFactory.CyberarkVaultComponentBuilder cyberarkVault() {
+        return CyberarkVaultComponentBuilderFactory.cyberarkVault();
+    }
+    /**
      * Dapr (camel-dapr)
      * Dapr component which interfaces with Dapr Building Blocks.
      * 
@@ -3605,6 +3618,19 @@ public interface ComponentsBuilderFactory {
      */
     static OpenstackSwiftComponentBuilderFactory.OpenstackSwiftComponentBuilder openstackSwift() {
         return OpenstackSwiftComponentBuilderFactory.openstackSwift();
+    }
+    /**
+     * OpenTelemetry Metrics (camel-opentelemetry-metrics)
+     * Camel metrics based on the Camel Telemetry spec
+     * 
+     * Category: monitoring
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-opentelemetry-metrics
+     * 
+     * @return the dsl builder
+     */
+    static OpentelemetryMetricsComponentBuilderFactory.OpentelemetryMetricsComponentBuilder opentelemetryMetrics() {
+        return OpentelemetryMetricsComponentBuilderFactory.opentelemetryMetrics();
     }
     /**
      * OptaPlanner (camel-optaplanner)

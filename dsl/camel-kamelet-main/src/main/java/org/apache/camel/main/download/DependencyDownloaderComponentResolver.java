@@ -27,6 +27,7 @@ import org.apache.camel.component.platform.http.PlatformHttpComponent;
 import org.apache.camel.component.stub.StubComponent;
 import org.apache.camel.impl.engine.DefaultComponentResolver;
 import org.apache.camel.main.util.SuggestSimilarHelper;
+import org.apache.camel.support.PatternHelper;
 import org.apache.camel.tooling.model.ComponentModel;
 import org.apache.camel.tooling.model.OtherModel;
 
@@ -134,14 +135,25 @@ public final class DependencyDownloaderComponentResolver extends DefaultComponen
 
     private boolean accept(String name) {
         if (transform) {
-            return Arrays.stream(ACCEPTED_TRANSFORM_NAMES).anyMatch(n -> n.equals(name));
+            return Arrays.asList(ACCEPTED_TRANSFORM_NAMES).contains(name);
         }
         if (stubPattern == null) {
             return true;
         }
 
         // we are stubbing but need to accept the following
-        return Arrays.stream(ACCEPTED_STUB_NAMES).anyMatch(n -> n.equals(name));
+        if (Arrays.asList(ACCEPTED_STUB_NAMES).contains(name)) {
+            return true;
+        }
+
+        boolean stubbed = false;
+        for (String n : stubPattern.split(",")) {
+            if (n.startsWith("component:")) {
+                n = n.substring(10);
+            }
+            stubbed |= PatternHelper.matchPattern(name, n);
+        }
+        return !stubbed;
     }
 
 }

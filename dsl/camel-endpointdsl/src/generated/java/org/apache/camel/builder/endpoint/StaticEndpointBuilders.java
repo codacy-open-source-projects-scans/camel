@@ -3386,6 +3386,46 @@ public class StaticEndpointBuilders {
         return CxfRsEndpointBuilderFactory.endpointBuilder(componentName, path);
     }
     /**
+     * CyberArk Vault (camel-cyberark-vault)
+     * Retrieve secrets from CyberArk Conjur Vault.
+     * 
+     * Category: cloud,security
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-cyberark-vault
+     * 
+     * Syntax: <code>cyberark-vault:label</code>
+     * 
+     * Path parameter: label (required)
+     * Logical name
+     * 
+     * @param path label
+     * @return the dsl builder
+     */
+    public static CyberArkVaultEndpointBuilderFactory.CyberArkVaultEndpointBuilder cyberarkVault(String path) {
+        return cyberarkVault("cyberark-vault", path);
+    }
+    /**
+     * CyberArk Vault (camel-cyberark-vault)
+     * Retrieve secrets from CyberArk Conjur Vault.
+     * 
+     * Category: cloud,security
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-cyberark-vault
+     * 
+     * Syntax: <code>cyberark-vault:label</code>
+     * 
+     * Path parameter: label (required)
+     * Logical name
+     * 
+     * @param componentName to use a custom component name for the endpoint
+     * instead of the default name
+     * @param path label
+     * @return the dsl builder
+     */
+    public static CyberArkVaultEndpointBuilderFactory.CyberArkVaultEndpointBuilder cyberarkVault(String componentName, String path) {
+        return CyberArkVaultEndpointBuilderFactory.endpointBuilder(componentName, path);
+    }
+    /**
      * Dapr (camel-dapr)
      * Dapr component which interfaces with Dapr Building Blocks.
      * 
@@ -3397,7 +3437,8 @@ public class StaticEndpointBuilders {
      * 
      * Path parameter: operation (required)
      * The Dapr building block operation to perform with this component
-     * There are 2 enums and the value can be one of: invokeService, state
+     * There are 8 enums and the value can be one of: invokeService, state,
+     * pubSub, invokeBinding, secret, configuration, lock, workflow
      * 
      * @param path operation
      * @return the dsl builder
@@ -3417,7 +3458,8 @@ public class StaticEndpointBuilders {
      * 
      * Path parameter: operation (required)
      * The Dapr building block operation to perform with this component
-     * There are 2 enums and the value can be one of: invokeService, state
+     * There are 8 enums and the value can be one of: invokeService, state,
+     * pubSub, invokeBinding, secret, configuration, lock, workflow
      * 
      * @param componentName to use a custom component name for the endpoint
      * instead of the default name
@@ -12019,6 +12061,54 @@ public class StaticEndpointBuilders {
         return SwiftEndpointBuilderFactory.endpointBuilder(componentName, path);
     }
     /**
+     * OpenTelemetry Metrics (camel-opentelemetry-metrics)
+     * Camel metrics based on the Camel Telemetry spec
+     * 
+     * Category: monitoring
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-opentelemetry-metrics
+     * 
+     * Syntax: <code>opentelemetry-metrics:metricType:metricName</code>
+     * 
+     * Path parameter: metricType (required)
+     * Type of metrics
+     * There are 3 enums and the value can be one of: counter, summary, timer
+     * 
+     * Path parameter: metricName (required)
+     * Name of metric
+     * 
+     * @param path metricType:metricName
+     * @return the dsl builder
+     */
+    public static OpenTelemetryEndpointBuilderFactory.OpenTelemetryEndpointBuilder opentelemetryMetrics(String path) {
+        return opentelemetryMetrics("opentelemetry-metrics", path);
+    }
+    /**
+     * OpenTelemetry Metrics (camel-opentelemetry-metrics)
+     * Camel metrics based on the Camel Telemetry spec
+     * 
+     * Category: monitoring
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-opentelemetry-metrics
+     * 
+     * Syntax: <code>opentelemetry-metrics:metricType:metricName</code>
+     * 
+     * Path parameter: metricType (required)
+     * Type of metrics
+     * There are 3 enums and the value can be one of: counter, summary, timer
+     * 
+     * Path parameter: metricName (required)
+     * Name of metric
+     * 
+     * @param componentName to use a custom component name for the endpoint
+     * instead of the default name
+     * @param path metricType:metricName
+     * @return the dsl builder
+     */
+    public static OpenTelemetryEndpointBuilderFactory.OpenTelemetryEndpointBuilder opentelemetryMetrics(String componentName, String path) {
+        return OpenTelemetryEndpointBuilderFactory.endpointBuilder(componentName, path);
+    }
+    /**
      * OptaPlanner (camel-optaplanner)
      * Solve planning problems with OptaPlanner.
      * 
@@ -14838,6 +14928,7 @@ public class StaticEndpointBuilders {
      * @param path destination
      * @return the dsl builder
      */
+    @Deprecated
     public static StompEndpointBuilderFactory.StompEndpointBuilder stomp(String path) {
         return stomp("stomp", path);
     }
@@ -14860,6 +14951,7 @@ public class StaticEndpointBuilders {
      * @param path destination
      * @return the dsl builder
      */
+    @Deprecated
     public static StompEndpointBuilderFactory.StompEndpointBuilder stomp(String componentName, String path) {
         return StompEndpointBuilderFactory.endpointBuilder(componentName, path);
     }

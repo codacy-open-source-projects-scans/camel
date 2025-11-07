@@ -93,7 +93,7 @@ public class CamelReceiveAction extends ActionBaseCommand {
 
     @CommandLine.Option(names = { "--action" }, completionCandidates = ActionCompletionCandidates.class,
                         defaultValue = "status",
-                        description = "Action to start, stop, clear, list status, or dump messages")
+                        description = "Action to start, stop, clear, status, or dump messages")
     String action;
 
     @CommandLine.Option(names = { "--endpoint", "--uri" },
@@ -810,7 +810,7 @@ public class CamelReceiveAction extends ActionBaseCommand {
 
     }
 
-    private static class StatusRow {
+    private static class StatusRow implements Cloneable {
         String pid;
         String name;
         String age;
@@ -825,7 +825,7 @@ public class CamelReceiveAction extends ActionBaseCommand {
             try {
                 return (StatusRow) clone();
             } catch (CloneNotSupportedException e) {
-                return null;
+                throw new RuntimeException(e);
             }
         }
     }
