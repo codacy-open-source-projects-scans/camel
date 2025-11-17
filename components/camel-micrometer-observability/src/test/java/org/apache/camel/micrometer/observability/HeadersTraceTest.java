@@ -23,13 +23,14 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.RoutesBuilder;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
+import org.apache.camel.micrometer.observability.CamelOpenTelemetryExtension.OtelTrace;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-public class HeadersTraceTest extends MicrometerObservabilityTracerTestSupport {
+public class HeadersTraceTest extends MicrometerObservabilityTracerPropagationTestSupport {
 
     @Override
     protected CamelContext createCamelContext() throws Exception {
@@ -42,7 +43,7 @@ public class HeadersTraceTest extends MicrometerObservabilityTracerTestSupport {
         MockEndpoint mock = getMockEndpoint("mock:result");
         mock.expectedMessageCount(1);
         template.sendBody("direct:start", "my-body");
-        Map<String, MicrometerObservabilityTrace> traces = traces();
+        Map<String, OtelTrace> traces = otelExtension.getTraces();
         assertEquals(1, traces.size());
         mock.assertIsSatisfied();
         Map<String, Object> headers = mock.getExchanges().get(0).getIn().getHeaders();

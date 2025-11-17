@@ -17,26 +17,27 @@
 package org.apache.camel.micrometer.observability;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-import io.micrometer.tracing.test.simple.SimpleSpan;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.SpanId;
+import io.opentelemetry.sdk.trace.data.SpanData;
 import org.apache.camel.RoutesBuilder;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.micrometer.observability.CamelOpenTelemetryExtension.OtelTrace;
 import org.apache.camel.telemetry.Op;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class MicrometerObservabilityTracerTest extends MicrometerObservabilityTracerTestSupport {
+public class MicrometerObservabilityTracerTest extends MicrometerObservabilityTracerPropagationTestSupport {
 
     @Test
     void testRouteSingleRequest() throws IOException {
         template.request("direct:start", null);
-        Map<String, MicrometerObservabilityTrace> traces = traces();
+        Map<String, OtelTrace> traces = otelExtension.getTraces();
         assertEquals(1, traces.size());
         checkTrace(traces.values().iterator().next(), null);
     }
@@ -46,54 +47,53 @@ public class MicrometerObservabilityTracerTest extends MicrometerObservabilityTr
         for (int i = 1; i <= 10; i++) {
             context.createProducerTemplate().sendBody("direct:start", "Hello!");
         }
-        Map<String, MicrometerObservabilityTrace> traces = traces();
+        Map<String, OtelTrace> traces = otelExtension.getTraces();
         // Each trace should have a unique trace id. It is enough to assert that
         // the number of elements in the map is the same of the requests to prove
         // all traces have been generated uniquely.
         assertEquals(10, traces.size());
         // Each trace should have the same structure
-        for (MicrometerObservabilityTrace trace : traces.values()) {
+        for (OtelTrace trace : traces.values()) {
             checkTrace(trace, "Hello!");
         }
     }
 
-    private void checkTrace(MicrometerObservabilityTrace trace, String expectedBody) {
-        List<SimpleSpan> spans = trace.getSpans();
+    private void checkTrace(OtelTrace trace, String expectedBody) {
+        List<SpanData> spans = trace.getSpans();
         assertEquals(3, spans.size());
-        SimpleSpan testProducer = spans.get(0);
-        SimpleSpan direct = spans.get(1);
-        SimpleSpan log = spans.get(2);
+        SpanData testProducer = spans.get(0);
+        SpanData direct = spans.get(1);
+        SpanData log = spans.get(2);
 
         // Validate span completion
-        assertNotEquals(Instant.EPOCH, testProducer.getEndTimestamp());
-        assertNotEquals(Instant.EPOCH, direct.getEndTimestamp());
-        assertNotEquals(Instant.EPOCH, log.getEndTimestamp());
+        assertTrue(testProducer.hasEnded());
+        assertTrue(direct.hasEnded());
+        assertTrue(log.hasEnded());
 
         // Validate same trace
         assertEquals(testProducer.getTraceId(), direct.getTraceId());
         assertEquals(direct.getTraceId(), log.getTraceId());
 
         // Validate hierarchy
-        assertTrue(testProducer.getParentId().isEmpty());
-        assertEquals(testProducer.getSpanId(), direct.getParentId());
-        assertEquals(direct.getSpanId(), log.getParentId());
+        assertEquals(SpanId.getInvalid(), testProducer.getParentSpanContext().getSpanId());
+        assertEquals(testProducer.getSpanContext().getSpanId(), direct.getParentSpanContext().getSpanId());
+        assertEquals(direct.getSpanContext().getSpanId(), log.getParentSpanContext().getSpanId());
 
         // Validate operations
-        assertEquals(Op.EVENT_SENT.toString(), testProducer.getTags().get("op"));
-        assertEquals(Op.EVENT_RECEIVED.toString(), direct.getTags().get("op"));
+        assertEquals(Op.EVENT_SENT.toString(), testProducer.getAttributes().get(AttributeKey.stringKey("op")));
+        assertEquals(Op.EVENT_RECEIVED.toString(), direct.getAttributes().get(AttributeKey.stringKey("op")));
 
         // Validate message logging
-        assertEquals("message=A message", direct.getEvents().iterator().next().getValue());
+        assertEquals("message=A message", direct.getEvents().get(0).getName());
         if (expectedBody == null) {
             assertEquals(
                     "message=Exchange[ExchangePattern: InOut, BodyType: null, Body: [Body is null]]",
-                    log.getEvents().iterator().next().getValue());
+                    log.getEvents().get(0).getName());
         } else {
             assertEquals(
                     "message=Exchange[ExchangePattern: InOnly, BodyType: String, Body: " + expectedBody + "]",
-                    log.getEvents().iterator().next().getValue());
+                    log.getEvents().get(0).getName());
         }
-
     }
 
     @Override

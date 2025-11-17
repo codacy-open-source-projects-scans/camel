@@ -22,7 +22,7 @@ public class OpenTelemetryConstants {
 
     public static final String HEADER_PREFIX = "CamelMetrics";
     @Metadata(description = "Override timer action in URI",
-              javaType = "org.apache.camel.opentelemetry2.component.OpenTelemetryTimerAction")
+              javaType = "org.apache.camel.opentelemetry.metrics.OpenTelemetryTimerAction")
     public static final String HEADER_TIMER_ACTION = HEADER_PREFIX + "TimerAction";
     @Metadata(description = "Override histogram value in URI", javaType = "long")
     public static final String HEADER_HISTOGRAM_VALUE = HEADER_PREFIX + "HistogramValue";
@@ -39,6 +39,22 @@ public class OpenTelemetryConstants {
 
     public static final String HEADER_METRIC_ATTRIBUTES = HEADER_PREFIX + "Attributes";
 
+    // Route-policy metrics
+    public static final String DEFAULT_CAMEL_ROUTE_POLICY_EXCHANGES_FAILED_METER_NAME = "camel.exchanges.failed";
+    public static final String DEFAULT_CAMEL_ROUTE_POLICY_EXCHANGES_SUCCEEDED_METER_NAME = "camel.exchanges.succeeded";
+    public static final String DEFAULT_CAMEL_ROUTE_POLICY_EXCHANGES_TOTAL_METER_NAME = "camel.exchanges.total";
+    public static final String DEFAULT_CAMEL_ROUTE_POLICY_EXCHANGES_FAILURES_HANDLED_METER_NAME
+            = "camel.exchanges.failures.handled";
+    public static final String DEFAULT_CAMEL_ROUTE_POLICY_EXCHANGES_EXTERNAL_REDELIVERIES_METER_NAME
+            = "camel.exchanges.external.redeliveries";
+    public static final String DEFAULT_CAMEL_ROUTE_POLICY_METER_NAME = "camel.route.policy";
+
+    // Exchange-event metrics
+    public static final String DEFAULT_CAMEL_ROUTES_EXCHANGES_INFLIGHT = "camel.exchanges.inflight";
+    public static final String DEFAULT_CAMEL_EXCHANGE_ELAPSED_TIMER = "camel.exchange.elapsed";
+    public static final String DEFAULT_CAMEL_EXCHANGE_SENT_TIMER = "camel.exchange.sent";
+    public static final String DEFAULT_CAMEL_EXCHANGE_LAST_PROCESSED_TIME_INSTRUMENT = "camel.exchanges.last.time";
+
     // Route-event metrics
     public static final String DEFAULT_CAMEL_ROUTES_ADDED = "camel.routes.added";
     public static final String DEFAULT_CAMEL_ROUTES_RUNNING = "camel.routes.running";
@@ -47,10 +63,13 @@ public class OpenTelemetryConstants {
     // OpenTelemetry Attribute keys
     public static final String CAMEL_CONTEXT_ATTRIBUTE = "camelContext";
     public static final String ROUTE_ID_ATTRIBUTE = "routeId";
+    public static final String FAILED_ATTRIBUTE = "failed";
     public static final String EVENT_TYPE_ATTRIBUTE = "eventType";
     public static final String KIND_ATTRIBUTE = "kind";
+    public static final String ENDPOINT_NAME_ATTRIBUTE = "endpointName";
 
     // OpenTelemetry Attribute values
+    public static final String KIND_EXCHANGE = "CamelExchangeEvent";
     public static final String KIND_ROUTE = "CamelRoute";
 
     private OpenTelemetryConstants() {
