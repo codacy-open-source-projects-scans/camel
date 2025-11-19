@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
+import org.apache.camel.WrappedFile;
 import org.apache.camel.support.DefaultProducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -681,6 +682,10 @@ public class DoclingProducer extends DefaultProducer {
         }
 
         Object body = exchange.getIn().getBody();
+        if (body instanceof WrappedFile<?> wf) {
+            // unwrap camel-file/camel-ftp and other file based components
+            body = wf.getBody();
+        }
         if (body instanceof String) {
             String content = (String) body;
             // Check if it's a URL (http:// or https://) or a file path
