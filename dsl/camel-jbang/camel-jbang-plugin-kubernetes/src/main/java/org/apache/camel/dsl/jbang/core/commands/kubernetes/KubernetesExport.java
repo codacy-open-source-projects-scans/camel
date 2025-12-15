@@ -106,7 +106,7 @@ public class KubernetesExport extends Export {
     protected String imageGroup;
 
     @CommandLine.Option(names = { "--image-builder" }, defaultValue = "jib",
-                        description = "The image builder used to build the container image (e.g. docker, jib, podman).")
+                        description = "The image builder used to build the container image (e.g. docker, jib, s2i).")
     protected String imageBuilder = "jib";
 
     @CommandLine.Option(names = { "--image-push" }, defaultValue = "true",
@@ -126,7 +126,9 @@ public class KubernetesExport extends Export {
     protected String registryMirror;
 
     @CommandLine.Option(names = { "--cluster-type" },
-                        description = "The target cluster type. Special configurations may be applied to different cluster types such as Kind or Minikube or Openshift.")
+                        completionCandidates = ClusterTypeCompletionCandidates.class,
+                        converter = ClusterTypeConverter.class,
+                        description = "The target cluster type (${COMPLETION-CANDIDATES}). Special configurations may be applied to different cluster types such as Kind or Minikube.")
     protected String clusterType;
 
     private static final String SRC_MAIN_RESOURCES = "/src/main/resources/";

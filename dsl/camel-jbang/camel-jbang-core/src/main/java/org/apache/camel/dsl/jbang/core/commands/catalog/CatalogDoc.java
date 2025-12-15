@@ -80,7 +80,7 @@ public class CatalogDoc extends CamelCommand {
                         defaultValue = "io.quarkus.platform")
     String quarkusGroupId = "io.quarkus.platform";
 
-    @CommandLine.Option(names = { "--repos" },
+    @CommandLine.Option(names = { "--repo", "--repos" },
                         description = "Additional maven repositories for download on-demand (Use commas to separate multiple repositories)")
     String repos;
 
@@ -145,7 +145,7 @@ public class CatalogDoc extends CamelCommand {
         }
 
         if (prefix == null || "kamelet".equals(prefix)) {
-            KameletModel km = KameletCatalogHelper.loadKameletModel(name, kameletsVersion);
+            KameletModel km = KameletCatalogHelper.loadKameletModel(name, kameletsVersion, repos);
             if (km != null) {
                 docKamelet(km);
                 return 0;
@@ -186,7 +186,8 @@ public class CatalogDoc extends CamelCommand {
             boolean kamelet = name.endsWith("-sink") || name.endsWith("-source") || name.endsWith("-action");
             if (kamelet) {
                 // kamelet names
-                suggestions = SuggestSimilarHelper.didYouMean(KameletCatalogHelper.findKameletNames(kameletsVersion), name);
+                suggestions
+                        = SuggestSimilarHelper.didYouMean(KameletCatalogHelper.findKameletNames(kameletsVersion, repos), name);
             } else {
                 // assume its a component
                 suggestions = SuggestSimilarHelper.didYouMean(findComponentNames(catalog), name);
@@ -200,7 +201,7 @@ public class CatalogDoc extends CamelCommand {
         } else {
             List<String> suggestions = switch (prefix) {
                 case "kamelet" ->
-                    SuggestSimilarHelper.didYouMean(KameletCatalogHelper.findKameletNames(kameletsVersion), name);
+                    SuggestSimilarHelper.didYouMean(KameletCatalogHelper.findKameletNames(kameletsVersion, repos), name);
                 case "component" -> SuggestSimilarHelper.didYouMean(findComponentNames(catalog), name);
                 case "dataformat" -> SuggestSimilarHelper.didYouMean(catalog.findDataFormatNames(), name);
                 case "language" -> SuggestSimilarHelper.didYouMean(catalog.findLanguageNames(), name);

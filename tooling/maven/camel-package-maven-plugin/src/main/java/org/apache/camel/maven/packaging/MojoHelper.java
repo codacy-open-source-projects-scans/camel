@@ -39,11 +39,10 @@ public final class MojoHelper {
         switch (dir.getFileName().toString()) {
             case "camel-ai":
                 return Arrays.asList(dir.resolve("camel-chatscript"), dir.resolve("camel-djl"),
-                        dir.resolve("camel-langchain4j-agent"),
-                        dir.resolve("camel-langchain4j-core"), dir.resolve("camel-langchain4j-chat"),
+                        dir.resolve("camel-langchain4j-agent"), dir.resolve("camel-langchain4j-chat"),
                         dir.resolve("camel-langchain4j-embeddings"), dir.resolve("camel-langchain4j-embeddingstore"),
-                        dir.resolve("camel-langchain4j-tokenizer"),
-                        dir.resolve("camel-langchain4j-tools"), dir.resolve("camel-langchain4j-web-search"),
+                        dir.resolve("camel-langchain4j-tokenizer"), dir.resolve("camel-langchain4j-tools"),
+                        dir.resolve("camel-langchain4j-web-search"),
                         dir.resolve("camel-qdrant"), dir.resolve("camel-milvus"), dir.resolve("camel-neo4j"),
                         dir.resolve("camel-pinecone"), dir.resolve("camel-kserve"),
                         dir.resolve("camel-torchserve"), dir.resolve("camel-tensorflow-serving"),
@@ -81,7 +80,7 @@ public final class MojoHelper {
                         dir.resolve("camel-google-drive"), dir.resolve("camel-google-mail"), dir.resolve("camel-google-pubsub"),
                         dir.resolve("camel-google-pubsub-lite"), dir.resolve("camel-google-sheets"),
                         dir.resolve("camel-google-storage"), dir.resolve("camel-google-functions"),
-                        dir.resolve("camel-google-secret-manager"));
+                        dir.resolve("camel-google-secret-manager"), dir.resolve("camel-google-vertexai"));
             case "camel-debezium":
                 return Arrays.asList(dir.resolve("camel-debezium-mongodb"), dir.resolve("camel-debezium-mysql"),
                         dir.resolve("camel-debezium-postgres"), dir.resolve("camel-debezium-sqlserver"),
@@ -104,8 +103,11 @@ public final class MojoHelper {
                         dir.resolve("camel-spring-ai").resolve("camel-spring-ai-vector-store"));
             case "camel-test":
                 return Arrays.asList(dir.resolve("camel-test-junit5"),
+                        dir.resolve("camel-test-junit6"),
                         dir.resolve("camel-test-spring-junit5"),
-                        dir.resolve("camel-test-main-junit5"));
+                        dir.resolve("camel-test-spring-junit6"),
+                        dir.resolve("camel-test-main-junit5"),
+                        dir.resolve("camel-test-main-junit6"));
             case "camel-aws":
                 return Arrays.asList(dir.resolve("camel-aws2-athena"), dir.resolve("camel-aws2-cw"),
                         dir.resolve("camel-aws2-ddb"), dir.resolve("camel-aws2-ec2"),
@@ -121,7 +123,8 @@ public final class MojoHelper {
                         dir.resolve("camel-aws2-timestream"), dir.resolve("camel-aws2-translate"),
                         dir.resolve("camel-aws-xray"), dir.resolve("camel-aws-secrets-manager"),
                         dir.resolve("camel-aws-cloudtrail"), dir.resolve("camel-aws-config"), dir.resolve("camel-aws-bedrock"),
-                        dir.resolve("camel-aws2-textract"), dir.resolve("camel-aws2-transcribe"));
+                        dir.resolve("camel-aws2-textract"), dir.resolve("camel-aws2-transcribe"),
+                        dir.resolve("camel-aws2-s3-vectors"));
             case "camel-vertx":
                 return Arrays.asList(dir.resolve("camel-vertx"),
                         dir.resolve("camel-vertx-http"),

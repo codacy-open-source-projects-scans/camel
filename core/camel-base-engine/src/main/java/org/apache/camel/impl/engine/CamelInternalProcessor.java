@@ -170,6 +170,13 @@ public class CamelInternalProcessor extends DelegateAsyncProcessor implements In
     }
 
     @Override
+    public void removeAdvice(CamelInternalProcessorAdvice<?> advice) {
+        if (advices.remove(advice) && advice.hasState()) {
+            statefulAdvices--;
+        }
+    }
+
+    @Override
     public <T> T getAdvice(Class<T> type) {
         for (CamelInternalProcessorAdvice<?> task : advices) {
             Object advice = unwrap(task);
@@ -683,21 +690,41 @@ public class CamelInternalProcessor extends DelegateAsyncProcessor implements In
                 String routeId = routeDefinition != null ? routeDefinition.getRouteId() : null;
                 if (first) {
                     // use route as pseudo source when first
-                    String source = LoggerHelper.getLineNumberLoggerName(routeDefinition);
                     final long created = exchange.getClock().getCreated();
-                    DefaultBacklogTracerEventMessage pseudoFirst = new DefaultBacklogTracerEventMessage(
-                            camelContext,
-                            true, false, backlogTracer.incrementTraceCounter(), created, source, routeId, null, null, null,
-                            null,
-                            null, null,
-                            level, exchangeId, correlationExchangeId, rest, template, data);
-                    if (exchange.getFromEndpoint() instanceof EndpointServiceLocation esl) {
-                        pseudoFirst.setEndpointServiceUrl(esl.getServiceUrl());
-                        pseudoFirst.setEndpointServiceProtocol(esl.getServiceProtocol());
-                        pseudoFirst.setEndpointServiceMetadata(esl.getServiceMetadata());
+
+                    // special for aggregate which output are regarded as a new first
+                    boolean aggregate = false;
+                    NamedNode input = routeDefinition != null ? routeDefinition.getInput() : null;
+                    if (processorDefinition.getParent() != null
+                            && "aggregate".equals(processorDefinition.getParent().getShortName())) {
+                        aggregate = true;
+                        input = processorDefinition.getParent();
+                    }
+                    String source = LoggerHelper.getLineNumberLoggerName(input);
+
+                    DefaultBacklogTracerEventMessage pseudoFirst;
+                    if (aggregate) {
+                        pseudoFirst = new DefaultBacklogTracerEventMessage(
+                                camelContext,
+                                true, false, backlogTracer.incrementTraceCounter(), created, source, routeId, input.getId(),
+                                null, null, null,
+                                input.getShortName(), input.getLabel(),
+                                level - 1, exchangeId, correlationExchangeId, rest, template, data);
+                    } else {
+                        pseudoFirst = new DefaultBacklogTracerEventMessage(
+                                camelContext,
+                                true, false, backlogTracer.incrementTraceCounter(), created, source, routeId, input.getId(),
+                                null, null, null,
+                                input.getShortName(), input.getLabel(),
+                                level, exchangeId, correlationExchangeId, rest, template, data);
+                        if (exchange.getFromEndpoint() instanceof EndpointServiceLocation esl) {
+                            pseudoFirst.setEndpointServiceUrl(esl.getServiceUrl());
+                            pseudoFirst.setEndpointServiceProtocol(esl.getServiceProtocol());
+                            pseudoFirst.setEndpointServiceMetadata(esl.getServiceMetadata());
+                        }
                     }
                     backlogTracer.traceEvent(pseudoFirst);
-                    exchange.getExchangeExtension().addOnCompletion(createOnCompletion(source, pseudoFirst));
+                    exchange.getExchangeExtension().addOnCompletion(createOnCompletion(source, aggregate, pseudoFirst));
                 }
                 String source = LoggerHelper.getLineNumberLoggerName(processorDefinition);
                 DefaultBacklogTracerEventMessage event = new DefaultBacklogTracerEventMessage(
@@ -714,7 +741,8 @@ public class CamelInternalProcessor extends DelegateAsyncProcessor implements In
             return null;
         }
 
-        private SynchronizationAdapter createOnCompletion(String source, DefaultBacklogTracerEventMessage pseudoFirst) {
+        private SynchronizationAdapter createOnCompletion(
+                String source, boolean aggregate, DefaultBacklogTracerEventMessage pseudoFirst) {
             return new SynchronizationAdapter() {
                 @Override
                 public void onDone(Exchange exchange) {
@@ -725,15 +753,19 @@ public class CamelInternalProcessor extends DelegateAsyncProcessor implements In
                     boolean includeExchangeProperties = backlogTracer.isIncludeExchangeProperties();
                     boolean includeExchangeVariables = backlogTracer.isIncludeExchangeVariables();
                     long created = exchange.getClock().getCreated();
-                    int level = processorDefinition.getLevel();
+                    int level = pseudoFirst.getToNodeLevel();
+                    // aggregate is special
+                    String toNode = aggregate ? pseudoFirst.getToNode() : null;
+                    String toNodeShortName = aggregate ? pseudoFirst.getToNodeShortName() : null;
+                    String toNodeLabel = aggregate ? pseudoFirst.getToNodeLabel() : null;
                     JsonObject data = MessageHelper.dumpAsJSonObject(exchange.getIn(), includeExchangeProperties,
                             includeExchangeVariables, true,
                             true, backlogTracer.isBodyIncludeStreams(), backlogTracer.isBodyIncludeFiles(),
                             backlogTracer.getBodyMaxChars());
                     DefaultBacklogTracerEventMessage pseudoLast = new DefaultBacklogTracerEventMessage(
                             camelContext,
-                            false, true, backlogTracer.incrementTraceCounter(), created, source, routeId, null, null, null,
-                            null, null, null,
+                            false, true, backlogTracer.incrementTraceCounter(), created, source, routeId, toNode, null, null,
+                            null, toNodeShortName, toNodeLabel,
                             level, exchangeId, correlationExchangeId, rest, template, data);
                     backlogTracer.traceEvent(pseudoLast);
                     doneProcessing(exchange, pseudoLast);
@@ -761,7 +793,8 @@ public class CamelInternalProcessor extends DelegateAsyncProcessor implements In
             if (endpoint != null) {
                 uri = endpoint.getEndpointUri();
                 remote = endpoint.isRemote();
-            } else if ((data.isFirst() || data.isLast()) && data.getToNode() == null && routeDefinition != null) {
+            } else if ((data.isFirst() || data.isLast()) && !"aggregate".equals(data.getToNodeShortName())
+                    && routeDefinition != null) {
                 // pseudo first/last event (the from in the route)
                 Route route = camelContext.getRoute(routeDefinition.getRouteId());
                 if (route != null && route.getConsumer() != null) {

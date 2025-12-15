@@ -163,6 +163,7 @@
         <module>camel-ical</module>
         <module>camel-iec60870</module>
         <module>camel-ignite</module>
+        <module>camel-iggy</module>
         <module>camel-infinispan</module>
         <module>camel-influxdb</module>
         <module>camel-influxdb2</module>
@@ -304,6 +305,7 @@
         <module>camel-stream</module>
         <module>camel-stringtemplate</module>
         <module>camel-stitch</module>
+        <module>camel-stripe</module>
         <module>camel-swift</module>
         <module>camel-openapi-java</module>
         <module>camel-openapi-validator</module>

@@ -465,6 +465,20 @@ public interface ComponentsBuilderFactory {
         return Aws2S3ComponentBuilderFactory.aws2S3();
     }
     /**
+     * AWS S3 Vectors (camel-aws2-s3-vectors)
+     * Store and query vector embeddings using AWS S3 Vectors with similarity
+     * search.
+     * 
+     * Category: cloud,ai
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-aws2-s3-vectors
+     * 
+     * @return the dsl builder
+     */
+    static Aws2S3VectorsComponentBuilderFactory.Aws2S3VectorsComponentBuilder aws2S3Vectors() {
+        return Aws2S3VectorsComponentBuilderFactory.aws2S3Vectors();
+    }
+    /**
      * AWS Simple Email Service (SES) (camel-aws2-ses)
      * Send e-mails through AWS SES service.
      * 
@@ -744,7 +758,7 @@ public interface ComponentsBuilderFactory {
      * Braintree (camel-braintree)
      * Process payments using Braintree Payments.
      * 
-     * Category: saas
+     * Category: saas,finance
      * Since: 2.17
      * Maven coordinates: org.apache.camel:camel-braintree
      * 
@@ -1812,6 +1826,19 @@ public interface ComponentsBuilderFactory {
         return GoogleStorageComponentBuilderFactory.googleStorage();
     }
     /**
+     * Google Vertex AI (camel-google-vertexai)
+     * Interact with Google Cloud Vertex AI generative models.
+     * 
+     * Category: ai,cloud
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-google-vertexai
+     * 
+     * @return the dsl builder
+     */
+    static GoogleVertexaiComponentBuilderFactory.GoogleVertexaiComponentBuilder googleVertexai() {
+        return GoogleVertexaiComponentBuilderFactory.googleVertexai();
+    }
+    /**
      * Grape (camel-grape)
      * Fetch, load and manage additional jars dynamically after Camel Context
      * was started.
@@ -2250,6 +2277,19 @@ public interface ComponentsBuilderFactory {
      */
     static Iec60870ServerComponentBuilderFactory.Iec60870ServerComponentBuilder iec60870Server() {
         return Iec60870ServerComponentBuilderFactory.iec60870Server();
+    }
+    /**
+     * Iggy (camel-iggy)
+     * Camel Iggy component
+     * 
+     * Category: messaging
+     * Since: 4.14
+     * Maven coordinates: org.apache.camel:camel-iggy
+     * 
+     * @return the dsl builder
+     */
+    static IggyComponentBuilderFactory.IggyComponentBuilder iggy() {
+        return IggyComponentBuilderFactory.iggy();
     }
     /**
      * Ignite Cache (camel-ignite)
@@ -4560,6 +4600,19 @@ public interface ComponentsBuilderFactory {
      */
     static StringTemplateComponentBuilderFactory.StringTemplateComponentBuilder stringTemplate() {
         return StringTemplateComponentBuilderFactory.stringTemplate();
+    }
+    /**
+     * Stripe (camel-stripe)
+     * Camel Stripe component
+     * 
+     * Category: saas,finance
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-stripe
+     * 
+     * @return the dsl builder
+     */
+    static StripeComponentBuilderFactory.StripeComponentBuilder stripe() {
+        return StripeComponentBuilderFactory.stripe();
     }
     /**
      * Stub (camel-stub)

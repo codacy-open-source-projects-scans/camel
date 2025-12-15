@@ -101,6 +101,7 @@ import org.apache.camel.model.ToDynamicDefinition;
 import org.apache.camel.model.TokenizerDefinition;
 import org.apache.camel.model.TokenizerImplementationDefinition;
 import org.apache.camel.model.TransactedDefinition;
+import org.apache.camel.model.TransformDataTypeDefinition;
 import org.apache.camel.model.TransformDefinition;
 import org.apache.camel.model.TryDefinition;
 import org.apache.camel.model.UnmarshalDefinition;
@@ -354,7 +355,7 @@ public final class ModelDeserializers extends YamlDeserializerSupport {
                     @YamlProperty(name = "aggregationStrategyMethodName", type = "string", description = "This option can be used to explicit declare the method name to use, when using beans as the AggregationStrategy.", displayName = "Aggregation Strategy Method Name"),
                     @YamlProperty(name = "closeCorrelationKeyOnCompletion", type = "number", description = "Closes a correlation key when its complete. Any late received exchanges which has a correlation key that has been closed, it will be defined and a ClosedCorrelationKeyException is thrown.", displayName = "Close Correlation Key On Completion"),
                     @YamlProperty(name = "completeAllOnStop", type = "boolean", defaultValue = "false", description = "Indicates to wait to complete all current and partial (pending) aggregated exchanges when the context is stopped. This also means that we will wait for all pending exchanges which are stored in the aggregation repository to complete so the repository is empty before we can stop. You may want to enable this when using the memory based aggregation repository that is memory based only, and do not store data on disk. When this option is enabled, then the aggregator is waiting to complete all those exchanges before its stopped, when stopping CamelContext or the route using it.", displayName = "Complete All On Stop"),
-                    @YamlProperty(name = "completionFromBatchConsumer", type = "boolean", defaultValue = "false", description = "Enables the batch completion mode where we aggregate from a org.apache.camel.BatchConsumer and aggregate the total number of exchanges the org.apache.camel.BatchConsumer has reported as total by checking the exchange property org.apache.camel.Exchange#BATCH_COMPLETE when its complete. This option cannot be used together with discardOnAggregationFailure.", displayName = "Completion From Batch Consumer"),
+                    @YamlProperty(name = "completionFromBatchConsumer", type = "boolean", defaultValue = "false", description = "Enables the batch completion mode where we aggregate from a org.apache.camel.BatchConsumer and aggregate the total number of exchanges the org.apache.camel.BatchConsumer has reported as total by checking the exchange property org.apache.camel.Exchange#BATCH_COMPLETE when its complete. This option cannot be used together with discardOnAggregationFailure. Important: When using this option, you should also enable eagerCheckCompletion() to ensure the aggregator checks for batch completion on each incoming exchange. Without eager checking, the batch completion signal may not be properly detected.", displayName = "Completion From Batch Consumer"),
                     @YamlProperty(name = "completionInterval", type = "string", description = "A repeating period in millis by which the aggregator will complete all current aggregated exchanges. Camel has a background task which is triggered every period. You cannot use this option together with completionTimeout, only one of them can be used.", displayName = "Completion Interval"),
                     @YamlProperty(name = "completionOnNewCorrelationGroup", type = "boolean", defaultValue = "false", description = "Enables completion on all previous groups when a new incoming correlation group. This can for example be used to complete groups with same correlation keys when they are in consecutive order. Notice when this is enabled then only 1 correlation group can be in progress as when a new correlation group starts, then the previous groups is forced completed.", displayName = "Completion On New Correlation Group"),
                     @YamlProperty(name = "completionPredicate", type = "object:org.apache.camel.model.ExpressionSubElementDefinition", description = "A Predicate to indicate when an aggregated exchange is complete. If this is not specified and the AggregationStrategy object implements Predicate, the aggregationStrategy object will be used as the completionPredicate.", displayName = "Completion Predicate"),
@@ -19848,6 +19849,75 @@ public final class ModelDeserializers extends YamlDeserializerSupport {
     }
 
     @YamlType(
+            nodes = "transformDataType",
+            types = org.apache.camel.model.TransformDataTypeDefinition.class,
+            order = org.apache.camel.dsl.yaml.common.YamlDeserializerResolver.ORDER_LOWEST - 1,
+            displayName = "Transform Data Type",
+            description = "Transforms the message body based on known data type transformers.",
+            deprecated = false,
+            properties = {
+                    @YamlProperty(name = "description", type = "string", description = "Sets the description of this node", displayName = "Description"),
+                    @YamlProperty(name = "disabled", type = "boolean", defaultValue = "false", description = "Disables this EIP from the route.", displayName = "Disabled"),
+                    @YamlProperty(name = "fromType", type = "string", description = "From type used in data type transformation.", displayName = "From Type"),
+                    @YamlProperty(name = "id", type = "string", description = "Sets the id of this node", displayName = "Id"),
+                    @YamlProperty(name = "note", type = "string", description = "Sets the note of this node", displayName = "Note"),
+                    @YamlProperty(name = "toType", type = "string", required = true, description = "To type used as a target data type in the transformation.", displayName = "To Type")
+            }
+    )
+    public static class TransformDataTypeDefinitionDeserializer extends YamlDeserializerBase<TransformDataTypeDefinition> {
+        public TransformDataTypeDefinitionDeserializer() {
+            super(TransformDataTypeDefinition.class);
+        }
+
+        @Override
+        protected TransformDataTypeDefinition newInstance() {
+            return new TransformDataTypeDefinition();
+        }
+
+        @Override
+        protected boolean setProperty(TransformDataTypeDefinition target, String propertyKey,
+                String propertyName, Node node) {
+            propertyKey = org.apache.camel.util.StringHelper.dashToCamelCase(propertyKey);
+            switch(propertyKey) {
+                case "disabled": {
+                    String val = asText(node);
+                    target.setDisabled(val);
+                    break;
+                }
+                case "fromType": {
+                    String val = asText(node);
+                    target.setFromType(val);
+                    break;
+                }
+                case "toType": {
+                    String val = asText(node);
+                    target.setToType(val);
+                    break;
+                }
+                case "id": {
+                    String val = asText(node);
+                    target.setId(val);
+                    break;
+                }
+                case "description": {
+                    String val = asText(node);
+                    target.setDescription(val);
+                    break;
+                }
+                case "note": {
+                    String val = asText(node);
+                    target.setNote(val);
+                    break;
+                }
+                default: {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    @YamlType(
             nodes = "transform",
             types = org.apache.camel.model.TransformDefinition.class,
             order = org.apache.camel.dsl.yaml.common.YamlDeserializerResolver.ORDER_LOWEST - 1,
@@ -19859,10 +19929,8 @@ public final class ModelDeserializers extends YamlDeserializerSupport {
                     @YamlProperty(name = "description", type = "string", description = "Sets the description of this node", displayName = "Description"),
                     @YamlProperty(name = "disabled", type = "boolean", defaultValue = "false", description = "Disables this EIP from the route.", displayName = "Disabled"),
                     @YamlProperty(name = "expression", type = "object:org.apache.camel.model.language.ExpressionDefinition", description = "Expression to return the transformed message body (the new message body to use)", displayName = "Expression", oneOf = "expression"),
-                    @YamlProperty(name = "fromType", type = "string", description = "From type used in data type transformation.", displayName = "From Type"),
                     @YamlProperty(name = "id", type = "string", description = "Sets the id of this node", displayName = "Id"),
-                    @YamlProperty(name = "note", type = "string", description = "Sets the note of this node", displayName = "Note"),
-                    @YamlProperty(name = "toType", type = "string", description = "To type used as a target data type in the transformation.", displayName = "To Type")
+                    @YamlProperty(name = "note", type = "string", description = "Sets the note of this node", displayName = "Note")
             }
     )
     public static class TransformDefinitionDeserializer extends YamlDeserializerBase<TransformDefinition> {
@@ -19888,16 +19956,6 @@ public final class ModelDeserializers extends YamlDeserializerSupport {
                 case "expression": {
                     org.apache.camel.model.language.ExpressionDefinition val = asType(node, org.apache.camel.model.language.ExpressionDefinition.class);
                     target.setExpression(val);
-                    break;
-                }
-                case "fromType": {
-                    String val = asText(node);
-                    target.setFromType(val);
-                    break;
-                }
-                case "toType": {
-                    String val = asText(node);
-                    target.setToType(val);
                     break;
                 }
                 case "id": {

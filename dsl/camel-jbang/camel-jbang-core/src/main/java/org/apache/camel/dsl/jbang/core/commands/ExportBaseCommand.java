@@ -105,7 +105,7 @@ public abstract class ExportBaseCommand extends CamelCommand {
 
     protected List<String> files = new ArrayList<>();
 
-    @CommandLine.Option(names = { "--repos" },
+    @CommandLine.Option(names = { "--repo", "--repos" },
                         description = "Additional maven repositories (Use commas to separate multiple repositories)")
     protected String repositories;
 
@@ -124,8 +124,8 @@ public abstract class ExportBaseCommand extends CamelCommand {
     protected String name;
 
     @CommandLine.Option(names = { "--port" },
-                        description = "Embeds a local HTTP server on this port", defaultValue = "8080")
-    int port;
+                        description = "Embeds a local HTTP server on this port")
+    int port = -1;
 
     @CommandLine.Option(names = { "--management-port" },
                         description = "To use a dedicated port for HTTP management")
@@ -450,7 +450,7 @@ public abstract class ExportBaseCommand extends CamelCommand {
         List<String> lines = RuntimeUtil.loadPropertiesLines(settings);
 
         // check if we use custom and/or official ASF kamelets
-        List<String> officialKamelets = KameletCatalogHelper.findKameletNames(kameletsVersion);
+        List<String> officialKamelets = KameletCatalogHelper.findKameletNames(kameletsVersion, repositories);
         boolean kamelets = false;
         boolean asfKamelets = false;
         for (String line : lines) {

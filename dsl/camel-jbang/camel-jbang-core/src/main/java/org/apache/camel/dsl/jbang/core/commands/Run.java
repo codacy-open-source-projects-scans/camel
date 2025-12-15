@@ -185,7 +185,7 @@ public class Run extends CamelCommand {
             split = ",")
     List<String> dependencies = new ArrayList<>();
 
-    @CommandLine.Option(names = { "--repos" },
+    @CommandLine.Option(names = { "--repo", "--repos" },
                         description = "Additional maven repositories (Use commas to separate multiple repositories)")
     String repositories;
 
@@ -296,10 +296,12 @@ public class Run extends CamelCommand {
             description = "Local directory (or github link) for loading Kamelets (takes precedence). Multiple directories can be specified separated by comma.")
     String localKameletDir;
 
-    @Option(names = { "--port" }, description = "Embeds a local HTTP server on this port", defaultValue = "8080")
-    int port;
+    @Option(names = { "--port" },
+            description = "Embeds a local HTTP server on this port (port 8080 by default; use 0 to dynamic assign a free random port number)")
+    int port = -1;
 
-    @Option(names = { "--management-port" }, description = "To use a dedicated port for HTTP management")
+    @Option(names = { "--management-port" },
+            description = "To use a dedicated port for HTTP management (use 0 to dynamic assign a free random port number)")
     int managementPort = -1;
 
     @Option(names = { "--console" }, defaultValue = "false",
@@ -712,9 +714,14 @@ public class Run extends CamelCommand {
                 () -> maxSeconds > 0 ? String.valueOf(maxSeconds) : null);
         writeSetting(main, profileProperties, "camel.main.durationMaxIdleSeconds",
                 () -> maxIdleSeconds > 0 ? String.valueOf(maxIdleSeconds) : null);
-        writeSetting(main, profileProperties, "camel.server.port",
-                () -> port > 0 && port != 8080 ? String.valueOf(port) : null);
-        if (managementPort != -1) {
+        if (port != -1 && port != 8080) {
+            writeSetting(main, profileProperties, "camel.server.port", () -> String.valueOf(port));
+        }
+        if (port == 0 && managementPort == -1) {
+            // use same port for management
+            managementPort = 0;
+        }
+        if (managementPort != -1 && managementPort != 8080) {
             writeSetting(main, profileProperties, "camel.management.port", () -> String.valueOf(managementPort));
         }
         writeSetting(main, profileProperties, JFR, jfr || jfrProfile != null ? "jfr" : null);
@@ -1523,7 +1530,7 @@ public class Run extends CamelCommand {
         Path logPath = null;
         if (backgroundWait) {
             // store background output in a log file to capture any error on startup
-            logPath = getRunBackgroundLogFile("" + new Random().nextLong());
+            logPath = getRunBackgroundLogFile("" + new Random().nextLong()); // NOSONAR
             try {
                 Path logDir = CommandLineHelper.getCamelDir();
                 Files.createDirectories(logDir); //make sure the parent dir exists

@@ -75,7 +75,7 @@ public class KubernetesRun extends KubernetesBaseCommand {
     @CommandLine.Option(names = { "--service-account" }, description = "The service account used to run the application.")
     String serviceAccount;
 
-    @CommandLine.Option(names = { "--property" },
+    @CommandLine.Option(names = { "--prop", "--property" },
                         description = "Add a runtime property or properties from a file (syntax: [my-key=my-value|file:/path/to/my-conf.properties|/path/to/my-conf.properties].")
     String[] properties;
 
@@ -154,11 +154,13 @@ public class KubernetesRun extends KubernetesBaseCommand {
     String imageGroup;
 
     @CommandLine.Option(names = { "--image-builder" }, defaultValue = "jib",
-                        description = "The image builder used to build the container image (e.g. docker, jib, podman).")
+                        description = "The image builder used to build the container image (e.g. docker, jib, s2i).")
     String imageBuilder = "jib";
 
     @CommandLine.Option(names = { "--cluster-type" },
-                        description = "The target cluster type. Special configurations may be applied to different cluster types such as Kind or Minikube.")
+                        completionCandidates = ClusterTypeCompletionCandidates.class,
+                        converter = ClusterTypeConverter.class,
+                        description = "The target cluster type (${COMPLETION-CANDIDATES}). Special configurations may be applied to different cluster types such as Kind or Minikube.")
     String clusterType = "Kubernetes";
 
     @CommandLine.Option(names = { "--image-build" }, defaultValue = "true",
@@ -183,7 +185,7 @@ public class KubernetesRun extends KubernetesBaseCommand {
 
     // Export base options
 
-    @CommandLine.Option(names = { "--repos" },
+    @CommandLine.Option(names = { "--repo", "--repos" },
                         description = "Additional maven repositories (Use commas to separate multiple repositories)")
     String repositories;
 
