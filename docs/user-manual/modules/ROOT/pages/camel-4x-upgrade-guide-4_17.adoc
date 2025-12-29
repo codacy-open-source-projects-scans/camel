@@ -36,6 +36,19 @@ from("direct:start")
     .to("mock:result");
 ----
 
+==== Custom Camel components
+
+Custom components which has a custom message implementation by extending `DefaultMessage`, which rely on the `populateInitialHeaders`
+to initialize headers must now add the following method:
+
+[source,java]
+----
+    @Override
+    protected boolean isPopulateHeadersSupported() {
+        return true;
+    }
+----
+
 === camel-jbang
 
 The `camel-kamelets-catalog` JAR is now downloaded on-demand.
@@ -44,6 +57,19 @@ The following option is no longer in use `-Dcamel-kamelets.version`.
 
 Removed automatic fallback to download Kamelet YAML files from GitHub. Instead, kamelets are
 now only loaded from embedded `camel-kamelets` JAR.
+
+Exporting with `--build-tools=gradle` is deprecated. Only Maven is and will be supported with camel-jbang.
+
+=== camel-debezium
+
+The `camel-debezium` component has upgraded from Debezium 3.3.2 to 3.4.0.
+
+=== camel-ftp
+
+Add producer health check to `camel-ftp`. Notice that producer health checks are default globally off.
+
+If you have enabled producer health checks globally, then you can turn off this on `camel-ftp` component
+to not use the newly introduced checks in `camel-ftp` to have same behavior as previously.
 
 === camel-infinispan
 
@@ -56,6 +82,11 @@ Disabling virtual threads by setting system property `org.infinispan.threads.vir
 === camel-tika
 
 Upgraded to Tika v3, and removed `textMain` from `tikaParseOutputFormat` option.
+
+=== camel-undertow
+
+This component will not skip headers that has invalid characters in key names (UT10052), implemented
+in the `UndertowHeaderFilterStrategy` class.
 
 === Component deprecation
 
