@@ -58,10 +58,10 @@ When installing Camel JBang as a JBang app via `jbang app install ...` then JBan
 occasionally if the upstream version has changed and then automatic update. This can be undesired if you
 want to ensure your Camel JBang app is not automatically updated, such as when there are newer Apache Camel releases.
 
-1. Download https://github.com/apache/camel/blob/main/dsl/camel-jbang/camel-jbang-main/dist/CamelJBang.java[CamelJBang.java] file to local disk.\
-2. Edit the `CamelJBang.java` file with the desired Camel version you want to use.
-3. And then install via `jbang app install CamelJBang.java`.
-4. After this you can delete the `CamelJBang.java` file.
+1. Download https://github.com/apache/camel/blob/main/dsl/camel-jbang/camel-jbang-main/dist/CamelJBang.java[CamelJBang.java] file to local disk
+2. Edit the `CamelJBang.java` file with the desired Camel version you want to use
+3. And then install via `jbang app install CamelJBang.java`
+4. After this you can delete the `CamelJBang.java` file
 
 
 == Container Image
@@ -127,6 +127,8 @@ camel --help
 TIP: The first time you run this command, it may cause dependencies to be cached, therefore taking a few extra seconds to run. If you are already using JBang and you get first time to run errors such as `Exception in thread "main" java.lang.NoClassDefFoundError: "org/apache/camel/dsl/jbang/core/commands/CamelJBangMain"` you may try clearing the JBang cache and re-install again.
 
 All the commands support the `--help` and will display the appropriate help if that flag is provided.
+
+TIP: For a complete reference of all commands and their options, see the xref:jbang-commands/camel-jbang-commands.adoc[Camel JBang Command Reference].
 
 === Enable shell completion
 

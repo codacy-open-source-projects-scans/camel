@@ -2277,6 +2277,20 @@ public interface ComponentsBuilderFactory {
         return IbmWatsonTextToSpeechComponentBuilderFactory.ibmWatsonTextToSpeech();
     }
     /**
+     * IBM watsonx.ai (camel-ibm-watsonx-ai)
+     * Interact with IBM watsonx.ai foundation models for text generation, chat,
+     * embeddings, and more.
+     * 
+     * Category: ai,cloud
+     * Since: 4.18
+     * Maven coordinates: org.apache.camel:camel-ibm-watsonx-ai
+     * 
+     * @return the dsl builder
+     */
+    static IbmWatsonxAiComponentBuilderFactory.IbmWatsonxAiComponentBuilder ibmWatsonxAi() {
+        return IbmWatsonxAiComponentBuilderFactory.ibmWatsonxAi();
+    }
+    /**
      * IEC 60870 Client (camel-iec60870)
      * IEC 60870 supervisory control and data acquisition (SCADA) client using
      * NeoSCADA implementation.
@@ -2306,10 +2320,10 @@ public interface ComponentsBuilderFactory {
     }
     /**
      * Iggy (camel-iggy)
-     * Camel Iggy component
+     * Send and receive message to Apache Iggy streaming platform.
      * 
      * Category: messaging
-     * Since: 4.14
+     * Since: 4.17
      * Maven coordinates: org.apache.camel:camel-iggy
      * 
      * @return the dsl builder
@@ -3581,7 +3595,8 @@ public interface ComponentsBuilderFactory {
     }
     /**
      * Once (camel-once)
-     * Camel Once component
+     * Trigger a single message only once at startup (useful for development and
+     * testing purposes).
      * 
      * Category: core,scheduling
      * Since: 4.17
@@ -3591,6 +3606,19 @@ public interface ComponentsBuilderFactory {
      */
     static OnceComponentBuilderFactory.OnceComponentBuilder once() {
         return OnceComponentBuilderFactory.once();
+    }
+    /**
+     * OpenAI (camel-openai)
+     * OpenAI endpoint for chat completion.
+     * 
+     * Category: ai
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-openai
+     * 
+     * @return the dsl builder
+     */
+    static OpenaiComponentBuilderFactory.OpenaiComponentBuilder openai() {
+        return OpenaiComponentBuilderFactory.openai();
     }
     /**
      * OpenSearch (camel-opensearch)
@@ -4642,7 +4670,7 @@ public interface ComponentsBuilderFactory {
     }
     /**
      * Stripe (camel-stripe)
-     * Camel Stripe component
+     * Interact with the Stripe payment platform.
      * 
      * Category: saas,finance
      * Since: 4.17

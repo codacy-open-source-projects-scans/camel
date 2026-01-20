@@ -7383,6 +7383,48 @@ public class StaticEndpointBuilders {
         return WatsonTextToSpeechEndpointBuilderFactory.endpointBuilder(componentName, path);
     }
     /**
+     * IBM watsonx.ai (camel-ibm-watsonx-ai)
+     * Interact with IBM watsonx.ai foundation models for text generation, chat,
+     * embeddings, and more.
+     * 
+     * Category: ai,cloud
+     * Since: 4.18
+     * Maven coordinates: org.apache.camel:camel-ibm-watsonx-ai
+     * 
+     * Syntax: <code>ibm-watsonx-ai:label</code>
+     * 
+     * Path parameter: label (required)
+     * Logical name for the endpoint
+     * 
+     * @param path label
+     * @return the dsl builder
+     */
+    public static WatsonxAiEndpointBuilderFactory.WatsonxAiEndpointBuilder ibmWatsonxAi(String path) {
+        return ibmWatsonxAi("ibm-watsonx-ai", path);
+    }
+    /**
+     * IBM watsonx.ai (camel-ibm-watsonx-ai)
+     * Interact with IBM watsonx.ai foundation models for text generation, chat,
+     * embeddings, and more.
+     * 
+     * Category: ai,cloud
+     * Since: 4.18
+     * Maven coordinates: org.apache.camel:camel-ibm-watsonx-ai
+     * 
+     * Syntax: <code>ibm-watsonx-ai:label</code>
+     * 
+     * Path parameter: label (required)
+     * Logical name for the endpoint
+     * 
+     * @param componentName to use a custom component name for the endpoint
+     * instead of the default name
+     * @param path label
+     * @return the dsl builder
+     */
+    public static WatsonxAiEndpointBuilderFactory.WatsonxAiEndpointBuilder ibmWatsonxAi(String componentName, String path) {
+        return WatsonxAiEndpointBuilderFactory.endpointBuilder(componentName, path);
+    }
+    /**
      * IEC 60870 Client (camel-iec60870)
      * IEC 60870 supervisory control and data acquisition (SCADA) client using
      * NeoSCADA implementation.
@@ -7468,10 +7510,10 @@ public class StaticEndpointBuilders {
     }
     /**
      * Iggy (camel-iggy)
-     * Camel Iggy component
+     * Send and receive message to Apache Iggy streaming platform.
      * 
      * Category: messaging
-     * Since: 4.14
+     * Since: 4.17
      * Maven coordinates: org.apache.camel:camel-iggy
      * 
      * Syntax: <code>iggy:topicName</code>
@@ -7487,10 +7529,10 @@ public class StaticEndpointBuilders {
     }
     /**
      * Iggy (camel-iggy)
-     * Camel Iggy component
+     * Send and receive message to Apache Iggy streaming platform.
      * 
      * Category: messaging
-     * Since: 4.14
+     * Since: 4.17
      * Maven coordinates: org.apache.camel:camel-iggy
      * 
      * Syntax: <code>iggy:topicName</code>
@@ -11965,6 +12007,46 @@ public class StaticEndpointBuilders {
      */
     public static OnceEndpointBuilderFactory.OnceEndpointBuilder once(String componentName, String path) {
         return OnceEndpointBuilderFactory.endpointBuilder(componentName, path);
+    }
+    /**
+     * OpenAI (camel-openai)
+     * OpenAI endpoint for chat completion.
+     * 
+     * Category: ai
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-openai
+     * 
+     * Syntax: <code>openai:operation</code>
+     * 
+     * Path parameter: operation (required)
+     * The operation to perform (currently only chat-completion is supported)
+     * 
+     * @param path operation
+     * @return the dsl builder
+     */
+    public static OpenAIEndpointBuilderFactory.OpenAIEndpointBuilder openai(String path) {
+        return openai("openai", path);
+    }
+    /**
+     * OpenAI (camel-openai)
+     * OpenAI endpoint for chat completion.
+     * 
+     * Category: ai
+     * Since: 4.17
+     * Maven coordinates: org.apache.camel:camel-openai
+     * 
+     * Syntax: <code>openai:operation</code>
+     * 
+     * Path parameter: operation (required)
+     * The operation to perform (currently only chat-completion is supported)
+     * 
+     * @param componentName to use a custom component name for the endpoint
+     * instead of the default name
+     * @param path operation
+     * @return the dsl builder
+     */
+    public static OpenAIEndpointBuilderFactory.OpenAIEndpointBuilder openai(String componentName, String path) {
+        return OpenAIEndpointBuilderFactory.endpointBuilder(componentName, path);
     }
     /**
      * OpenSearch (camel-opensearch)
@@ -17337,7 +17419,7 @@ public class StaticEndpointBuilders {
      * 
      * Path parameter: methodName (required)
      * What operation to use
-     * There are 378 enums and the value can be one of:
+     * There are 380 enums and the value can be one of:
      * ADD_TAG_TO_ORGANISATIONS, ADD_TAG_TO_TICKET, ADD_TAG_TO_TOPICS,
      * ASSOCIATE_ATTACHMENTS_TO_ARTICLE, CHANGE_USER_PASSWORD, CREATE_ARTICLE,
      * CREATE_ARTICLE_1, CREATE_ARTICLE_TRANSLATION, CREATE_AUTOMATION,
@@ -17423,6 +17505,7 @@ public class StaticEndpointBuilders {
      * GET_TICKET_AUDITS, GET_TICKET_AUDITS_1, GET_TICKET_COLLABORATORS,
      * GET_TICKET_COMMENTS, GET_TICKET_COMMENTS_1, GET_TICKET_FIELD,
      * GET_TICKET_FIELDS, GET_TICKET_FORM, GET_TICKET_FORMS,
+     * GET_TICKET_FROM_SEARCH_WITH_EXPORT, GET_TICKET_FROM_SEARCH_WITH_EXPORT_1,
      * GET_TICKET_INCIDENTS, GET_TICKET_METRIC, GET_TICKET_METRIC_BY_TICKET,
      * GET_TICKET_METRICS, GET_TICKETS, GET_TICKETS_1,
      * GET_TICKETS_BY_EXTERNAL_ID, GET_TICKETS_BY_EXTERNAL_ID_1,
@@ -17491,7 +17574,7 @@ public class StaticEndpointBuilders {
      * 
      * Path parameter: methodName (required)
      * What operation to use
-     * There are 378 enums and the value can be one of:
+     * There are 380 enums and the value can be one of:
      * ADD_TAG_TO_ORGANISATIONS, ADD_TAG_TO_TICKET, ADD_TAG_TO_TOPICS,
      * ASSOCIATE_ATTACHMENTS_TO_ARTICLE, CHANGE_USER_PASSWORD, CREATE_ARTICLE,
      * CREATE_ARTICLE_1, CREATE_ARTICLE_TRANSLATION, CREATE_AUTOMATION,
@@ -17577,6 +17660,7 @@ public class StaticEndpointBuilders {
      * GET_TICKET_AUDITS, GET_TICKET_AUDITS_1, GET_TICKET_COLLABORATORS,
      * GET_TICKET_COMMENTS, GET_TICKET_COMMENTS_1, GET_TICKET_FIELD,
      * GET_TICKET_FIELDS, GET_TICKET_FORM, GET_TICKET_FORMS,
+     * GET_TICKET_FROM_SEARCH_WITH_EXPORT, GET_TICKET_FROM_SEARCH_WITH_EXPORT_1,
      * GET_TICKET_INCIDENTS, GET_TICKET_METRIC, GET_TICKET_METRIC_BY_TICKET,
      * GET_TICKET_METRICS, GET_TICKETS, GET_TICKETS_1,
      * GET_TICKETS_BY_EXTERNAL_ID, GET_TICKETS_BY_EXTERNAL_ID_1,
