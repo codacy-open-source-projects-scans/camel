@@ -27,10 +27,12 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
@@ -368,6 +370,50 @@ public final class SimpleExpressionBuilder {
                     return "ceil(" + expression + ")";
                 } else {
                     return "ceil()";
+                }
+            }
+        };
+    }
+
+    /**
+     * Whether the expression is empty or having a list/map which has no elements.
+     */
+    public static Expression isEmptyExpression(final String expression) {
+        return new ExpressionAdapter() {
+            private Expression exp;
+
+            @Override
+            public void init(CamelContext context) {
+                if (expression != null) {
+                    exp = context.resolveLanguage("simple").createExpression(expression);
+                    exp.init(context);
+                }
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                Object body;
+                if (exp != null) {
+                    body = exp.evaluate(exchange, Object.class);
+                } else {
+                    body = exchange.getMessage().getBody(Object.class);
+                }
+                // this may be an object that we can iterate
+                Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(body);
+                for (Object o : it) {
+                    if (o != null) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public String toString() {
+                if (expression != null) {
+                    return "isEmpty(" + expression + ")";
+                } else {
+                    return "isEmpty()";
                 }
             }
         };
@@ -852,6 +898,44 @@ public final class SimpleExpressionBuilder {
             @Override
             public String toString() {
                 return "iif(" + predicate + "," + trueValue + "," + falseValue + ")";
+            }
+        };
+    }
+
+    /**
+     * An expression that returns the distinct values from the expressions
+     */
+    public static Expression distinctExpression(String[] values) {
+        return new ExpressionAdapter() {
+
+            private final Expression[] exps = new Expression[values != null ? values.length : 0];
+
+            @Override
+            public void init(CamelContext context) {
+                for (int i = 0; values != null && i < values.length; i++) {
+                    Expression exp = context.resolveLanguage("simple").createExpression(values[i]);
+                    exp.init(context);
+                    exps[i] = exp;
+                }
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                Set<Object> answer = new LinkedHashSet<>();
+                for (Expression exp : exps) {
+                    Object o = exp.evaluate(exchange, Object.class);
+                    // this may be an object that we can iterate
+                    Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(o);
+                    for (Object i : it) {
+                        answer.add(i);
+                    }
+                }
+                return answer;
+            }
+
+            @Override
+            public String toString() {
+                return "distinct(" + Arrays.toString(values) + ")";
             }
         };
     }

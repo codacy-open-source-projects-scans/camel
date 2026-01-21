@@ -24,10 +24,12 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -600,6 +602,18 @@ public final class CSimpleHelper {
         return answer != null ? answer / counter : null;
     }
 
+    public static Set<Object> distinct(Exchange exchange, Object... args) {
+        Set<Object> answer = new LinkedHashSet<>();
+        for (Object o : args) {
+            // this may be an object that we can iterate
+            Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(o);
+            for (Object i : it) {
+                answer.add(i);
+            }
+        }
+        return answer;
+    }
+
     public static Map<String, Object> map(Exchange exchange, Object... args) {
         Map<String, Object> answer = new LinkedHashMap<>();
         for (int i = 0, j = 0; args != null && i < args.length - 1; j++) {
@@ -945,6 +959,17 @@ public final class CSimpleHelper {
             return (int) d;
         }
         return null;
+    }
+
+    public static boolean isEmpty(Exchange exchange, Object value) {
+        // this may be an object that we can iterate
+        Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(value);
+        for (Object o : it) {
+            if (o != null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public static String trim(Exchange exchange, Object value) {
