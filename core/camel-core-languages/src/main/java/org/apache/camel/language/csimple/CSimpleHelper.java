@@ -509,15 +509,17 @@ public final class CSimpleHelper {
         }
     }
 
-    public static Object empty(Exchange exchange, String type) {
+    public static Object newEmpty(Exchange exchange, String type) {
         if ("map".equalsIgnoreCase(type)) {
             return new LinkedHashMap<>();
         } else if ("string".equalsIgnoreCase(type)) {
             return "";
         } else if ("list".equalsIgnoreCase(type)) {
             return new ArrayList<>();
+        } else if ("set".equalsIgnoreCase(type)) {
+            return new LinkedHashSet<>();
         }
-        throw new IllegalArgumentException("function empty(%s) has unknown type".formatted(type));
+        throw new IllegalArgumentException("function newEmpty(%s) has unknown type".formatted(type));
     }
 
     public static List<Object> list(Exchange exchange, Object... args) {
@@ -959,6 +961,48 @@ public final class CSimpleHelper {
             return (int) d;
         }
         return null;
+    }
+
+    public static boolean isAlpha(Exchange exchange, Object value) {
+        String body = convertTo(exchange, String.class, value);
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        for (int i = 0; i < body.length(); i++) {
+            char ch = body.charAt(i);
+            if (!Character.isLetter(ch)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static boolean isAlphaNumeric(Exchange exchange, Object value) {
+        String body = convertTo(exchange, String.class, value);
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        for (int i = 0; i < body.length(); i++) {
+            char ch = body.charAt(i);
+            if (!Character.isLetterOrDigit(ch)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static boolean isNumeric(Exchange exchange, Object value) {
+        String body = convertTo(exchange, String.class, value);
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        for (int i = 0; i < body.length(); i++) {
+            char ch = body.charAt(i);
+            if (!Character.isDigit(ch)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public static boolean isEmpty(Exchange exchange, Object value) {

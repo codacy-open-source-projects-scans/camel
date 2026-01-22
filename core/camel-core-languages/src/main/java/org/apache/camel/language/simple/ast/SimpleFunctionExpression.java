@@ -1056,6 +1056,36 @@ public class SimpleFunctionExpression extends LiteralExpression {
             return SimpleExpressionBuilder.isEmptyExpression(exp);
         }
 
+        // isAlpha function
+        remainder = ifStartsWithReturnRemainder("isAlpha(", function);
+        if (remainder != null) {
+            String exp = null;
+            String value = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(value)) {
+                exp = StringHelper.removeQuotes(value);
+            }
+            return SimpleExpressionBuilder.isAlphaExpression(exp);
+        }
+        remainder = ifStartsWithReturnRemainder("isAlphaNumeric(", function);
+        if (remainder != null) {
+            String exp = null;
+            String value = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(value)) {
+                exp = StringHelper.removeQuotes(value);
+            }
+            return SimpleExpressionBuilder.isAlphaNumericExpression(exp);
+        }
+        // isNumeric function
+        remainder = ifStartsWithReturnRemainder("isNumeric(", function);
+        if (remainder != null) {
+            String exp = null;
+            String value = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(value)) {
+                exp = StringHelper.removeQuotes(value);
+            }
+            return SimpleExpressionBuilder.isNumericExpression(exp);
+        }
+
         // trim function
         remainder = ifStartsWithReturnRemainder("trim(", function);
         if (remainder != null) {
@@ -1266,6 +1296,16 @@ public class SimpleFunctionExpression extends LiteralExpression {
             if (ObjectHelper.isEmpty(value)) {
                 throw new SimpleParserException(
                         "Valid syntax: ${empty(<type>)} but was: " + function, token.getIndex());
+            }
+            return SimpleExpressionBuilder.newEmptyExpression(value);
+        }
+        // newEmpty function
+        remainder = ifStartsWithReturnRemainder("newEmpty(", function);
+        if (remainder != null) {
+            String value = StringHelper.before(remainder, ")");
+            if (ObjectHelper.isEmpty(value)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${newEmpty(<type>)} but was: " + function, token.getIndex());
             }
             return SimpleExpressionBuilder.newEmptyExpression(value);
         }
@@ -2712,6 +2752,79 @@ public class SimpleFunctionExpression extends LiteralExpression {
             return "Object o = " + exp + ";\n        return isEmpty(exchange, o);";
         }
 
+        // isNumeric function
+        remainder = ifStartsWithReturnRemainder("isAlpha(", function);
+        if (remainder != null) {
+            String exp = null;
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(values)) {
+                String[] tokens = codeSplitSafe(values, ',', true, true);
+                if (tokens.length != 1) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${isAlpha(exp)} was: " + function, token.getIndex());
+                }
+                // single quotes should be double quotes
+                String s = tokens[0];
+                if (StringHelper.isSingleQuoted(s)) {
+                    s = StringHelper.removeLeadingAndEndingQuotes(s);
+                    s = StringQuoteHelper.doubleQuote(s);
+                }
+                exp = s;
+            }
+            if (ObjectHelper.isEmpty(exp)) {
+                exp = "body";
+            }
+            return "Object o = " + exp + ";\n        return isAlpha(exchange, o);";
+        }
+        // isAlphaNumeric function
+        remainder = ifStartsWithReturnRemainder("isAlphaNumeric(", function);
+        if (remainder != null) {
+            String exp = null;
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(values)) {
+                String[] tokens = codeSplitSafe(values, ',', true, true);
+                if (tokens.length != 1) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${isAlphaNumeric(exp)} was: " + function, token.getIndex());
+                }
+                // single quotes should be double quotes
+                String s = tokens[0];
+                if (StringHelper.isSingleQuoted(s)) {
+                    s = StringHelper.removeLeadingAndEndingQuotes(s);
+                    s = StringQuoteHelper.doubleQuote(s);
+                }
+                exp = s;
+            }
+            if (ObjectHelper.isEmpty(exp)) {
+                exp = "body";
+            }
+            return "Object o = " + exp + ";\n        return isAlphaNumeric(exchange, o);";
+        }
+        // isNumeric function
+        remainder = ifStartsWithReturnRemainder("isNumeric(", function);
+        if (remainder != null) {
+            String exp = null;
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(values)) {
+                String[] tokens = codeSplitSafe(values, ',', true, true);
+                if (tokens.length != 1) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${isNumeric(exp)} was: " + function, token.getIndex());
+                }
+                // single quotes should be double quotes
+                String s = tokens[0];
+                if (StringHelper.isSingleQuoted(s)) {
+                    s = StringHelper.removeLeadingAndEndingQuotes(s);
+                    s = StringQuoteHelper.doubleQuote(s);
+                }
+                exp = s;
+            }
+            if (ObjectHelper.isEmpty(exp)) {
+                exp = "body";
+            }
+            return "Object o = " + exp + ";\n        return isNumeric(exchange, o);";
+        }
+
         // capitalize function
         remainder = ifStartsWithReturnRemainder("capitalize(", function);
         if (remainder != null) {
@@ -3008,7 +3121,18 @@ public class SimpleFunctionExpression extends LiteralExpression {
                         "Valid syntax: ${empty(<type>)} but was: " + function, token.getIndex());
             }
             value = StringQuoteHelper.doubleQuote(value);
-            return "empty(exchange, " + value + ")";
+            return "newEmpty(exchange, " + value + ")";
+        }
+        // newEmpty
+        remainder = ifStartsWithReturnRemainder("newEmpty(", function);
+        if (remainder != null) {
+            String value = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isEmpty(value)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${newEmpty(<type>)} but was: " + function, token.getIndex());
+            }
+            value = StringQuoteHelper.doubleQuote(value);
+            return "newEmpty(exchange, " + value + ")";
         }
 
         // list function

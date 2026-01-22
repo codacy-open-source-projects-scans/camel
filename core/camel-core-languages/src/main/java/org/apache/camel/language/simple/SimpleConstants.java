@@ -119,7 +119,8 @@ public final class SimpleConstants {
               label = "function", javaType = "long", displayName = "Distinct Values")
     public static final String DISTINCT = "distinct(val...)";
 
-    @Metadata(description = "Creates a new empty object (decided by type). Use `string` to create an empty String. Use `list` to create an empty `java.util.ArrayList`. Use `map` to create an empty `java.util.LinkedHashMap`.",
+    @Deprecated
+    @Metadata(description = "Creates a new empty object (decided by type). Use `string` to create an empty String. Use `list` to create an empty `java.util.ArrayList`. Use `map` to create an empty `java.util.LinkedHashMap`. Use `set` to create an empty `java.util.LinkedHashSet`.",
               label = "function", javaType = "Object", displayName = "Create Empty Object")
     public static final String EMPTY = "empty(type)";
 
@@ -180,9 +181,21 @@ public final class SimpleConstants {
               label = "function", javaType = "Object", displayName = "If Then Else")
     public static final String IIF = "iif(predicate,trueExp,falseExp)";
 
+    @Metadata(description = "Whether the message body (or expression) is alphabetic value (A..Z). For more advanced checks use the `regex` operator.",
+              label = "function", javaType = "boolean", displayName = "Is Alphabetic Value")
+    public static final String IS_ALPHA = "isAlpha(exp)";
+
+    @Metadata(description = "Whether the message body (or expression) is alphanumeric value (A..Z0-9). For more advanced checks use the `regex` operator.",
+              label = "function", javaType = "boolean", displayName = "Is Alphabetic-Numeric Value")
+    public static final String IS_ALPHA_NUMERIC = "isAlphaNumeric(exp)";
+
     @Metadata(description = "Whether the message body (or expression) is null or empty (list/map types are tested if they have 0 elements).",
               label = "function", javaType = "boolean", displayName = "Is Empty")
     public static final String IS_EMPTY = "isEmpty(exp)";
+
+    @Metadata(description = "Whether the message body (or expression) is numeric value (0..9). For more advanced checks use the `regex` operator.",
+              label = "function", javaType = "boolean", displayName = "Is Numeric Value")
+    public static final String IS_NUMERIC = "isNumeric(exp)";
 
     @Metadata(description = "When working with JSon data, then this allows using the JQ language, for example, to extract data from the message body (in JSon format). This requires having camel-jq JAR on the classpath. For input (optional), you can choose `header:key`, `exchangeProperty:key` or `variable:key` to use as input for the JSon payload instead of the message body.",
               label = "function", javaType = "Object", displayName = "JQ")
@@ -234,6 +247,10 @@ public final class SimpleConstants {
     @Metadata(description = "Returns the minimum number from all the values", label = "function", javaType = "long",
               displayName = "Minimum Number")
     public static final String MIN = "min(val...)";
+
+    @Metadata(description = "Creates a new empty object (decided by type). Use `string` to create an empty String. Use `list` to create an empty `java.util.ArrayList`. Use `map` to create an empty `java.util.LinkedHashMap`. Use `set` to create an empty `java.util.LinkedHashSet`.",
+              label = "function", javaType = "Object", displayName = "Create Empty Object")
+    public static final String NEW_EMPTY = "newEmpty(type)";
 
     @Metadata(description = "Represents a null value", label = "function", javaType = "Object")
     public static final String NULL = "null";
