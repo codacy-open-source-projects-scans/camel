@@ -78,7 +78,7 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.41.11</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.41.12</aws-java-sdk2-version>
         <aws-xray-version>2.20.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.34</azure-storage-blob-changefeed-version>
@@ -94,7 +94,7 @@
         <californium-scandium-version>3.11.0</californium-scandium-version>
         <!-- jbang edit command which uses embedded kamelets catalog -->
         <camel-lsp-version>1.34.0</camel-lsp-version>
-        <camel-kamelets-catalog-version>4.16.0</camel-kamelets-catalog-version>
+        <camel-kamelets-catalog-version>4.17.0</camel-kamelets-catalog-version>
         <camunda-version>7.24.0</camunda-version>
         <cassandra-driver-version>4.19.2</cassandra-driver-version>
         <jta-api-1.2-version>1.2</jta-api-1.2-version>
@@ -200,7 +200,7 @@
         <jaxb-xjc-version>4.0.6</jaxb-xjc-version>
         <jaxb-jxc-version>4.0.6</jaxb-jxc-version>
         <jacoco-version>0.8.14</jacoco-version>
-        <gmavenplus-plugin-version>4.2.1</gmavenplus-plugin-version>
+        <gmavenplus-plugin-version>4.3.0</gmavenplus-plugin-version>
         <google-auth-library-oauth2-http-version>1.41.0</google-auth-library-oauth2-http-version>
         <google-api-client-version>2.8.1</google-api-client-version>
         <google-api-services-drive-version>v3-rev20251210-2.0.0</google-api-services-drive-version>
@@ -222,7 +222,7 @@
         <graphql-java-version>25.0</graphql-java-version>
         <greenmail-version>2.1.8</greenmail-version>
         <grizzly-websockets-version>2.4.4</grizzly-websockets-version>
-        <groovy-version>4.0.29</groovy-version>
+        <groovy-version>4.0.30</groovy-version>
         <grpc-version>1.78.0</grpc-version>
         <grpc-google-auth-library-version>1.41.0</grpc-google-auth-library-version>
         <grpc-java-jwt-version>4.5.0</grpc-java-jwt-version>
@@ -369,7 +369,7 @@
         <lucene-version>9.12.0</lucene-version>
         <lightcouch-version>0.2.0</lightcouch-version>
         <littleproxy-version>2.6.0</littleproxy-version>
-        <lz4-java-version>1.10.2</lz4-java-version>
+        <lz4-java-version>1.10.3</lz4-java-version>
         <mapstruct-version>1.6.3</mapstruct-version>
         <!-- needed from tooling/archetypes -->
         <maven-version>3.9.12</maven-version>
@@ -401,7 +401,7 @@
         <micrometer-tracing-version>1.5.5</micrometer-tracing-version>
         <microprofile-config-version>3.1</microprofile-config-version>
         <milo-version>1.1.0</milo-version>
-        <milvus-client-version>2.6.12</milvus-client-version>
+        <milvus-client-version>2.6.13</milvus-client-version>
         <mina-version>2.2.5</mina-version>
         <minidns-version>0.3.4</minidns-version>
         <minimal-json-version>0.9.5</minimal-json-version>
@@ -426,7 +426,7 @@
         <olingo2-version>2.0.13</olingo2-version>
         <olingo4-version>5.0.0</olingo4-version>
         <ognl-version>3.4.10</ognl-version>
-        <openai-java-version>4.15.0</openai-java-version>
+        <openai-java-version>4.16.0</openai-java-version>
         <openapi-generator-version>7.19.0</openapi-generator-version>
         <openjpa-version>4.1.1</openjpa-version>
         <opensearch-rest-client-version>3.4.0</opensearch-rest-client-version>
