@@ -18,16 +18,19 @@ package org.apache.camel.language.simple.ast;
 
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.StringJoiner;
+import java.util.stream.Collectors;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.Expression;
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.language.simple.BaseSimpleParser;
 import org.apache.camel.language.simple.SimpleExpressionBuilder;
+import org.apache.camel.language.simple.SimplePredicateParser;
 import org.apache.camel.language.simple.types.SimpleParserException;
 import org.apache.camel.language.simple.types.SimpleToken;
 import org.apache.camel.spi.Language;
@@ -967,13 +970,37 @@ public class SimpleFunctionExpression extends LiteralExpression {
         remainder = ifStartsWithReturnRemainder("distinct(", function);
         if (remainder != null) {
             String values = StringHelper.beforeLast(remainder, ")");
-            String[] tokens = null;
+            String[] tokens;
             if (ObjectHelper.isNotEmpty(values)) {
                 tokens = StringQuoteHelper.splitSafeQuote(values, ',', true, false);
             } else {
                 tokens = new String[] { "${body}" };
             }
             return SimpleExpressionBuilder.distinctExpression(tokens);
+        }
+        // reverse function
+        remainder = ifStartsWithReturnRemainder("reverse(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            String[] tokens;
+            if (ObjectHelper.isNotEmpty(values)) {
+                tokens = StringQuoteHelper.splitSafeQuote(values, ',', true, false);
+            } else {
+                tokens = new String[] { "${body}" };
+            }
+            return SimpleExpressionBuilder.reverseExpression(tokens);
+        }
+        // shuffle function
+        remainder = ifStartsWithReturnRemainder("shuffle(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            String[] tokens;
+            if (ObjectHelper.isNotEmpty(values)) {
+                tokens = StringQuoteHelper.splitSafeQuote(values, ',', true, false);
+            } else {
+                tokens = new String[] { "${body}" };
+            }
+            return SimpleExpressionBuilder.shuffleExpression(tokens);
         }
         // skip function
         remainder = ifStartsWithReturnRemainder("skip(", function);
@@ -1044,6 +1071,24 @@ public class SimpleFunctionExpression extends LiteralExpression {
             }
             return SimpleExpressionBuilder.splitStringExpression(exp, separator);
         }
+        // foreach function
+        remainder = ifStartsWithReturnRemainder("forEach(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isEmpty(values)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${forEach(exp,exp)} was: " + function, token.getIndex());
+            }
+            String[] tokens = StringQuoteHelper.splitSafeQuote(values, ',', false);
+            if (tokens.length < 2) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${forEach(exp,exp)} was: " + function, token.getIndex());
+            }
+            String exp1 = tokens[0];
+            // the function takes the remainder of the tokens
+            String exp2 = Arrays.stream(tokens).skip(1).collect(Collectors.joining(","));
+            return SimpleExpressionBuilder.forEachExpression(exp1, exp2);
+        }
 
         // isEmpty function
         remainder = ifStartsWithReturnRemainder("isEmpty(", function);
@@ -1084,6 +1129,16 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 exp = StringHelper.removeQuotes(value);
             }
             return SimpleExpressionBuilder.isNumericExpression(exp);
+        }
+        // not function
+        remainder = ifStartsWithReturnRemainder("not(", function);
+        if (remainder != null) {
+            String exp = "${body}";
+            String value = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(value)) {
+                exp = value;
+            }
+            return SimpleExpressionBuilder.isNotPredicate(exp);
         }
 
         // trim function
@@ -1654,7 +1709,7 @@ public class SimpleFunctionExpression extends LiteralExpression {
         }
 
         // miscellaneous functions
-        String misc = createCodeExpressionMisc(function);
+        String misc = createCodeExpressionMisc(camelContext, function);
         if (misc != null) {
             return misc;
         }
@@ -2314,7 +2369,7 @@ public class SimpleFunctionExpression extends LiteralExpression {
         return factory.get().createCode(camelContext, function, token.getIndex());
     }
 
-    private String createCodeExpressionMisc(String function) {
+    private String createCodeExpressionMisc(CamelContext camelContext, String function) {
         String remainder;
 
         // setHeader function
@@ -2578,6 +2633,11 @@ public class SimpleFunctionExpression extends LiteralExpression {
             return "Object value = " + exp + ";\n        String separator = " + separator
                    + ";\n        return stringSplit(exchange, value, separator);";
         }
+        // foreach function
+        remainder = ifStartsWithReturnRemainder("forEach(", function);
+        if (remainder != null) {
+            throw new UnsupportedOperationException("forEach is not supported in csimple language");
+        }
 
         // random function
         remainder = ifStartsWithReturnRemainder("random(", function);
@@ -2632,7 +2692,7 @@ public class SimpleFunctionExpression extends LiteralExpression {
             return "replace(exchange, " + from + ", " + to + ")";
         }
 
-        // distinct
+        // distinct function
         remainder = ifStartsWithReturnRemainder("distinct(", function);
         if (remainder != null) {
             String values = StringHelper.beforeLast(remainder, ")");
@@ -2653,6 +2713,48 @@ public class SimpleFunctionExpression extends LiteralExpression {
             String p = sj.length() > 0 ? sj.toString() : "body";
             return "distinct(exchange, " + p + ")";
         }
+        // reverse function
+        remainder = ifStartsWithReturnRemainder("reverse(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            String[] tokens = null;
+            if (ObjectHelper.isNotEmpty(values)) {
+                tokens = codeSplitSafe(values, ',', true, true);
+            }
+            StringJoiner sj = new StringJoiner(", ");
+            for (int i = 0; tokens != null && i < tokens.length; i++) {
+                String s = tokens[i];
+                // single quotes should be double quotes
+                if (StringHelper.isSingleQuoted(s)) {
+                    s = StringHelper.removeLeadingAndEndingQuotes(s);
+                    s = StringQuoteHelper.doubleQuote(s);
+                }
+                sj.add(s);
+            }
+            String p = sj.length() > 0 ? sj.toString() : "body";
+            return "reverse(exchange, " + p + ")";
+        }
+        // shuffle function
+        remainder = ifStartsWithReturnRemainder("shuffle(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            String[] tokens = null;
+            if (ObjectHelper.isNotEmpty(values)) {
+                tokens = codeSplitSafe(values, ',', true, true);
+            }
+            StringJoiner sj = new StringJoiner(", ");
+            for (int i = 0; tokens != null && i < tokens.length; i++) {
+                String s = tokens[i];
+                // single quotes should be double quotes
+                if (StringHelper.isSingleQuoted(s)) {
+                    s = StringHelper.removeLeadingAndEndingQuotes(s);
+                    s = StringQuoteHelper.doubleQuote(s);
+                }
+                sj.add(s);
+            }
+            String p = sj.length() > 0 ? sj.toString() : "body";
+            return "shuffle(exchange, " + p + ")";
+        }
 
         // skip function
         remainder = ifStartsWithReturnRemainder("skip(", function);
@@ -2667,8 +2769,6 @@ public class SimpleFunctionExpression extends LiteralExpression {
         // pad function
         remainder = ifStartsWithReturnRemainder("pad(", function);
         if (remainder != null) {
-            String exp;
-            String len;
             String separator = null;
             String values = StringHelper.beforeLast(remainder, ")");
             if (values == null || ObjectHelper.isEmpty(values)) {
@@ -2823,6 +2923,25 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 exp = "body";
             }
             return "Object o = " + exp + ";\n        return isNumeric(exchange, o);";
+        }
+        // not function
+        remainder = ifStartsWithReturnRemainder("not(", function);
+        if (remainder != null) {
+            String exp = "body";
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(values)) {
+                String[] tokens = codeSplitSafe(values, ',', true, true);
+                if (tokens.length != 1) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${not(exp)} was: " + function, token.getIndex());
+                }
+
+                // Parse the condition as a predicate and generate code
+                SimplePredicateParser predicateParser
+                        = new SimplePredicateParser(camelContext, tokens[0], true, skipFileFunctions, null);
+                exp = predicateParser.parseCode();
+            }
+            return "Object o = " + exp + ";\n        return isNot(exchange, o);";
         }
 
         // capitalize function

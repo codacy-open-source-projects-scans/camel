@@ -21,6 +21,7 @@ import java.lang.reflect.Array;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -616,6 +617,32 @@ public final class CSimpleHelper {
         return answer;
     }
 
+    public static List<Object> reverse(Exchange exchange, Object... args) {
+        List<Object> answer = new ArrayList<>();
+        for (Object o : args) {
+            // this may be an object that we can iterate
+            Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(o);
+            for (Object i : it) {
+                answer.add(i);
+            }
+        }
+        Collections.reverse(answer);
+        return answer;
+    }
+
+    public static List<Object> shuffle(Exchange exchange, Object... args) {
+        List<Object> answer = new ArrayList<>();
+        for (Object o : args) {
+            // this may be an object that we can iterate
+            Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(o);
+            for (Object i : it) {
+                answer.add(i);
+            }
+        }
+        Collections.shuffle(answer);
+        return answer;
+    }
+
     public static Map<String, Object> map(Exchange exchange, Object... args) {
         Map<String, Object> answer = new LinkedHashMap<>();
         for (int i = 0, j = 0; args != null && i < args.length - 1; j++) {
@@ -1160,6 +1187,18 @@ public final class CSimpleHelper {
         }
     }
 
+    public static Object ternary(Exchange exchange, Object condition, Object trueValue, Object falseValue) {
+        boolean result;
+        if (condition instanceof Boolean b) {
+            result = b;
+        } else {
+            // Try to convert to boolean - treat null, empty, and "false" as false
+            result = condition != null && !ObjectHelper.isEmpty(condition)
+                    && !Boolean.FALSE.equals(condition) && !"false".equalsIgnoreCase(String.valueOf(condition));
+        }
+        return result ? trueValue : falseValue;
+    }
+
     public static Object setHeader(Exchange exchange, String name, Class<?> type, Object value) {
         if (type != null && value != null) {
             value = convertTo(exchange, type, value);
@@ -1182,6 +1221,30 @@ public final class CSimpleHelper {
             exchange.removeVariable(name);
         }
         return null;
+    }
+
+    public static boolean isNot(Exchange exchange, Object value) {
+        if (value == null) {
+            return true;
+        }
+        if (value instanceof String s) {
+            if (s.isEmpty()) {
+                return true;
+            }
+            if ("false".equalsIgnoreCase(s)) {
+                return true;
+            } else if ("true".equalsIgnoreCase(s)) {
+                return false;
+            } else {
+                return false;
+            }
+        }
+        Boolean b = convertTo(exchange, Boolean.class, value);
+        if (b == null) {
+            return true;
+        } else {
+            return !b;
+        }
     }
 
 }

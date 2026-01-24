@@ -63,6 +63,7 @@ import static org.apache.camel.test.junit5.TestSupport.assertIsInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -2846,6 +2847,91 @@ public class OriginalSimpleTest extends LanguageTestSupport {
     }
 
     @Test
+    public void testTernaryOperator() {
+        // Test that the same expression object evaluates correctly with different header values
+        exchange.getIn().setHeader("foo", 44);
+        Expression exp = context.resolveLanguage("csimple").createExpression("${header.foo > 0 ? 'positive' : 'negative'}");
+        assertEquals("positive", exp.evaluate(exchange, String.class), "First evaluation with foo=44");
+
+        exchange.getIn().setHeader("foo", -123);
+        assertEquals("negative", exp.evaluate(exchange, String.class), "Second evaluation with foo=-123");
+
+        // Test a simple ternary with a constant condition
+        Expression expTrue = context.resolveLanguage("csimple").createExpression("${true ? 'yes' : 'no'}");
+        assertEquals("yes", expTrue.evaluate(exchange, String.class), "Constant true ternary");
+
+        Expression expFalse = context.resolveLanguage("csimple").createExpression("${false ? 'yes' : 'no'}");
+        assertEquals("no", expFalse.evaluate(exchange, String.class), "Constant false ternary");
+
+        // Test with body
+        exchange.getIn().setBody("Hello World");
+        exchange.getIn().setHeader("foo", 44);
+        assertExpression("${header.foo > 0 ? ${body} : 'Bye World'}", "Hello World");
+        exchange.getIn().setHeader("foo", -123);
+        assertExpression("${header.foo > 0 ? ${body} : 'Bye World'}", "Bye World");
+        assertExpression("${header.foo > 0 ? ${body} : ${null}}", null);
+
+        // Test with file name
+        exchange.getIn().setHeader("CamelFileName", "testfile.txt");
+        assertExpression("${file:name startsWith 'test' ? 'foo' : 'bar'}", "foo");
+        exchange.getIn().setHeader("CamelFileName", "dummy.txt");
+        assertExpression("${file:name startsWith 'test' ? 'foo' : 'bar'}", "bar");
+    }
+
+    @Test
+    public void testTernaryOperatorWithNumbers() {
+        exchange.getIn().setHeader("score", 85);
+        assertExpression("${header.score >= 90 ? 'A' : 'B'}", "B");
+        exchange.getIn().setHeader("score", 95);
+        assertExpression("${header.score >= 90 ? 'A' : 'B'}", "A");
+
+        exchange.getIn().setHeader("age", 25);
+        assertExpression("${header.age >= 18 ? 'adult' : 'minor'}", "adult");
+        exchange.getIn().setHeader("age", 15);
+        assertExpression("${header.age >= 18 ? 'adult' : 'minor'}", "minor");
+    }
+
+    @Test
+    public void testTernaryOperatorWithBooleans() {
+        exchange.getIn().setHeader("enabled", true);
+        assertExpression("${header.enabled == true ? 'yes' : 'no'}", "yes");
+        exchange.getIn().setHeader("enabled", false);
+        assertExpression("${header.enabled == true ? 'yes' : 'no'}", "no");
+    }
+
+    @Test
+    public void testTernaryOperatorWithNull() {
+        exchange.getIn().setHeader("value", null);
+        assertExpression("${header.value == null ? 'empty' : 'full'}", "empty");
+        exchange.getIn().setHeader("value", "something");
+        assertExpression("${header.value == null ? 'empty' : 'full'}", "full");
+    }
+
+    @Test
+    public void testTernaryOperatorNested() {
+        // Nested ternary operators
+        exchange.getIn().setHeader("score", 95);
+        assertExpression("${header.score >= 90 ? 'A' : ${header.score} >= 80 ? 'B' : 'C'}", "A");
+        exchange.getIn().setHeader("score", 85);
+        assertExpression("${header.score >= 90 ? 'A' : ${header.score} >= 80 ? 'B' : 'C'}", "B");
+        exchange.getIn().setHeader("score", 75);
+        assertExpression("${header.score >= 90 ? 'A' : ${header.score} >= 80 ? 'B' : 'C'}", "C");
+    }
+
+    @Test
+    public void testTernaryOperatorWithStrings() {
+        exchange.getIn().setBody("Hello");
+        assertExpression("${body == 'Hello' ? 'greeting' : 'other'}", "greeting");
+        exchange.getIn().setBody("Goodbye");
+        assertExpression("${body == 'Hello' ? 'greeting' : 'other'}", "other");
+
+        exchange.getIn().setHeader("name", "John");
+        assertExpression("${header.name contains 'John' ? 'found' : 'not found'}", "found");
+        exchange.getIn().setHeader("name", "Jane");
+        assertExpression("${header.name contains 'John' ? 'found' : 'not found'}", "not found");
+    }
+
+    @Test
     public void testAbs() {
         exchange.getMessage().setBody("-987");
 
@@ -3134,6 +3220,69 @@ public class OriginalSimpleTest extends LanguageTestSupport {
         expression = context.resolveLanguage("csimple").createExpression("${distinct()}");
         s = expression.evaluate(exchange, String.class);
         assertEquals("[]", s);
+    }
+
+    @Test
+    public void testReverse() {
+        exchange.getMessage().setBody("1,2,3,4,5");
+
+        Expression expression = context.resolveLanguage("csimple").createExpression("${reverse()}");
+        List list = expression.evaluate(exchange, List.class);
+        assertEquals(5, list.size());
+        String s = expression.evaluate(exchange, String.class);
+        assertEquals("[5, 4, 3, 2, 1]", s);
+
+        expression = context.resolveLanguage("csimple").createExpression("${reverse('Z','X','Z','A','B','A','C','D','B','E')}");
+        s = expression.evaluate(exchange, String.class);
+        assertEquals("[E, B, D, C, A, B, A, Z, X, Z]", s);
+
+        expression = context.resolveLanguage("csimple")
+                .createExpression("${reverse('Z','4',${body},'A','B','A','C','D','B','E')}");
+        s = expression.evaluate(exchange, String.class);
+        assertEquals("[E, B, D, C, A, B, A, 5, 4, 3, 2, 1, 4, Z]", s);
+
+        exchange.getMessage().setBody(null);
+        expression = context.resolveLanguage("csimple").createExpression("${reverse()}");
+        s = expression.evaluate(exchange, String.class);
+        assertEquals("[]", s);
+    }
+
+    @Test
+    public void testShuffle() {
+        String input = "1,2,3,4,5,6,7,8,9,0";
+        exchange.getMessage().setBody(input);
+
+        Expression expression = context.resolveLanguage("csimple").createExpression("${shuffle()}");
+        List list = expression.evaluate(exchange, List.class);
+        assertEquals(10, list.size());
+        String s = expression.evaluate(exchange, String.class);
+        String s2 = expression.evaluate(exchange, String.class);
+        assertNotEquals(input, s);
+        assertNotEquals(input, s2);
+        assertNotEquals(s, s2); // should be random when calling again
+
+        exchange.getMessage().setBody(null);
+        expression = context.resolveLanguage("csimple").createExpression("${shuffle()}");
+        s = expression.evaluate(exchange, String.class);
+        assertEquals("[]", s);
+    }
+
+    @Test
+    public void testNot() {
+        exchange.getMessage().setBody("");
+        Expression expression = context.resolveLanguage("csimple").createExpression("${not()}");
+        assertTrue(expression.evaluate(exchange, Boolean.class));
+
+        exchange.getMessage().setBody("Hello");
+        expression = context.resolveLanguage("csimple").createExpression("${not()}");
+        assertFalse(expression.evaluate(exchange, Boolean.class));
+
+        expression = context.resolveLanguage("csimple").createExpression("${not(${body} == 'Hello')}");
+        assertFalse(expression.evaluate(exchange, Boolean.class));
+
+        exchange.getMessage().setBody("Bye");
+        expression = context.resolveLanguage("csimple").createExpression("${not(${body} == 'Hello')}");
+        assertTrue(expression.evaluate(exchange, Boolean.class));
     }
 
     @Override

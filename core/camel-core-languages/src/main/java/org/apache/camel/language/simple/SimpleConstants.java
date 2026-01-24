@@ -116,7 +116,7 @@ public final class SimpleConstants {
     public static final String DATE_WITH_TIMEZONE = "date-with-timezone(command:timezone:pattern)";
 
     @Metadata(description = "Returns a set of all the values with duplicates removed",
-              label = "function", javaType = "long", displayName = "Distinct Values")
+              label = "function", javaType = "Set", displayName = "Distinct Values")
     public static final String DISTINCT = "distinct(val...)";
 
     @Deprecated
@@ -148,6 +148,10 @@ public final class SimpleConstants {
     @Metadata(description = "The exception stacktrace (also from caught exceptions), is null if no exception present.",
               javaType = "String", label = "function", displayName = "Exception Stacktrace")
     public static final String EXCEPTION_STACKTRACE = "exception.stackTrace";
+
+    @Metadata(description = "Returns a List containing the values returned by the function when applied to each value from the input expression",
+              label = "function", javaType = "List", displayName = "For Each call Function")
+    public static final String FOR_EACH = "forEach(exp,fun)";
 
     @Metadata(description = "Converts the message body (or expression) to a floating number and return the floor value (rounded down to nearest integer).",
               label = "function", javaType = "Integer", displayName = "Floor Number")
@@ -252,6 +256,9 @@ public final class SimpleConstants {
               label = "function", javaType = "Object", displayName = "Create Empty Object")
     public static final String NEW_EMPTY = "newEmpty(type)";
 
+    @Metadata(description = "Evaluates the predicate and returns the opposite.", label = "function", javaType = "boolean")
+    public static final String NOT = "not";
+
     @Metadata(description = "Represents a null value", label = "function", javaType = "Object")
     public static final String NULL = "null";
 
@@ -291,6 +298,10 @@ public final class SimpleConstants {
               label = "function", javaType = "String", displayName = "Replace String Values")
     public static final String REPLACE = "replace(from,to,exp)";
 
+    @Metadata(description = "Returns a list of all the values, but in reverse order",
+              label = "function", javaType = "List", displayName = "Reverse Values")
+    public static final String REVERSE = "reverse(val...)";
+
     @Metadata(description = "The route group of the current route the Exchange is being routed. Not all routes have a group assigned, so this may be null.",
               javaType = "String", label = "function")
     public static final String ROUTE_GROUP = "routeGroup";
@@ -306,6 +317,10 @@ public final class SimpleConstants {
     @Metadata(description = "Sets a variable with the given expression (optional converting to the given type)",
               label = "function", javaType = "Object")
     public static final String SET_VARIABLE = "setVariable(name,type,exp)";
+
+    @Metadata(description = "Returns a list of all the values shuffled in random order",
+              label = "function", javaType = "List", displayName = "Shuffle Values")
+    public static final String SHUFFLE = "shuffle(val...)";
 
     @Metadata(description = "The size of the message body (or expression). If the payload is java.util.Collection or java.util.Map based then the size is the number of elements; otherwise the payload size in bytes.",
               label = "function", javaType = "int", displayName = "Size")

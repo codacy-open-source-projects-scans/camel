@@ -24,6 +24,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -59,6 +60,7 @@ import org.apache.camel.support.RandomUuidGenerator;
 import org.apache.camel.support.ShortUuidGenerator;
 import org.apache.camel.support.SimpleUuidGenerator;
 import org.apache.camel.support.builder.ExpressionBuilder;
+import org.apache.camel.support.builder.PredicateBuilder;
 import org.apache.camel.util.FileUtil;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.ObjectHelper;
@@ -552,6 +554,34 @@ public final class SimpleExpressionBuilder {
                     return "isAlphaNumeric(" + expression + ")";
                 } else {
                     return "isAlphaNumeric()";
+                }
+            }
+        };
+    }
+
+    /**
+     * Returns the opposite result of the predicate
+     */
+    public static Expression isNotPredicate(final String predicate) {
+        return new ExpressionAdapter() {
+            private Predicate pred;
+
+            @Override
+            public void init(CamelContext context) {
+                pred = PredicateBuilder.not(context.resolveLanguage("simple").createPredicate(predicate));
+                pred.init(context);
+            }
+
+            public Object evaluate(Exchange exchange) {
+                return pred.matches(exchange);
+            }
+
+            @Override
+            public String toString() {
+                if (predicate != null) {
+                    return "not(" + predicate + ")";
+                } else {
+                    return "not()";
                 }
             }
         };
@@ -1079,6 +1109,84 @@ public final class SimpleExpressionBuilder {
     }
 
     /**
+     * An expression that returns the elements in reverse order
+     */
+    public static Expression reverseExpression(String[] values) {
+        return new ExpressionAdapter() {
+
+            private final Expression[] exps = new Expression[values != null ? values.length : 0];
+
+            @Override
+            public void init(CamelContext context) {
+                for (int i = 0; values != null && i < values.length; i++) {
+                    Expression exp = context.resolveLanguage("simple").createExpression(values[i]);
+                    exp.init(context);
+                    exps[i] = exp;
+                }
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                List<Object> answer = new ArrayList<>();
+                for (Expression exp : exps) {
+                    Object o = exp.evaluate(exchange, Object.class);
+                    // this may be an object that we can iterate
+                    Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(o);
+                    for (Object i : it) {
+                        answer.add(i);
+                    }
+                }
+                Collections.reverse(answer);
+                return answer;
+            }
+
+            @Override
+            public String toString() {
+                return "reverse(" + Arrays.toString(values) + ")";
+            }
+        };
+    }
+
+    /**
+     * An expression that returns the elements in random order
+     */
+    public static Expression shuffleExpression(String[] values) {
+        return new ExpressionAdapter() {
+
+            private final Expression[] exps = new Expression[values != null ? values.length : 0];
+
+            @Override
+            public void init(CamelContext context) {
+                for (int i = 0; values != null && i < values.length; i++) {
+                    Expression exp = context.resolveLanguage("simple").createExpression(values[i]);
+                    exp.init(context);
+                    exps[i] = exp;
+                }
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                List<Object> answer = new ArrayList<>();
+                for (Expression exp : exps) {
+                    Object o = exp.evaluate(exchange, Object.class);
+                    // this may be an object that we can iterate
+                    Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(o);
+                    for (Object i : it) {
+                        answer.add(i);
+                    }
+                }
+                Collections.shuffle(answer);
+                return answer;
+            }
+
+            @Override
+            public String toString() {
+                return "reverse(" + Arrays.toString(values) + ")";
+            }
+        };
+    }
+
+    /**
      * An expression that converts the expressions to number and sum the values
      */
     public static Expression sumExpression(String[] numbers) {
@@ -1388,6 +1496,48 @@ public final class SimpleExpressionBuilder {
             @Override
             public String toString() {
                 return "split(" + expression + "," + separator + ")";
+            }
+        };
+    }
+
+    /**
+     * For each value in the source expression then apply the function and return a list of responses from each function
+     */
+    public static Expression forEachExpression(final String source, final String function) {
+        return new ExpressionAdapter() {
+            private CamelContext context;
+            private Expression exp1;
+            private Expression exp2;
+
+            @Override
+            public void init(CamelContext context) {
+                this.context = context;
+                exp1 = context.resolveLanguage("simple").createExpression(source);
+                exp1.init(context);
+                exp2 = context.resolveLanguage("simple").createExpression(function);
+                exp2.init(context);
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                List<Object> answer = new ArrayList<>();
+                Object o = exp1.evaluate(exchange, Object.class);
+                Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(o);
+                for (Object i : it) {
+                    // use a dummy exchange as the input is to be the message body
+                    Exchange dummy = ExchangeHelper.createCopy(exchange, true);
+                    dummy.getMessage().setBody(i);
+                    Object out = exp2.evaluate(dummy, Object.class);
+                    if (out != null) {
+                        answer.add(out);
+                    }
+                }
+                return answer;
+            }
+
+            @Override
+            public String toString() {
+                return "forEach(" + source + ", " + function + ")";
             }
         };
     }
