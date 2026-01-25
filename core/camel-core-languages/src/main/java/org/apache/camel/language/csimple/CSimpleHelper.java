@@ -18,6 +18,7 @@ package org.apache.camel.language.csimple;
 
 import java.io.InputStream;
 import java.lang.reflect.Array;
+import java.lang.reflect.Constructor;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -405,6 +406,8 @@ public final class CSimpleHelper {
             date = LanguageHelper.dateFromExchangeCreated(exchange);
         } else if (command.startsWith("header.")) {
             date = LanguageHelper.dateFromHeader(exchange, command, (e, o) -> failDueToMissingObjectAtCommand(command));
+        } else if (command.startsWith("variable.")) {
+            date = LanguageHelper.dateFromVariable(exchange, command, (e, o) -> failDueToMissingObjectAtCommand(command));
         } else if (command.startsWith("exchangeProperty.")) {
             date = LanguageHelper.dateFromExchangeProperty(exchange, command,
                     (e, o) -> failDueToMissingObjectAtCommand(command));
@@ -1244,6 +1247,22 @@ public final class CSimpleHelper {
             return true;
         } else {
             return !b;
+        }
+    }
+
+    public static Object throwException(Exchange exchange, String message, Class<?> clazz) {
+        try {
+            // create a new exception to that type, and provide the message as
+            Constructor<?> constructor = clazz.getConstructor(String.class);
+            Exception cause = (Exception) constructor.newInstance(message);
+            if (cause instanceof RuntimeException re) {
+                throw re;
+            } else {
+                RuntimeException re = new RuntimeCamelException(cause);
+                throw re;
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 

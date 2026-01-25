@@ -1068,6 +1068,8 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 } else {
                     separator = tokens[0];
                 }
+            } else if ("\n".equals(values)) {
+                separator = values;
             }
             return SimpleExpressionBuilder.splitStringExpression(exp, separator);
         }
@@ -1218,6 +1220,32 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 exp2 = StringHelper.removeQuotes(values.trim());
             }
             return SimpleExpressionBuilder.concatExpression(exp1, exp2, separator);
+        }
+
+        // throwException function
+        remainder = ifStartsWithReturnRemainder("throwException(", function);
+        if (remainder != null) {
+            String msg;
+            String type = null;
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (values == null || ObjectHelper.isEmpty(values)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${throwException(msg)} or ${throwException(type,sg)} was: " + function,
+                        token.getIndex());
+            }
+            if (values.contains(",")) {
+                String[] tokens = StringQuoteHelper.splitSafeQuote(values, ',', true, true);
+                if (tokens.length > 2) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${throwException(msg)} or ${throwException(type,msg)} was: " + function,
+                            token.getIndex());
+                }
+                msg = StringHelper.removeQuotes(tokens[0]);
+                type = StringHelper.removeQuotes(tokens[1]);
+            } else {
+                msg = StringHelper.removeQuotes(values.trim());
+            }
+            return SimpleExpressionBuilder.throwExceptionExpression(msg, type);
         }
 
         // convertTo function
@@ -1599,6 +1627,9 @@ public class SimpleFunctionExpression extends LiteralExpression {
             return createCodeFileExpression(remainder);
         }
 
+        if ("date:millis".equals(function)) {
+            return "System.currentTimeMillis()";
+        }
         // date: prefix
         remainder = ifStartsWithReturnRemainder("date:", function);
         if (remainder != null) {
@@ -3067,6 +3098,35 @@ public class SimpleFunctionExpression extends LiteralExpression {
             }
             code += ";";
             return code;
+        }
+        // throwException function
+        remainder = ifStartsWithReturnRemainder("throwException(", function);
+        if (remainder != null) {
+            String msg;
+            String type = "IllegalArgumentException";
+            String values = StringHelper.before(remainder, ")");
+            if (values == null || ObjectHelper.isEmpty(values)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${throwException(msg)} or ${throwException(msg,type)} was: " + function,
+                        token.getIndex());
+            }
+            if (values.contains(",")) {
+                String[] tokens = codeSplitSafe(values, ',', true, true);
+                if (tokens.length > 2) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${throwException(msg)} or ${throwException(msg,type)} was: " + function,
+                            token.getIndex());
+                }
+                msg = tokens[0];
+                type = tokens[1];
+            } else {
+                msg = values.trim();
+            }
+            msg = StringHelper.removeLeadingAndEndingQuotes(msg);
+            msg = StringQuoteHelper.doubleQuote(msg);
+            type = appendClass(type);
+            type = type.replace('$', '.');
+            return "return throwException(exchange, " + msg + ", " + type + ");";
         }
 
         // uppercase function

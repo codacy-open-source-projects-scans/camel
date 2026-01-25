@@ -17,6 +17,7 @@
 package org.apache.camel.language.simple;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -70,6 +71,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class SimpleTest extends LanguageTestSupport {
 
@@ -661,8 +663,23 @@ public class SimpleTest extends LanguageTestSupport {
 
     @Test
     public void testDateNow() {
-        Object out = evaluateExpression("${date:now:hh:mm:ss a}", null);
+        Object out = evaluateExpression("${date:now}", null);
         assertNotNull(out);
+        assertIsInstanceOf(Date.class, out);
+
+        out = evaluateExpression("${date:now:hh:mm:ss a}", null);
+        assertNotNull(out);
+        out = evaluateExpression("${date:now:hh:mm:ss}", null);
+        assertNotNull(out);
+        out = evaluateExpression("${date:now-2h:hh:mm:ss}", null);
+        assertNotNull(out);
+    }
+
+    @Test
+    public void testDateMillis() {
+        Object out = evaluateExpression("${date:millis}", null);
+        assertNotNull(out);
+        assertIsInstanceOf(Long.class, out);
     }
 
     @Test
@@ -2713,6 +2730,13 @@ public class SimpleTest extends LanguageTestSupport {
         expression = context.resolveLanguage("simple").createExpression("${split(${header.myHead},;)}");
         s = expression.evaluate(exchange, String[].class);
         assertArrayEquals(arr2, s);
+
+        body = "A1,B1,C1\nA2,B2,C2\nA3,B3,C3";
+        arr = body.split("\n");
+        exchange.getMessage().setBody(body);
+        expression = context.resolveLanguage("simple").createExpression("${split(\\n)}");
+        s = expression.evaluate(exchange, String[].class);
+        assertArrayEquals(arr, s);
     }
 
     @Test
@@ -3611,6 +3635,29 @@ public class SimpleTest extends LanguageTestSupport {
         exchange.getMessage().setBody("Bye");
         expression = context.resolveLanguage("simple").createExpression("${not(${body} == 'Hello')}");
         assertTrue(expression.evaluate(exchange, Boolean.class));
+    }
+
+    @Test
+    public void testThrowException() {
+        try {
+            Expression expression = context.resolveLanguage("simple").createExpression("${throwException('Forced error')}");
+            expression.evaluate(exchange, Object.class);
+            fail();
+        } catch (Exception e) {
+            assertIsInstanceOf(IllegalArgumentException.class, e.getCause());
+            assertEquals("Forced error", e.getCause().getMessage());
+        }
+
+        try {
+            Expression expression
+                    = context.resolveLanguage("simple")
+                            .createExpression("${throwException('Some IO error','java.io.IOException')}");
+            expression.evaluate(exchange, Object.class);
+            fail();
+        } catch (Exception e) {
+            assertIsInstanceOf(IOException.class, e.getCause().getCause());
+            assertEquals("Some IO error", e.getCause().getCause().getMessage());
+        }
     }
 
     @Override

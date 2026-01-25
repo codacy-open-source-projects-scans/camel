@@ -177,6 +177,7 @@ NOTE: Some functions take 1 or more arguments enclosed in parentheses, and argum
 |`setHeader(name,type,exp)` | `null` | Sets a message header with the given expression (optional converting to the given type).
 |`setVariable(name,type,exp)` | `null` | Sets a variable with the given expression (optional converting to the given type).
 |`stepId` | `String` | Returns the id of the current step the `Exchange` is being routed. Returns `null` if there are no steps.
+|`throwException(type,msg)` | `Exception` | Deliberately throws an error. Uses `IllegalArgumentException` by default if no type is specified (use fully qualified classname).
 |`type:name.field` | `Object` | To refer to a type or field by its fully qualified classname. For example: `type:org.apache.camel.Exchange.FILE_NAME`.
 |`variable.key` | `Object` | To look up the variable with the given key.
 |`variable.key._OGNL_` | `Object` | To look up the variable with the given key and then invoke Camel _OGNL syntax_.
@@ -186,12 +187,54 @@ NOTE: Some functions take 1 or more arguments enclosed in parentheses, and argum
 |`variables.size` | `int` | The number of `Exchange` variables
 |====
 
+The Camel functions are as the name implies specific to Apache Camel and these functions are primary used
+to access Camel functionality and content of the message being routed.
+
+These functions are powerful to give easy access to the current `Exchange` / `Message` being routed so
+you can get the message body, headers, variables and exchange properties.
+
+During routing, you can use the xref:eips:log-eip.adoc[LogEIP] to write to the log, for example:
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:email")
+  .log("Sending welcome email to customer ${header.id} with status ${variable.level}");
+----
+
+XML::
++
+[source,xml]
+----
+<route>
+    <from uri="direct:email"/>
+    <log message="Sending welcome email to customer ${header.id} with status ${variable.level}"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- from:
+    uri: direct:email
+    steps:
+      - log:
+          message: "Sending welcome email to customer ${header.id} with status ${variable.level}"
+----
+====
+
+NOTE: The Camel functions are often also used for basic data mapping to easily get the part of the message payload you desire.
+
 === Array & List Functions
 
 [width="100%",cols="10%,10%,80%",options="header",]
 |====
 |Function |Response Type |Description
-|`collate(size)` | `List` | The collate function iterates the message body and groups the data into sub lists of specified size. This can be used with the Splitter EIP to split a message body and group/batch the split sub message into a group of N sub lists. This method works similar to the collate method in Groovy.
+|`collate(size)` | `Iterator<List>` | The collate function iterates the message body and groups the data into sub lists of specified size. This can be used with the Splitter EIP to split a message body and group/batch the split sub message into a group of N sub lists. This method works similar to the collate method in Groovy.
 |`distinct(val1,val2,...)` | `Set` | Returns a set of all the values with duplicates removed
 |`empty(kind)` | `<T>` | *Deprecated* Use `createEmpty` instead.
 |`forEach(exp,fun)` | `<List>` | Returns a List containing the values returned by the function when applied to each value from the input expression. This function is not supported when using csimple.
@@ -204,6 +247,42 @@ NOTE: Some functions take 1 or more arguments enclosed in parentheses, and argum
 |`split(separator)` | `String[]` | Splits the message body as a `String` value using the separator into a `String` array. The separator is comma by default.
 |`split(exp,separator)` | `String[]` | Splits the expression as a `String` value using the separator into a `String` array. The separator is comma by default.
 |====
+
+The array and list functions are less commonly used as they are more advanced and require to work with data that are structured
+in arrays or lists.
+
+The `collate` function is used for grouping together data into smaller subgroups. Suppose you have a message body containing a list of 9 elements.
+Then by using `${collate(2)}` will transform this into an `java.util.Iterator` that will return each sub list.
+As there are 9 elements as input then the output will be 5 sub lists with 2 2 2 2 and 1 element each.
+
+The `distinct` function takes one or more values as input and then returns a `Set` with only the unique values.
+The input values can single objects or arrays or lists as well. If no values is provided then the `${distinct()}` function will use the message body as input.
+For example `${distinct('Z','X','Z','A','B','A','C','D','B','E')}` will return a `Set` with values `[Z, X, A, B, C, D, E]`.
+
+The `forEach` function is like a for loop that loops the input values and apply the function to each item, and aggregates their responses into a `List` as result.
+
+For example suppose the message body contains a comma separated String with `Camel,World,Cheese` then
+executing `${forEach($\{body},'Hello $\{body}')}` will return a List with 3 values: `["Hello Camel", "Hello World", "Hello Cheese"]`.
+
+The `list` function is used for taking all input values and putting them into a single `List` as response.
+For example if the message body contains '4' then `${list(1,2,3,$\{body})}` will return a list with 4 elements. `[1,2,3,4]`.
+
+The `map` function is similar to the `list` function but for creating a `Map` instead where the values are grouped in pairs 2 by 2.
+For example `${map(1,a,2,b,3,c)}` will return a map with 3 elements `{1=a, 2=b, 3=c}`.
+
+The `createEmpty` function is for creating an empty object which can either be an empty `String` or a `List`, `Map` or `Set`.
+To create an empty `Map` use `${createEmpty(map)}`.
+
+The `reverse` function is to reverse the order of the values.
+For example `${reverse(1,2,3,4,5)}` will return a `List` with the values `5,4,3,2,1`.
+And the `shuffle` function will randomize the order of the values.
+
+The `skip` function is used for skipping the first number of elements. For example suppose you have a CSV file that contains a header line,
+and you want to skip this line, then you can use `${skip(1)}` that then returns an `Iterator` that starts at the 2nd line.
+
+The `split` function is as the name implies used for splitting the message body or the value (using a separator) into an array of sub elements.
+For example if the message body a CSV payload then using `${split(\\n)}` (you need to escape the new-line character) will split
+this into a `String[]` separated by new-line.
 
 === Boolean Functions
 
@@ -222,15 +301,46 @@ NOTE: Some functions take 1 or more arguments enclosed in parentheses, and argum
 |`not(predicate)` | `boolean` | Evaluates the predicate and returns the opposite.
 |====
 
+The `iif` (_inlined if_) function is from Camel 4.18 also available as a ternary operator (predicate `?` trueExp `:` falseExp), see further below.
+An example with `iif` could be `${iif(${header.foo} > 0,'positive','negative')}`. This example is also used further below with the ternary operator.
+Instead of returning a fixed string as response, you can also use functions such as: `${iif(${header.foo} > 0,$\{body},$\{null})}`
+
+The remainder boolean functions are basic functions to check a value and return either `true` or `false`.
+
+The `isEmpty` is primary for checking if a value is either `null` or empty string or empty list/map/array types. For any other values then `false` is returned.
+
+The `isAlpha` / `isAlphaNumeric` and `isNumeric` is for checking if a value only contains `A..Z` or `A.Z0..9`, or `0..9` characters.
+Camel will use from the JDK `Character.isLetter` / `Character.isLetterOrDigit`, or `Character.isDigit` methods internally.
+
+So `${isAlpha('Hello World'}` will actually return `false` because there is a whitespace. However `${isAlpha('HelloWorld'}` returns `true`.
+
+TIP: You can use the `regex` operator to use regular expressions for more advanced tests.
+
+And the `not` function is function to inverse the boolean value.
+
+
 === Date & Time Functions
 
 [width="100%",cols="10%,10%,80%",options="header",]
 |====
 |Function |Response Type |Description
-|`date-with-timezone:command:timezone:pattern` | `String` | Date formatting using `java.text.SimpleDateFormat` timezones and patterns. See `data:command` function for additional documentation on the commands.
-|`date:command:pattern` | `String` | Date formatting using `java.text.SimpleDateFormat` patterns. See `data:command` function for additional documentation on the commands.
+|`date:millis` | `long` | Returns the current timestamp as millis in unix epoch.
 |`date:command` | `Date` | Evaluates to a `java.util.Date` object. Supported commands are: `now` for current timestamp, `exchangeCreated` for the timestamp when the current exchange was created, `header.xxx` to use the `Long/Date` object in the header with the key xxx. `variable.xxx` to use the `Long/Date` in the variable with the key xxx. `exchangeProperty.xxx` to use the `Long/Date` object in the exchange property with the key xxx. `file` for the last modified timestamp of the file (only available with a File consumer). Command accepts offsets such as: `now-24h` or `header.xxx+1h` or `now+1h30m-100`.
+|`date:command:pattern` | `String` | Date formatting using `java.text.SimpleDateFormat` patterns. See `data:command` function for additional documentation on the commands.
+|`date-with-timezone:command:timezone:pattern` | `String` | Date formatting using `java.text.SimpleDateFormat` timezones and patterns. See `data:command` function for additional documentation on the commands.
 |====
+
+The date functions is used for parsing and formatting with date and times.
+
+For example to get the current time use `${date:now}` which is returned as a `java.util.Date` object.
+And you can use `${date:millis}` to get unix epoch timestamp as a long value.
+
+If you want to format this to a String value, you can use the pattern command, such as `${date:now:hh:mm:ss}`.
+And to get the time 8 hours in the future `${date:now+8h:hh:mm:ss}`.
+
+There is also a timezone supported function so you can say `date-with-timezone:header.birthday:GMT+8:yyyy-MM-dd'T'HH:mm:ss:SSS`.
+This will get the `Date` object from the header with key birthday, and format that using the given pattern in the timezone GMT+8.
+
 
 === Math & Numeric Functions
 
@@ -279,7 +389,7 @@ NOTE: Some functions take 1 or more arguments enclosed in parentheses, and argum
 |`capitalize()` | `String` | Capitalizes the message body as a String value (upper case every words)
 |`capitalize(exp)` | `String` | Capitalizes the expression as a String value (upper case every words)
 |`concat(exp,exp,separator)` | `String` | Performs a string concat using two expressions (message body as default) with optional separator (uses comma by default).
-|`join(separator,prefix,exp` | `String` | The join function iterates the message body (by default) and joins the data into a `String`. The separator is by default a comma. The prefix is optional. The join uses the message body as source by default. It is possible to refer to another source (simple language) such as a header via the exp parameter. For example `join('&','id=','$\{header.ids}')`
+|`join(separator,prefix,exp)` | `String` | The join function iterates the message body (by default) and joins the data into a `String`. The separator is by default a comma. The prefix is optional. The join uses the message body as source by default. It is possible to refer to another source (simple language) such as a header via the exp parameter. For example `join('&','id=','$\{header.ids}')`
 |`lowercase()` | `String` | Lowercases the message body
 |`lowercase(exp)` | `String` | Lowercases the expression
 |`normalizeWhitespace()` | `String` | Normalizes the whitespace in the message body by cleaning up excess whitespaces.
@@ -714,7 +824,7 @@ Yes you can use the full power of the simple language and all its functions, suc
 ----
 $init{
   $foo := ${upper('Hello $body}'}
-  $bar := ${iif(${header.code} > 999,'Gold','Silver')}
+  $bar := ${header.code > 999 ? 'Gold' : 'Silver'}
 }init$
 ----
 
@@ -727,7 +837,7 @@ For example as below where we do a basic JSon mapping:
 ----
 $init{
   $greeting := ${upper('Hello $body}'}
-  $level := ${iif(${header.code} > 999,'Gold','Silver')}
+  $level := ${header.code > 999 ? 'Gold' : 'Silver'}
 }init$
 {
   "message": "$greeting",
@@ -751,7 +861,7 @@ from("direct:welcome")
           """
             $init{
               $greeting := ${upper('Hello $body}'}
-              $level := ${iif(${header.code} > 999,'Gold','Silver')}
+              $level := ${header.code > 999 ? 'Gold' : 'Silver'}
             }init$
             {
               "message": "$greeting",
@@ -772,7 +882,7 @@ XML::
         <simple>
             $init{
               $greeting := ${upper('Hello $body}'}
-              $level := ${iif(${header.code} > 999,'Gold','Silver')}
+              $level := ${header.code > 999 ? 'Gold' : 'Silver'}
             }init$
             {
               "message": "$greeting",
@@ -797,7 +907,7 @@ YAML::
             expression: |-
                 $init{
                   $greeting := ${upper('Hello $body}'}
-                  $level := ${iif(${header.code} > 999,'Gold','Silver')}
+                  $level := ${header.code > 999 ? 'Gold' : 'Silver'}
                 }init$
                 {
                   "message": "$greeting",

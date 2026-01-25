@@ -19,6 +19,7 @@ package org.apache.camel.language.simple;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Constructor;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -44,6 +45,7 @@ import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.Expression;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Predicate;
+import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.StreamCache;
 import org.apache.camel.spi.ClassResolver;
 import org.apache.camel.spi.ExchangeFormatter;
@@ -740,6 +742,54 @@ public final class SimpleExpressionBuilder {
             @Override
             public String toString() {
                 return "concat(" + right + "," + left + ")";
+            }
+        };
+    }
+
+    /**
+     * Throws an exception with the given message.
+     */
+    public static Expression throwExceptionExpression(String msg, String type) {
+        return new ExpressionAdapter() {
+            private Class<?> clazz;
+            private Expression exp;
+
+            @Override
+            public void init(CamelContext context) {
+                if (type == null) {
+                    clazz = IllegalArgumentException.class;
+                } else {
+                    try {
+                        clazz = context.getClassResolver().resolveMandatoryClass(type);
+                    } catch (ClassNotFoundException e) {
+                        throw CamelExecutionException.wrapRuntimeException(e);
+                    }
+                }
+                exp = context.resolveLanguage("simple").createExpression(msg);
+                exp.init(context);
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                try {
+                    String text = exp.evaluate(exchange, String.class);
+                    // create a new exception to that type, and provide the message as
+                    Constructor<?> constructor = clazz.getConstructor(String.class);
+                    Exception cause = (Exception) constructor.newInstance(text);
+                    if (cause instanceof RuntimeException re) {
+                        throw re;
+                    } else {
+                        RuntimeException re = new RuntimeCamelException(cause);
+                        throw re;
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            @Override
+            public String toString() {
+                return "throwException(" + msg + ")";
             }
         };
     }
@@ -2189,8 +2239,11 @@ public final class SimpleExpressionBuilder {
             @Override
             public Object evaluate(Exchange exchange) {
                 Date date = evalDate(exchange, command);
-
-                return LanguageHelper.applyDateOffsets(date, offsets, pattern, timezone);
+                Object answer = LanguageHelper.applyDateOffsets(date, offsets, pattern, timezone);
+                if ("millis".equals(command) && answer instanceof Date d) {
+                    answer = d.getTime();
+                }
+                return answer;
             }
 
             @Override
@@ -2208,7 +2261,7 @@ public final class SimpleExpressionBuilder {
 
     private static Date evalDate(Exchange exchange, String command) {
         Date date;
-        if ("now".equals(command)) {
+        if ("now".equals(command) || "millis".equals(command)) {
             date = new Date();
         } else if ("exchangeCreated".equals(command)) {
             date = LanguageHelper.dateFromExchangeCreated(exchange);
