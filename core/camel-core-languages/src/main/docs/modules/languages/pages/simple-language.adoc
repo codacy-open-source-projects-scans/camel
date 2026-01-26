@@ -349,21 +349,57 @@ This will get the `Date` object from the header with key birthday, and format th
 |Function |Response Type |Description
 |`abs()` | `long` | Converts the message body to a long number and return the absolute value.
 |`abs(exp)` | `Long` | Converts the message body (or expression) to a long number and return the absolute value.
-|`average(val1,val2,...)` | `long` | Returns the average number from all the values.
+|`average(val1,val2,...)` | `long` | Returns the average number from all the values  (integral numbers only).
 |`ceil()` | `int` | Converts the message body to a floating number and return the ceil value (rounded up to nearest integer).
 |`ceil(exp)` | `int` | Converts the expression to a floating number and return the ceil value (rounded up to nearest integer).
 |`floor()` | `int` | Converts the message body to a floating number and return the floor value (rounded down to nearest integer).
 |`floor(exp)` | `int` | Converts the expression to a floating number and return the floor value (rounded down to nearest integer).
 |`length()` | `int` | The payload length (number of bytes) of the message body
 |`length(exp)` | `int` | The payload length (number of bytes) of the expression.
-|`max(val1,val2,...)` | `long` | Returns the maximum number from all the values.
-|`min(val1,val2,...)` | `long` | Returns the minimum number from all the values.
+|`max(val1,val2,...)` | `long` | Returns the maximum number from all the values (integral numbers only).
+|`min(val1,val2,...)` | `long` | Returns the minimum number from all the values (integral numbers only).
 |`random(max)` | `int` | Returns a random `Integer` between 0 (included) and max (excluded).
 |`random(min,max)` | `int` | Returns a random `Integer` between min (included) and max (excluded),
-|`size()` | `int` | The size of the message body. If the payload is `java.util.Collection` or `java.util.Map` based then the size is the number of elements; otherwise the payload size in bytes.
-|`size(exp)` | `int` | The size of the expression. If the payload is `java.util.Collection` or `java.util.Map` based then the size is the number of elements; otherwise the payload size in bytes.
+|`size()` | `int` | Returns the number of elements in collection or array based message body. If the value is null then 0 is returned, otherwise 1.
+|`size(exp)` | `int` | Returns the number of elements in collection or array based value. If the value is null then 0 is returned, otherwise 1.
 |`sum(val1,val2,...)` | `long` | Sums together all the values as integral numbers. This function can also be used to subtract by using negative numbers.
 |====
+
+The `abs` function returns the absolute value of a numeric value. It converts the input (either the message body or the result of an expression) to a long number and computes its absolute value.
+A few examples `${abs(-5)}` returns `5`, and `${abs(5)}` also returns `5`.
+
+The `average` function calculates the average (mean) of integral numbers (not floating point).
+Assume message body is `[10, 20, 30]` (as `List<Integer>` or similar) then `${avg()}` results in `20`
+
+The `ceil` functions returns the value of number rounded up to the nearest integer that is greater than or equal to number.
+For example `${ceil(5.7)}` returns `6`, and `${ceil(5.1)}` also returns `6`.
+
+The `floor` functions returns the value of number rounded down to the nearest integer that is smaller or equal to number.
+For example `${ceil(5.7)}` returns `5`, and `${ceil(5.1)}` also returns `5`.
+
+The `length` function calculates the payload size in bytes (if possible). This is calculated by
+(if necessary) converting the payload into String to use for determine the byte length.
+For example `${length('Hello World')}` returns `11`. For larger payloads, then when using xref:manual::stream-caching.adoc[stream caching]
+the length is pre-computed and usually does not require to load the content into memory.
+
+The `max` and `min` functions in are used to find the maximum or minimum value among a set of numeric integral values.
+For example message body contains a list `[10, 5, 30, 15]` then `${max()}` returns `30` and `${min()}` returns `5`.
+
+The `random` functions returns a random number between min and max (exclusive).
+For example `${random(10)}` returns a random number 0..9. And `${random(18,50)}` returns a random number between 18..49.
+
+The `size` functions is used to determine the number of elements, when using `Collection` or array based payloads.
+If not then either 0 or 1 is returned whether the body is `null` or not.
+For example if the message body contains a `List` with 7 elements then `${size()}` returns `7`.
+On the other hand if the message body contains a `InputStream` then the result is `1`, and when body is `null` then `0` is returned.
+And for String payloads such as `${size('Hello World')}` then `1` is always returned.
+
+TIP: Use the `length` function to return the payload length in bytes.
+
+The `sum` function adds up numeric values (not floating point) and returns the result as a long.
+Assume message body is `[10, 20, 30]` (as `List<Integer>` or similar) then `${sum()}` results in `60`
+You can also use the `sum` function to add or subtract numbers. For example if you want to add 2 to a number, you can do
+`$sum($\{body},2)}`, and likewise to subtract you use negative number, such as `$sum($\{body},-2)}`.
 
 === Other Functions
 
@@ -381,6 +417,24 @@ This will get the `Date` object from the header with key birthday, and format th
 |`uuid(kind)` | `String` | Returns a UUID using the Camel `UuidGenerator`. You can choose kind between `default`, `classic`, `short`, `simple` and `random` as the kind. If no kind is given, then `default` is used. It is also possible to use a custom `UuidGenerator` and bind the bean to the xref:manual::registry.adoc[Registry] with an id. For example `${uuid(myGenerator)}` where the id is `myGenerator`.
 |====
 
+To use OS environment variables you use the `${env.key}` function, such as `${env.PATH}` or `${env.HOME}`, or `${env.JAVA_HOME}`.
+Notice how the key should be in uppercase, as required by OS environment variables.
+
+The `hash` function is used for calculating a hash value of the given value. The `${hash()}` would use the message body and SHA-256 as algorithm and
+return a hash value as String hex-decimal.
+
+The `hostname` function returns the OS hostname and does not require using parenthesis, so just use `$\{hostname}`.
+
+The `null` function returns a `null` value such as `$\{null}`.
+
+To use JVM system properties you use the `${sysenv.key}` function, such as `${sysenv.java.version}` or `${sysenv.java.io.tmpdir}`.
+
+You can get the current thread id by the `$\{threadId}` function, and the name via `$\{threadName}`.
+
+And you can generate unique IDs with the xref:manual::uuidgenerator.adoc[Camel UUID Generator] by the `uuid` function.
+The generator supports different kinds `default`, `classic`, `short`, `simple` and `random`, such as `${uuid(random)}`.
+
+[#_string_functions]
 === String Functions
 
 [width="100%",cols="10%,10%,80%",options="header",]
@@ -388,13 +442,13 @@ This will get the `Date` object from the header with key birthday, and format th
 |Function |Response Type |Description
 |`capitalize()` | `String` | Capitalizes the message body as a String value (upper case every words)
 |`capitalize(exp)` | `String` | Capitalizes the expression as a String value (upper case every words)
-|`concat(exp,exp,separator)` | `String` | Performs a string concat using two expressions (message body as default) with optional separator (uses comma by default).
+|`concat(exp,exp,separator)` | `String` | Performs a string concat using two expressions (message body as default) with optional separator.
 |`join(separator,prefix,exp)` | `String` | The join function iterates the message body (by default) and joins the data into a `String`. The separator is by default a comma. The prefix is optional. The join uses the message body as source by default. It is possible to refer to another source (simple language) such as a header via the exp parameter. For example `join('&','id=','$\{header.ids}')`
 |`lowercase()` | `String` | Lowercases the message body
 |`lowercase(exp)` | `String` | Lowercases the expression
 |`normalizeWhitespace()` | `String` | Normalizes the whitespace in the message body by cleaning up excess whitespaces.
 |`normalizeWhitespace(exp)` | `String` | Normalizes the whitespace in the expression by cleaning up excess whitespaces.
-|`pad(exp,width,separator)` | `String` | Pads the expression with extra padding if necessary, according the the total width The separator is by default a space. If the width is negative then padding to the right, otherwise to the left.
+|`pad(exp,width,separator)` | `String` | Pads the expression with extra padding if necessary, according the total width The separator is by default a space. If the width is negative then padding to the right, otherwise to the left.
 |`replace(from,to)` | `String` | Replace all the string values in the message body. To make it easier to replace single and double quotes, then you can use XML escaped values `\&quot;` as double quote, `\&apos;` as single quote, and `\&empty;` as empty value.
 |`replace(from,to,exp)` | `String` | Replace all the string values in the given expression. To make it easier to replace single and double quotes, then you can use XML escaped values `\&quot;` as double quote, `\&apos;` as single quote, and `\&empty;` as empty value.
 |`substring(num1)` | `String` | Returns a substring of the message body. If the number is positive, then the returned string is clipped from the beginning. If the number is negative, then the returned string is clipped from the ending.
@@ -411,6 +465,56 @@ This will get the `Date` object from the header with key birthday, and format th
 |`uppercase()` | `String` | Uppercases the message body
 |`uppercase(exp)` | `String` | Uppercases the expression
 |====
+
+The string functions is various functions to work with values that are String and text based.
+
+The `capitalize` function is used for _capitalizing_ words, by upper-casing the first letter in every words.
+For example `${capitalize('hello world')}` returns `Hello World`.
+
+The `concat` function is used for putting together two values as a single String result.
+In Java, you would use the `+` operator such as `String s = "Hello" + " world";`.
+
+The simple function works like `${concat('Hello ',$\{body})}`. Notice how you can use nested functions so the 2nd parameter is the `$\{body}` function.
+In the example we had to add a space after `"Hello "`, but you can also use the separator parameter, such as `${concat('Hello',$\{body},' ')}`.
+
+The `join` function is a more complex function to join together a set of values, separated by comma (by default) as a single combined String.
+For example if the message body contains a list of [A, B, C] then `${join()}` would return `A,B,C`.
+To use semicolon as separator you would use `${join(;)}`. The `prefix` argument can be used to prefix each value, so for example
+`${join(&,id=)}` would return `id=A&id=B&id=C`.
+
+The `lowercase` and `uppercase` functions are as the name implies used for lower and uppercasing.
+So `${lowercase('Hello World`)}` returns `hello world` and `${uppercase('Hello World`)}` returns `HELLO WORLD`.
+
+You can use the `normalizeWhitespace` function to _clean up_ a value by removing extra whitespaces. This is done by ensuring that
+there are exactly only 1 whitespace between words. And as well trimming the value for empty whitespace
+in the beginning and end. Suppose the message body is a String value with `"   Hello  big   World      "`, then `${normalizeWhitespace()}` will return `Hello big World`.
+
+The `pad` function returns a copy of the string with extra padding, if necessary, so that its total number of characters is at least the absolute value of the width parameter.
+If width is a positive number, then the string is padded to the right; if negative, it is padded to the left.
+The optional separator specifies the padding character(s) to use. If not specified, it defaults to the space character.
+If the message body contains `foo` then `${pad(5)}` return `"foo  "` and `${pad(-5)}` returns `"  foo"`, and `${pad(-5,'@')}` returns `@@foo`.
+
+The `replace` function is used for finding a given text in a string and replacing it with another.
+For example the message body contains `Hello a how are you`, then `${replace(a,b)}` returns `Hello b how bre you`.
+The replace function has special support for xref:_replacing_double_and_single_quotes[replacing double and single quotes].
+
+The `substring`, `substringBefore`, and `substringAfter` functions are all similar functions to return a substring of a given value.
+
+Suppose the message body contains `ABCDEFGHIJK` then `${substring(3)}` returns `DEFGHIJK`, and `${substring(-3)}` returns `ABCDEFGH`.
+If you want to clip the first and last character you can use `${substring(1,-1)}` returning `BCDEFGHIJ`.
+
+Now suppose the message body contains `Hello great big World how are you`.
+
+Then `${substringBefore('World')}` return `"Hello great big "`.
+And `${substringAfter('World')}` returns `" how are you"`.
+And `${substringBetween('great','how')}` would return `" big World "`.
+
+The `trim` function trims the value by removing leading and trailing whitespaces.
+So the previous example can also be trimmed by nesting the function as follows:
+`${trim(${substringBetween('great','how')})}` which would return `"big World"`.
+
+And of course `${trim('  hello world  ')}` returns `hello world`.
+
 
 === XML & JSon Functions
 
@@ -470,11 +574,14 @@ The following special symbols can be used when escaped with `\` as below:
 [width="100%",cols="50%,50%",options="header",]
 |====
 |Symbol |Description
-|`\n` | To use newline character.
-|`\t` | To use tab character.
-|`\r` | To use carriage return character.
-|`\}` | To use the `}` character as text. This may be needed when building a JSon structure with the simple language.
+|`\\n` | To use newline character.
+|`\\t` | To use tab character.
+|`\\r` | To use carriage return character.
+|`\\}` | To use the `}` character as text. This may be needed when building a JSon structure with the simple language.
 |====
+
+For example to use a new-line character in the split function `${split(\\n)}`.
+
 
 == Built-in Operators
 
@@ -1253,35 +1360,6 @@ Instead of the message body then a simple expression can be nested as input, for
 <setBody>
   <simple>${substring(1,-1,${variable.foo})}</simple>
 </setBody>
-----
-
-=== Substring Before, After, or Between
-
-In *Camel 4.18* there are additional substring methods to make it easier to select a part of a string.
-
-For example suppose the message body contains 'Hello great big World how are you', then you select different parts:
-
-[source,java]
-----
-// select text before `World` -> `Hello great big `
-.setHeader("foo", simple("${substringBefore('World'}"))
-
-// select text after `World` -> ` how are you`
-.setHeader("foo2", simple("${substringAfter('World'}"))
-
-// select text between `great` ... `how` -> ` big World `
-.setHeader("foo2", simple("${substringBetween('great', 'how'}"))
-
-// NOTE: and you can wrap this with trim to remove spaces:
-
-// select text before `World` -> `Hello great big`
-.setHeader("foo", simple("$trim{${substringBefore('World'}}")})
-
-// select text after `World` -> `how are you`
-.setHeader("foo2", simple("$trim{${substringAfter('World'}}"))
-
-// select text between `great` ... `how` -> `big World`
-.setHeader("foo2", simple("$trim{${substringBetween('great', 'how'}}"))
 ----
 
 == Replacing double and single quotes

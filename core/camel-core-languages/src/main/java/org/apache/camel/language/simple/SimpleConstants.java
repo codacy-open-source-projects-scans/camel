@@ -53,7 +53,8 @@ public final class SimpleConstants {
               label = "function")
     public static final String ATTACHMENTS_SIZE = "attachmentsSize";
 
-    @Metadata(description = "Returns the average number from all the values", label = "function", javaType = "long",
+    @Metadata(description = "Returns the average number from all the values (integral numbers only).", label = "function",
+              javaType = "long",
               displayName = "Average Number")
     public static final String AVERAGE = "average(val...)";
 
@@ -233,7 +234,8 @@ public final class SimpleConstants {
               javaType = "java.util.LinkedHashMap", displayName = "Create Map of pairs")
     public static final String MAP = "map(key1,value1,...)";
 
-    @Metadata(description = "Returns the maximum number from all the values", label = "function", javaType = "long",
+    @Metadata(description = "Returns the maximum number from all the values (integral numbers only).", label = "function",
+              javaType = "long",
               displayName = "Maximum Number")
     public static final String MAX = "max(val...)";
 
@@ -248,13 +250,18 @@ public final class SimpleConstants {
               javaType = "long", label = "function")
     public static final String MESSAGE_TIMESTAMP = "messageTimestamp";
 
-    @Metadata(description = "Returns the minimum number from all the values", label = "function", javaType = "long",
+    @Metadata(description = "Returns the minimum number from all the values (integral numbers only).", label = "function",
+              javaType = "long",
               displayName = "Minimum Number")
     public static final String MIN = "min(val...)";
 
     @Metadata(description = "Creates a new empty object (decided by type). Use `string` to create an empty String. Use `list` to create an empty `java.util.ArrayList`. Use `map` to create an empty `java.util.LinkedHashMap`. Use `set` to create an empty `java.util.LinkedHashSet`.",
               label = "function", javaType = "Object", displayName = "Create Empty Object")
     public static final String NEW_EMPTY = "newEmpty(type)";
+
+    @Metadata(description = "Normalizes the whitespace in the message body (or expression) by cleaning up excess whitespaces.",
+              label = "function", javaType = "String", displayName = "Normalize Whitespace")
+    public static final String NORMALIZE_WHITESPACE = "normalizeWhitespace(exp)";
 
     @Metadata(description = "Evaluates the predicate and returns the opposite.", label = "function", javaType = "boolean")
     public static final String NOT = "not";
@@ -322,7 +329,7 @@ public final class SimpleConstants {
               label = "function", javaType = "List", displayName = "Shuffle Values")
     public static final String SHUFFLE = "shuffle(val...)";
 
-    @Metadata(description = "The size of the message body (or expression). If the payload is java.util.Collection or java.util.Map based then the size is the number of elements; otherwise the payload size in bytes.",
+    @Metadata(description = "Returns the number of elements in collection or array based payloads. If the value is null then 0 is returned, otherwise 1.",
               label = "function", javaType = "int", displayName = "Size")
     public static final String SIZE = "size(exp)";
 

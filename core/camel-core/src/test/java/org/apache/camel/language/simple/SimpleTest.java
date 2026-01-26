@@ -2607,25 +2607,29 @@ public class SimpleTest extends LanguageTestSupport {
     public void testSize() {
         exchange.getMessage().setBody(new int[] { 4, 7, 9 });
         Expression expression = context.resolveLanguage("simple").createExpression("${size()}");
-        int len = expression.evaluate(exchange, int.class);
-        assertEquals(3, len);
+        int size = expression.evaluate(exchange, int.class);
+        assertEquals(3, size);
 
         exchange.getMessage().setBody("Hello World");
-        len = expression.evaluate(exchange, int.class);
-        assertEquals(11, len);
+        size = expression.evaluate(exchange, int.class);
+        assertEquals(1, size);
+
+        exchange.getMessage().setBody(null);
+        size = expression.evaluate(exchange, int.class);
+        assertEquals(0, size);
 
         exchange.getMessage().setBody(List.of("A", "B", "C", "D"));
-        len = expression.evaluate(exchange, int.class);
-        assertEquals(4, len);
+        size = expression.evaluate(exchange, int.class);
+        assertEquals(4, size);
 
         exchange.getMessage().setBody(Map.of("A", 1, "B", 2, "C", 3));
-        len = expression.evaluate(exchange, int.class);
-        assertEquals(3, len);
+        size = expression.evaluate(exchange, int.class);
+        assertEquals(3, size);
 
         File f = new File("src/test/resources/log4j2.properties");
         exchange.getMessage().setBody(f);
-        len = expression.evaluate(exchange, int.class);
-        assertEquals(f.length(), len);
+        size = expression.evaluate(exchange, int.class);
+        assertEquals(1, size);
     }
 
     @Test
@@ -2649,6 +2653,11 @@ public class SimpleTest extends LanguageTestSupport {
 
         File f = new File("src/test/resources/log4j2.properties");
         exchange.getMessage().setBody(f);
+        len = expression.evaluate(exchange, int.class);
+        assertEquals(f.length(), len);
+
+        FileInputStreamCache fis = new FileInputStreamCache(f);
+        exchange.getMessage().setBody(fis);
         len = expression.evaluate(exchange, int.class);
         assertEquals(f.length(), len);
     }
@@ -3256,6 +3265,10 @@ public class SimpleTest extends LanguageTestSupport {
         Integer i = expression.evaluate(exchange, Integer.class);
         assertEquals(987, i);
 
+        expression = context.resolveLanguage("simple").createExpression("${abs(-5)}");
+        i = expression.evaluate(exchange, Integer.class);
+        assertEquals(5, i);
+
         expression = context.resolveLanguage("simple").createExpression("${abs(${body})}");
         String s = expression.evaluate(exchange, String.class);
         assertEquals("987", s);
@@ -3658,6 +3671,28 @@ public class SimpleTest extends LanguageTestSupport {
             assertIsInstanceOf(IOException.class, e.getCause().getCause());
             assertEquals("Some IO error", e.getCause().getCause().getMessage());
         }
+    }
+
+    @Test
+    public void testNormalizeWhitespace() {
+        exchange.getMessage().setBody("   Hello  big   World      ");
+
+        Expression expression = context.resolveLanguage("simple").createExpression("${normalizeWhitespace()}");
+        String s = expression.evaluate(exchange, String.class);
+        assertEquals("Hello big World", s);
+
+        expression = context.resolveLanguage("simple").createExpression("${normalizeWhitespace(${body})}");
+        s = expression.evaluate(exchange, String.class);
+        assertEquals("Hello big World", s);
+
+        expression = context.resolveLanguage("simple").createExpression("${normalizeWhitespace(' Hi   from    me  ')}");
+        s = expression.evaluate(exchange, String.class);
+        assertEquals("Hi from me", s);
+
+        exchange.getMessage().setHeader("beer", "  Carlsberg    is a    beer ");
+        expression = context.resolveLanguage("simple").createExpression("${normalizeWhitespace(${header.beer})}");
+        s = expression.evaluate(exchange, String.class);
+        assertEquals("Carlsberg is a beer", s);
     }
 
     @Override
