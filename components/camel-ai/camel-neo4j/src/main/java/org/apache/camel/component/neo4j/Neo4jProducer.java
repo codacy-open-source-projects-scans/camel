@@ -114,10 +114,10 @@ public class Neo4jProducer extends DefaultProducer {
         var query = String.format("CREATE (%s:%s $props)", alias, label);
         Map<String, Object> properties;
 
-        if (body instanceof String) {
+        if (body instanceof String bodyString) {
             try {
                 // Convert JSON string to Map for parameterized query
-                Map<String, Object> bodyMap = OBJECT_MAPPER.readValue((String) body, MAP_TYPE_REF);
+                Map<String, Object> bodyMap = OBJECT_MAPPER.readValue(bodyString, MAP_TYPE_REF);
                 properties = Map.of("props", bodyMap);
             } catch (Exception e) {
                 exchange.setException(
@@ -309,13 +309,14 @@ public class Neo4jProducer extends DefaultProducer {
 
         final String databaseName = getEndpoint().getName();
 
-        String query = String.format("CREATE VECTOR INDEX %s IF NOT EXISTS\n" +
-                                     "FOR (%s:%s)\n" +
-                                     "ON %s.embedding\n" +
-                                     "OPTIONS { indexConfig: {\n" +
-                                     " `vector.dimensions`: %s,\n" +
-                                     " `vector.similarity_function`: '%s'\n" +
-                                     "}}",
+        String query = String.format("""
+                CREATE VECTOR INDEX %s IF NOT EXISTS
+                FOR (%s:%s)
+                ON %s.embedding
+                OPTIONS { indexConfig: {
+                 `vector.dimensions`: %s,
+                 `vector.similarity_function`: '%s'
+                }}""",
                 vectorIndexName, alias, label, alias, dimension, similarityFunction.name());
 
         executeWriteQuery(exchange, query, null, databaseName, Neo4Operation.CREATE_VECTOR_INDEX);
