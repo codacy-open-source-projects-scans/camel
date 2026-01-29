@@ -78,7 +78,7 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.41.15</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.41.16</aws-java-sdk2-version>
         <aws-xray-version>2.20.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.34</azure-storage-blob-changefeed-version>
@@ -144,7 +144,7 @@
         <dapr-version>1.16.1</dapr-version>
         <dapr-workflow-version>1.16.1</dapr-workflow-version>
         <datasonnet-mapper-version>3.0.1.3</datasonnet-mapper-version>
-        <debezium-version>3.4.0.Final</debezium-version>
+        <debezium-version>3.4.1.Final</debezium-version>
         <debezium-mysql-connector-version>9.5.0</debezium-mysql-connector-version>
         <derby-version>10.16.1.1</derby-version>
         <digitalocean-api-client-version>2.17</digitalocean-api-client-version>
@@ -466,7 +466,7 @@
         <qpid-broker-version>10.0.1</qpid-broker-version>
         <qpid-proton-j-version>0.34.1</qpid-proton-j-version>
         <qpid-jms-client-version>2.10.0</qpid-jms-client-version>
-        <quarkus-version>3.30.8</quarkus-version>
+        <quarkus-version>3.31.1</quarkus-version>
         <quartz-version>2.5.2</quartz-version>
         <quickfixj-version>2.3.2</quickfixj-version>
         <reactive-streams-version>1.0.4</reactive-streams-version>
@@ -496,7 +496,7 @@
         <smooks-version>2.2.1</smooks-version>
         <snakeyaml-version>2.5</snakeyaml-version>
         <snakeyaml-engine-version>3.0.1</snakeyaml-engine-version>
-        <snmp4j-version>3.9.6</snmp4j-version>
+        <snmp4j-version>3.9.7</snmp4j-version>
         <solr-version>9.10.1</solr-version>
         <solr-zookeeper-version>3.9.4</solr-zookeeper-version>
         <splunk-version>1.9.5_1</splunk-version>
@@ -516,7 +516,7 @@
         <squareup-okhttp-version>3.14.9</squareup-okhttp-version>
         <squareup-okhttp5-version>5.3.2</squareup-okhttp5-version>
         <squareup-okio-version>1.17.5</squareup-okio-version>
-        <sshd-version>2.16.0</sshd-version>
+        <sshd-version>2.17.1</sshd-version>
         <stompjms-version>1.19</stompjms-version>
         <stripe-java-version>31.2.0</stripe-java-version>
         <stumbleupon-async-version>1.4.1</stumbleupon-async-version>
@@ -832,6 +832,11 @@
             <dependency>
                 <groupId>org.apache.camel</groupId>
                 <artifactId>camel-aws-secrets-manager</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.camel</groupId>
+                <artifactId>camel-aws-security-hub</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -4396,6 +4401,13 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <argLine>${camel.surefire.fork.vmargs} ${jacocoAgent}</argLine>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <argLine>${camel.failsafe.fork.vmargs} ${jacocoAgent}</argLine>
                         </configuration>
                     </plugin>
                 </plugins>

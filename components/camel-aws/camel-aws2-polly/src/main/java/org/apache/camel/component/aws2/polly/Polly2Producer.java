@@ -108,7 +108,7 @@ public class Polly2Producer extends DefaultProducer {
 
     private Polly2Operations determineOperation(Exchange exchange) {
         Polly2Operations operation = exchange.getIn().getHeader(Polly2Constants.OPERATION, Polly2Operations.class);
-        if (operation == null) {
+        if (ObjectHelper.isEmpty(operation)) {
             operation = getConfiguration().getOperation();
         }
         return operation;
@@ -120,7 +120,7 @@ public class Polly2Producer extends DefaultProducer {
 
     @Override
     public String toString() {
-        if (pollyProducerToString == null) {
+        if (ObjectHelper.isEmpty(pollyProducerToString)) {
             pollyProducerToString = "PollyProducer[" + URISupport.sanitizeUri(getEndpoint().getEndpointUri()) + "]";
         }
         return pollyProducerToString;
@@ -144,7 +144,7 @@ public class Polly2Producer extends DefaultProducer {
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
-                if (result.response().contentType() != null) {
+                if (ObjectHelper.isNotEmpty(result.response().contentType())) {
                     message.setHeader(Polly2Constants.CONTENT_TYPE, result.response().contentType());
                 }
                 message.setHeader(Polly2Constants.REQUEST_CHARACTERS, result.response().requestCharacters());
@@ -152,63 +152,67 @@ public class Polly2Producer extends DefaultProducer {
         } else {
             SynthesizeSpeechRequest.Builder request = SynthesizeSpeechRequest.builder();
 
-            // Set voice ID
-            VoiceId voiceId = exchange.getIn().getHeader(Polly2Constants.VOICE_ID, VoiceId.class);
-            if (voiceId == null) {
-                voiceId = getConfiguration().getVoiceId();
+            // Set voice ID - endpoint option first, then header
+            VoiceId voiceId = getConfiguration().getVoiceId();
+            if (ObjectHelper.isEmpty(voiceId)) {
+                voiceId = exchange.getIn().getHeader(Polly2Constants.VOICE_ID, VoiceId.class);
             }
-            if (voiceId == null) {
-                throw new IllegalArgumentException("Voice ID must be specified as header or endpoint option");
+            if (ObjectHelper.isEmpty(voiceId)) {
+                throw new IllegalArgumentException("Voice ID must be specified as endpoint option or header");
             }
             request.voiceId(voiceId);
 
-            // Set output format
-            OutputFormat outputFormat = exchange.getIn().getHeader(Polly2Constants.OUTPUT_FORMAT, OutputFormat.class);
-            if (outputFormat == null) {
-                outputFormat = getConfiguration().getOutputFormat();
+            // Set output format - endpoint option first, then header
+            OutputFormat outputFormat = getConfiguration().getOutputFormat();
+            if (ObjectHelper.isEmpty(outputFormat)) {
+                outputFormat = exchange.getIn().getHeader(Polly2Constants.OUTPUT_FORMAT, OutputFormat.class);
             }
-            request.outputFormat(outputFormat);
+            if (ObjectHelper.isNotEmpty(outputFormat)) {
+                request.outputFormat(outputFormat);
+            }
 
-            // Set text type
-            TextType textType = exchange.getIn().getHeader(Polly2Constants.TEXT_TYPE, TextType.class);
-            if (textType == null) {
-                textType = getConfiguration().getTextType();
+            // Set text type - endpoint option first, then header
+            TextType textType = getConfiguration().getTextType();
+            if (ObjectHelper.isEmpty(textType)) {
+                textType = exchange.getIn().getHeader(Polly2Constants.TEXT_TYPE, TextType.class);
             }
-            request.textType(textType);
+            if (ObjectHelper.isNotEmpty(textType)) {
+                request.textType(textType);
+            }
 
-            // Set engine
-            Engine engine = exchange.getIn().getHeader(Polly2Constants.ENGINE, Engine.class);
-            if (engine == null && getConfiguration().getEngine() != null) {
-                engine = getConfiguration().getEngine();
+            // Set engine - endpoint option first, then header
+            Engine engine = getConfiguration().getEngine();
+            if (ObjectHelper.isEmpty(engine)) {
+                engine = exchange.getIn().getHeader(Polly2Constants.ENGINE, Engine.class);
             }
-            if (engine != null) {
+            if (ObjectHelper.isNotEmpty(engine)) {
                 request.engine(engine);
             }
 
-            // Set sample rate
-            String sampleRate = exchange.getIn().getHeader(Polly2Constants.SAMPLE_RATE, String.class);
-            if (sampleRate == null) {
-                sampleRate = getConfiguration().getSampleRate();
+            // Set sample rate - endpoint option first, then header
+            String sampleRate = getConfiguration().getSampleRate();
+            if (ObjectHelper.isEmpty(sampleRate)) {
+                sampleRate = exchange.getIn().getHeader(Polly2Constants.SAMPLE_RATE, String.class);
             }
-            if (sampleRate != null) {
+            if (ObjectHelper.isNotEmpty(sampleRate)) {
                 request.sampleRate(sampleRate);
             }
 
-            // Set language code
-            String languageCode = exchange.getIn().getHeader(Polly2Constants.LANGUAGE_CODE, String.class);
-            if (languageCode == null) {
-                languageCode = getConfiguration().getLanguageCode();
+            // Set language code - endpoint option first, then header
+            String languageCode = getConfiguration().getLanguageCode();
+            if (ObjectHelper.isEmpty(languageCode)) {
+                languageCode = exchange.getIn().getHeader(Polly2Constants.LANGUAGE_CODE, String.class);
             }
-            if (languageCode != null) {
+            if (ObjectHelper.isNotEmpty(languageCode)) {
                 request.languageCode(languageCode);
             }
 
-            // Set lexicon names
-            String lexiconNames = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAMES, String.class);
-            if (lexiconNames == null) {
-                lexiconNames = getConfiguration().getLexiconNames();
+            // Set lexicon names - endpoint option first, then header
+            String lexiconNames = getConfiguration().getLexiconNames();
+            if (ObjectHelper.isEmpty(lexiconNames)) {
+                lexiconNames = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAMES, String.class);
             }
-            if (lexiconNames != null) {
+            if (ObjectHelper.isNotEmpty(lexiconNames)) {
                 request.lexiconNames(Arrays.asList(lexiconNames.split(",")));
             }
 
@@ -248,21 +252,21 @@ public class Polly2Producer extends DefaultProducer {
         } else {
             DescribeVoicesRequest.Builder request = DescribeVoicesRequest.builder();
 
-            // Set engine filter
-            Engine engine = exchange.getIn().getHeader(Polly2Constants.ENGINE, Engine.class);
-            if (engine == null && getConfiguration().getEngine() != null) {
-                engine = getConfiguration().getEngine();
+            // Set engine filter - endpoint option first, then header
+            Engine engine = getConfiguration().getEngine();
+            if (ObjectHelper.isEmpty(engine)) {
+                engine = exchange.getIn().getHeader(Polly2Constants.ENGINE, Engine.class);
             }
-            if (engine != null) {
+            if (ObjectHelper.isNotEmpty(engine)) {
                 request.engine(engine);
             }
 
-            // Set language code filter
-            String languageCode = exchange.getIn().getHeader(Polly2Constants.LANGUAGE_CODE, String.class);
-            if (languageCode == null) {
-                languageCode = getConfiguration().getLanguageCode();
+            // Set language code filter - endpoint option first, then header
+            String languageCode = getConfiguration().getLanguageCode();
+            if (ObjectHelper.isEmpty(languageCode)) {
+                languageCode = exchange.getIn().getHeader(Polly2Constants.LANGUAGE_CODE, String.class);
             }
-            if (languageCode != null) {
+            if (ObjectHelper.isNotEmpty(languageCode)) {
                 request.languageCode(languageCode);
             }
 
@@ -321,7 +325,10 @@ public class Polly2Producer extends DefaultProducer {
                 message.setBody(result.lexicon());
             }
         } else {
-            String lexiconName = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAME, String.class);
+            String lexiconName = getConfiguration().getLexiconName();
+            if (ObjectHelper.isEmpty(lexiconName)) {
+                lexiconName = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAME, String.class);
+            }
             if (ObjectHelper.isEmpty(lexiconName)) {
                 throw new IllegalArgumentException("Lexicon name must be specified");
             }
@@ -353,8 +360,14 @@ public class Polly2Producer extends DefaultProducer {
                 message.setBody(result);
             }
         } else {
-            String lexiconName = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAME, String.class);
-            String lexiconContent = exchange.getIn().getHeader(Polly2Constants.LEXICON_CONTENT, String.class);
+            String lexiconName = getConfiguration().getLexiconName();
+            if (ObjectHelper.isEmpty(lexiconName)) {
+                lexiconName = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAME, String.class);
+            }
+            String lexiconContent = getConfiguration().getLexiconContent();
+            if (ObjectHelper.isEmpty(lexiconContent)) {
+                lexiconContent = exchange.getIn().getHeader(Polly2Constants.LEXICON_CONTENT, String.class);
+            }
             if (ObjectHelper.isEmpty(lexiconContent)) {
                 lexiconContent = exchange.getMessage().getBody(String.class);
             }
@@ -395,7 +408,10 @@ public class Polly2Producer extends DefaultProducer {
                 message.setBody(result);
             }
         } else {
-            String lexiconName = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAME, String.class);
+            String lexiconName = getConfiguration().getLexiconName();
+            if (ObjectHelper.isEmpty(lexiconName)) {
+                lexiconName = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAME, String.class);
+            }
             if (ObjectHelper.isEmpty(lexiconName)) {
                 throw new IllegalArgumentException("Lexicon name must be specified");
             }
@@ -431,82 +447,95 @@ public class Polly2Producer extends DefaultProducer {
         } else {
             StartSpeechSynthesisTaskRequest.Builder request = StartSpeechSynthesisTaskRequest.builder();
 
-            // Set voice ID
-            VoiceId voiceId = exchange.getIn().getHeader(Polly2Constants.VOICE_ID, VoiceId.class);
-            if (voiceId == null) {
-                voiceId = getConfiguration().getVoiceId();
+            // Set voice ID - endpoint option first, then header
+            VoiceId voiceId = getConfiguration().getVoiceId();
+            if (ObjectHelper.isEmpty(voiceId)) {
+                voiceId = exchange.getIn().getHeader(Polly2Constants.VOICE_ID, VoiceId.class);
             }
-            if (voiceId == null) {
-                throw new IllegalArgumentException("Voice ID must be specified as header or endpoint option");
+            if (ObjectHelper.isEmpty(voiceId)) {
+                throw new IllegalArgumentException("Voice ID must be specified as endpoint option or header");
             }
             request.voiceId(voiceId);
 
-            // Set output format
-            OutputFormat outputFormat = exchange.getIn().getHeader(Polly2Constants.OUTPUT_FORMAT, OutputFormat.class);
-            if (outputFormat == null) {
-                outputFormat = getConfiguration().getOutputFormat();
+            // Set output format - endpoint option first, then header
+            OutputFormat outputFormat = getConfiguration().getOutputFormat();
+            if (ObjectHelper.isEmpty(outputFormat)) {
+                outputFormat = exchange.getIn().getHeader(Polly2Constants.OUTPUT_FORMAT, OutputFormat.class);
             }
-            request.outputFormat(outputFormat);
+            if (ObjectHelper.isNotEmpty(outputFormat)) {
+                request.outputFormat(outputFormat);
+            }
 
-            // Set S3 bucket
-            String s3Bucket = exchange.getIn().getHeader(Polly2Constants.S3_BUCKET, String.class);
+            // Set S3 bucket - endpoint option first, then header
+            String s3Bucket = getConfiguration().getS3Bucket();
+            if (ObjectHelper.isEmpty(s3Bucket)) {
+                s3Bucket = exchange.getIn().getHeader(Polly2Constants.S3_BUCKET, String.class);
+            }
             if (ObjectHelper.isEmpty(s3Bucket)) {
                 throw new IllegalArgumentException("S3 bucket must be specified for async synthesis");
             }
             request.outputS3BucketName(s3Bucket);
 
-            // Set S3 key prefix (optional)
-            String s3KeyPrefix = exchange.getIn().getHeader(Polly2Constants.S3_KEY_PREFIX, String.class);
+            // Set S3 key prefix (optional) - endpoint option first, then header
+            String s3KeyPrefix = getConfiguration().getS3KeyPrefix();
+            if (ObjectHelper.isEmpty(s3KeyPrefix)) {
+                s3KeyPrefix = exchange.getIn().getHeader(Polly2Constants.S3_KEY_PREFIX, String.class);
+            }
             if (ObjectHelper.isNotEmpty(s3KeyPrefix)) {
                 request.outputS3KeyPrefix(s3KeyPrefix);
             }
 
-            // Set SNS topic ARN (optional)
-            String snsTopicArn = exchange.getIn().getHeader(Polly2Constants.SNS_TOPIC_ARN, String.class);
+            // Set SNS topic ARN (optional) - endpoint option first, then header
+            String snsTopicArn = getConfiguration().getSnsTopicArn();
+            if (ObjectHelper.isEmpty(snsTopicArn)) {
+                snsTopicArn = exchange.getIn().getHeader(Polly2Constants.SNS_TOPIC_ARN, String.class);
+            }
             if (ObjectHelper.isNotEmpty(snsTopicArn)) {
                 request.snsTopicArn(snsTopicArn);
             }
 
-            // Set text type
-            TextType textType = exchange.getIn().getHeader(Polly2Constants.TEXT_TYPE, TextType.class);
-            if (textType == null) {
-                textType = getConfiguration().getTextType();
+            // Set text type - endpoint option first, then header
+            TextType textType = getConfiguration().getTextType();
+            if (ObjectHelper.isEmpty(textType)) {
+                textType = exchange.getIn().getHeader(Polly2Constants.TEXT_TYPE, TextType.class);
             }
-            request.textType(textType);
+            if (ObjectHelper.isNotEmpty(textType)) {
+                request.textType(textType);
+            }
 
-            // Set engine
-            Engine engine = exchange.getIn().getHeader(Polly2Constants.ENGINE, Engine.class);
-            if (engine == null && getConfiguration().getEngine() != null) {
-                engine = getConfiguration().getEngine();
+            // Set engine - endpoint option first, then header
+            Engine engine = getConfiguration().getEngine();
+            if (ObjectHelper.isEmpty(engine)) {
+                engine = exchange.getIn().getHeader(Polly2Constants.ENGINE, Engine.class);
             }
-            if (engine != null) {
+            if (ObjectHelper.isNotEmpty(engine)) {
                 request.engine(engine);
             }
 
-            // Set sample rate
-            String sampleRate = exchange.getIn().getHeader(Polly2Constants.SAMPLE_RATE, String.class);
-            if (sampleRate == null) {
-                sampleRate = getConfiguration().getSampleRate();
+            // Set sample rate - endpoint option first, then header
+            String sampleRate = getConfiguration().getSampleRate();
+            if (ObjectHelper.isEmpty(sampleRate)) {
+                sampleRate = exchange.getIn().getHeader(Polly2Constants.SAMPLE_RATE, String.class);
             }
-            if (sampleRate != null) {
+            if (ObjectHelper.isNotEmpty(sampleRate)) {
                 request.sampleRate(sampleRate);
             }
 
-            // Set language code
-            String languageCode = exchange.getIn().getHeader(Polly2Constants.LANGUAGE_CODE, String.class);
-            if (languageCode == null) {
-                languageCode = getConfiguration().getLanguageCode();
+            // Set language code - endpoint option first, then header
+            String languageCode = getConfiguration().getLanguageCode();
+            if (ObjectHelper.isEmpty(languageCode)) {
+                languageCode = exchange.getIn().getHeader(Polly2Constants.LANGUAGE_CODE, String.class);
             }
-            if (languageCode != null) {
+            if (ObjectHelper.isNotEmpty(languageCode)) {
                 request.languageCode(languageCode);
             }
 
-            // Set lexicon names
-            String lexiconNames = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAMES, String.class);
-            if (lexiconNames == null) {
-                lexiconNames = getConfiguration().getLexiconNames();
+            // Set lexicon names - endpoint option first, then header
+            String lexiconNames = getConfiguration().getLexiconNames();
+            if (ObjectHelper.isEmpty(lexiconNames)) {
+                lexiconNames = exchange.getIn().getHeader(Polly2Constants.LEXICON_NAMES, String.class);
             }
-            if (lexiconNames != null) {
+            if (ObjectHelper.isNotEmpty(lexiconNames)) {
                 request.lexiconNames(Arrays.asList(lexiconNames.split(",")));
             }
 
@@ -543,7 +572,10 @@ public class Polly2Producer extends DefaultProducer {
                 message.setBody(result.synthesisTask());
             }
         } else {
-            String taskId = exchange.getIn().getHeader(Polly2Constants.TASK_ID, String.class);
+            String taskId = getConfiguration().getTaskId();
+            if (ObjectHelper.isEmpty(taskId)) {
+                taskId = exchange.getIn().getHeader(Polly2Constants.TASK_ID, String.class);
+            }
             if (ObjectHelper.isEmpty(taskId)) {
                 throw new IllegalArgumentException("Task ID must be specified");
             }
@@ -605,7 +637,7 @@ public class Polly2Producer extends DefaultProducer {
                 "producers",
                 WritableHealthCheckRepository.class);
 
-        if (healthCheckRepository != null) {
+        if (ObjectHelper.isNotEmpty(healthCheckRepository)) {
             String id = getEndpoint().getId();
             producerHealthCheck = new Polly2ProducerHealthCheck(getEndpoint(), id);
             producerHealthCheck.setEnabled(getEndpoint().getComponent().isHealthCheckProducerEnabled());
@@ -615,7 +647,7 @@ public class Polly2Producer extends DefaultProducer {
 
     @Override
     protected void doStop() throws Exception {
-        if (healthCheckRepository != null && producerHealthCheck != null) {
+        if (ObjectHelper.isNotEmpty(healthCheckRepository) && ObjectHelper.isNotEmpty(producerHealthCheck)) {
             healthCheckRepository.removeHealthCheck(producerHealthCheck);
             producerHealthCheck = null;
         }
