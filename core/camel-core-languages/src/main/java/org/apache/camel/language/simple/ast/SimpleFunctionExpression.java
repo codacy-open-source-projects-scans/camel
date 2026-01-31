@@ -103,6 +103,12 @@ public class SimpleFunctionExpression extends LiteralExpression {
         if (answer != null) {
             return answer;
         }
+        // custom functions
+        answer = createSimpleCustomFunction(camelContext, function, strict);
+        if (answer != null) {
+            return answer;
+        }
+
         // custom languages
         answer = createSimpleCustomLanguage(function, strict);
         if (answer != null) {
@@ -594,6 +600,38 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 // regular variable
                 return ExpressionBuilder.variableExpression(key);
             }
+        }
+
+        return null;
+    }
+
+    private Expression createSimpleCustomFunction(CamelContext camelContext, String function, boolean strict) {
+        String remainder = ifStartsWithReturnRemainder("function(", function);
+        if (remainder != null) {
+            String key;
+            String param = null;
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (values == null || ObjectHelper.isEmpty(values)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${function(name)} or ${function(name,exp)} was: " + function,
+                        token.getIndex());
+            }
+            String[] tokens = StringQuoteHelper.splitSafeQuote(values, ',', true, true);
+            if (tokens.length < 1 || tokens.length > 2) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${function(name)} or ${function(name,exp)} was: " + function,
+                        token.getIndex());
+            }
+            key = StringHelper.removeQuotes(tokens[0]);
+            key = key.trim();
+            if (tokens.length == 2) {
+                param = tokens[1];
+                param = StringHelper.removeLeadingAndEndingQuotes(param.trim());
+            }
+            if (param == null) {
+                param = "${body}";
+            }
+            return SimpleExpressionBuilder.customFunction(key, param);
         }
 
         return null;
@@ -1154,6 +1192,27 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 exp = StringHelper.removeQuotes(value);
             }
             return SimpleExpressionBuilder.kindOfTypeExpression(exp);
+        }
+
+        // quote function
+        remainder = ifStartsWithReturnRemainder("quote(", function);
+        if (remainder != null) {
+            String exp = null;
+            String value = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(value)) {
+                exp = StringHelper.removeQuotes(value);
+            }
+            return SimpleExpressionBuilder.quoteExpression(exp);
+        }
+        // safeQuote function
+        remainder = ifStartsWithReturnRemainder("safeQuote(", function);
+        if (remainder != null) {
+            String exp = null;
+            String value = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(value)) {
+                exp = StringHelper.removeQuotes(value);
+            }
+            return SimpleExpressionBuilder.safeQuoteExpression(exp);
         }
 
         // trim function
@@ -2902,6 +2961,55 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 exp = "body";
             }
             return "Object o = " + exp + ";\n        return kindOfType(exchange, o);";
+        }
+
+        // quote function
+        remainder = ifStartsWithReturnRemainder("quote(", function);
+        if (remainder != null) {
+            String exp = null;
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(values)) {
+                String[] tokens = codeSplitSafe(values, ',', true, true);
+                if (tokens.length != 1) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${quote(exp)} was: " + function, token.getIndex());
+                }
+                // single quotes should be double quotes
+                String s = tokens[0];
+                if (StringHelper.isSingleQuoted(s)) {
+                    s = StringHelper.removeLeadingAndEndingQuotes(s);
+                    s = StringQuoteHelper.doubleQuote(s);
+                }
+                exp = s;
+            }
+            if (ObjectHelper.isEmpty(exp)) {
+                exp = "null";
+            }
+            return "Object o = " + exp + ";\n        return quote(exchange, o);";
+        }
+        // safaeQuote function
+        remainder = ifStartsWithReturnRemainder("safeQuote(", function);
+        if (remainder != null) {
+            String exp = null;
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isNotEmpty(values)) {
+                String[] tokens = codeSplitSafe(values, ',', true, true);
+                if (tokens.length != 1) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${safeQuote(exp)} was: " + function, token.getIndex());
+                }
+                // single quotes should be double quotes
+                String s = tokens[0];
+                if (StringHelper.isSingleQuoted(s)) {
+                    s = StringHelper.removeLeadingAndEndingQuotes(s);
+                    s = StringQuoteHelper.doubleQuote(s);
+                }
+                exp = s;
+            }
+            if (ObjectHelper.isEmpty(exp)) {
+                exp = "body";
+            }
+            return "Object o = " + exp + ";\n        return safeQuote(exchange, o);";
         }
 
         // trim function

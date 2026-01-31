@@ -14,30 +14,41 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.camel.opentelemetry.metrics.integration;
+package org.apache.camel.spi;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.ConsoleHandler;
-import java.util.logging.LogRecord;
+import org.apache.camel.Expression;
 
-public class MemoryLogHandler extends ConsoleHandler {
-    private List<LogRecord> logs = new ArrayList<>();
+/**
+ * Registry for custom simple functions.
+ */
+public interface SimpleFunctionRegistry {
 
-    public MemoryLogHandler() {
-        super();
-    }
+    /**
+     * Add a function
+     *
+     * @param name       name of function
+     * @param expression the expression to use as the function
+     */
+    void addFunction(String name, Expression expression);
 
-    public boolean hasLogs() {
-        return !logs.isEmpty();
-    }
+    /**
+     * Remove a function
+     *
+     * @param name name of function
+     */
+    void removeFunction(String name);
 
-    public List<LogRecord> getLogs() {
-        return new ArrayList<>(logs);
-    }
+    /**
+     * Gets the function
+     *
+     * @param  name name of function
+     * @return      the function, or <tt>null</tt> if no function exists
+     */
+    Expression getFunction(String name);
 
-    @Override
-    public void publish(LogRecord record) {
-        logs.add(record);
-    }
+    /**
+     * Number of custom functions
+     */
+    int size();
+
 }

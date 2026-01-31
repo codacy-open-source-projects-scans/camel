@@ -50,6 +50,7 @@ import org.apache.camel.StreamCache;
 import org.apache.camel.spi.ClassResolver;
 import org.apache.camel.spi.ExchangeFormatter;
 import org.apache.camel.spi.Language;
+import org.apache.camel.spi.SimpleFunctionRegistry;
 import org.apache.camel.spi.UuidGenerator;
 import org.apache.camel.support.CamelContextHelper;
 import org.apache.camel.support.ClassicUuidGenerator;
@@ -69,6 +70,7 @@ import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.OgnlHelper;
 import org.apache.camel.util.SkipIterator;
 import org.apache.camel.util.StringHelper;
+import org.apache.camel.util.StringQuoteHelper;
 
 /**
  * Expression builder used by the simple language.
@@ -636,6 +638,109 @@ public final class SimpleExpressionBuilder {
                     return "kindOfType(" + expression + ")";
                 } else {
                     return "kindOfType()";
+                }
+            }
+        };
+    }
+
+    /**
+     * Safe quotes the given expressions (uses message body if expression is null) if necessary.
+     */
+    public static Expression safeQuoteExpression(final String expression) {
+        return new ExpressionAdapter() {
+            private Expression exp;
+
+            @Override
+            public void init(CamelContext context) {
+                if (expression != null) {
+                    exp = context.resolveLanguage("simple").createExpression(expression);
+                    exp.init(context);
+                }
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                Object value;
+                if (exp != null) {
+                    value = exp.evaluate(exchange, Object.class);
+                } else {
+                    value = exchange.getMessage().getBody(Object.class);
+                }
+                if (value != null) {
+                    String type = kindOfType(value);
+                    if ("string".equals(type) || "array".equals(type) || "object".equals(type)) {
+                        String body = exchange.getContext().getTypeConverter().tryConvertTo(String.class, exchange, value);
+                        body = StringHelper.removeLeadingAndEndingQuotes(body);
+                        value = StringQuoteHelper.doubleQuote(body);
+                    }
+                }
+                return value;
+            }
+
+            private String kindOfType(Object value) {
+                Class<?> type = value.getClass();
+                if (ObjectHelper.isNumericType(type)) {
+                    return "number";
+                } else if (boolean.class == type || Boolean.class == type) {
+                    return "boolean";
+                } else if (value instanceof CharSequence) {
+                    return "string";
+                } else if (ObjectHelper.isPrimitiveArrayType(type) || value instanceof Collection
+                           || value instanceof Map<?, ?>) {
+                    return "array";
+                } else {
+                    return "object";
+                }
+            }
+
+
+            @Override
+            public String toString() {
+                if (expression != null) {
+                    return "safeQuote(" + expression + ")";
+                } else {
+                    return "safeQuote()";
+                }
+            }
+        };
+    }
+
+    /**
+     * Double quotes the given expressions (uses message body if expression is null)
+     */
+    public static Expression quoteExpression(final String expression) {
+        return new ExpressionAdapter() {
+            private Expression exp;
+
+            @Override
+            public void init(CamelContext context) {
+                if (expression != null) {
+                    exp = context.resolveLanguage("simple").createExpression(expression);
+                    exp.init(context);
+                }
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                String value;
+                if (exp != null) {
+                    value = exp.evaluate(exchange, String.class);
+                } else {
+                    value = exchange.getMessage().getBody(String.class);
+                }
+                if (value != null && !StringHelper.isDoubleQuoted(value)) {
+                    value = StringHelper.removeLeadingAndEndingQuotes(value);
+                    value = StringQuoteHelper.doubleQuote(value);
+                }
+                return value;
+            }
+
+            @Override
+            public String toString() {
+                if (expression != null) {
+                    return "quote(" + expression + ")";
+                } else {
+                    return "quote()";
                 }
             }
         };
@@ -2859,6 +2964,46 @@ public final class SimpleExpressionBuilder {
             @Override
             public String toString() {
                 return "exchangeExceptionOgnl(" + ognl + ")";
+            }
+        };
+    }
+
+    public static Expression customFunction(final String name, final String parameter) {
+        return new ExpressionAdapter() {
+            private Expression func;
+            private Expression exp;
+
+            @Override
+            public void init(CamelContext context) {
+                super.init(context);
+                SimpleFunctionRegistry registry
+                        = context.getCamelContextExtension().getContextPlugin(SimpleFunctionRegistry.class);
+                func = registry.getFunction(name);
+                if (func == null) {
+                    throw new IllegalArgumentException("No custom simple function with name: " + name);
+                }
+                exp = ExpressionBuilder.simpleExpression(parameter);
+                exp.init(context);
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                Object answer = null;
+                final Object originalBody = exchange.getMessage().getBody();
+                try {
+                    Object input = exp.evaluate(exchange, Object.class);
+                    if (input != null) {
+                        exchange.getMessage().setBody(input);
+                        answer = func.evaluate(exchange, Object.class);
+                    }
+                } finally {
+                    exchange.getMessage().setBody(originalBody);
+                }
+                return answer;
+            }
+
+            public String toString() {
+                return "function(" + name + ")";
             }
         };
     }

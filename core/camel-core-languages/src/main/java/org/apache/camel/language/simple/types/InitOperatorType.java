@@ -21,11 +21,14 @@ package org.apache.camel.language.simple.types;
  */
 public enum InitOperatorType {
 
-    ASSIGNMENT;
+    ASSIGNMENT,
+    CHAIN_ASSIGNMENT;
 
     public static InitOperatorType asOperator(String text) {
         if (":=".equals(text)) {
             return ASSIGNMENT;
+        } else if ("~:=".equals(text)) {
+            return CHAIN_ASSIGNMENT;
         }
         throw new IllegalArgumentException("Operator not supported: " + text);
     }
@@ -33,6 +36,8 @@ public enum InitOperatorType {
     public static String getOperatorText(InitOperatorType operator) {
         if (operator == ASSIGNMENT) {
             return ":=";
+        } else if (operator == CHAIN_ASSIGNMENT) {
+            return "~:=";
         }
         return "";
     }

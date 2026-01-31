@@ -173,6 +173,10 @@ public final class SimpleConstants {
     @Metadata(description = "The original route id where this exchange was created.", javaType = "String", label = "function")
     public static final String FROM_ROUTE_ID = "fromRouteId";
 
+    @Metadata(description = "Invokes a custom function with the given name using the message body (or expression) as input parameter.",
+              label = "function", javaType = "Object", displayName = "For Each call Function")
+    public static final String FUNCTION = "function(name,exp)";
+
     @Metadata(description = "Returns a hashed value (string in hex decimal) of the message body/expression using JDK MessageDigest. The algorithm can be SHA-256 (default) or SHA3-256.",
               label = "function", javaType = "String", displayName = "Compute Hash Value")
     public static final String HASH = "hash(exp,algorithm)";
@@ -305,6 +309,10 @@ public final class SimpleConstants {
               label = "function", javaType = "boolean", displayName = "Property Placeholder Exists")
     public static final String PROPERTIES_EXIST = "propertiesExist:key";
 
+    @Metadata(description = "Returns the message body (or expression) as a double quoted string",
+              label = "function", javaType = "String")
+    public static final String QUOTE = "quote(exp)";
+
     @Metadata(description = "Returns a random number between min and max (exclusive)",
               label = "function", javaType = "int")
     public static final String RANDOM = "random(min,max)";
@@ -328,6 +336,10 @@ public final class SimpleConstants {
     @Metadata(description = "The route id of the current route the Exchange is being routed", javaType = "String",
               label = "function")
     public static final String ROUTE_ID = "routeId";
+
+    @Metadata(description = "Returns the message body (or expression) safely quoted if needed",
+              label = "function", javaType = "String")
+    public static final String SAFE_QUOTE = "safeQuote(exp)";
 
     @Metadata(description = "Sets an attachment with payload from the message body/expression.",
               label = "function", javaType = "Object")

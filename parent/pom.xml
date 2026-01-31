@@ -78,7 +78,7 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.41.17</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.41.18</aws-java-sdk2-version>
         <aws-xray-version>2.20.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.34</azure-storage-blob-changefeed-version>
@@ -145,7 +145,7 @@
         <dapr-workflow-version>1.16.1</dapr-workflow-version>
         <datasonnet-mapper-version>3.0.1.3</datasonnet-mapper-version>
         <debezium-version>3.4.1.Final</debezium-version>
-        <debezium-mysql-connector-version>9.5.0</debezium-mysql-connector-version>
+        <debezium-mysql-connector-version>9.6.0</debezium-mysql-connector-version>
         <derby-version>10.16.1.1</derby-version>
         <digitalocean-api-client-version>2.17</digitalocean-api-client-version>
         <directory-watcher-version>0.19.1</directory-watcher-version>
@@ -249,7 +249,7 @@
         <httpclient4-version>4.5.14</httpclient4-version>
         <httpasyncclient-version>4.1.5</httpasyncclient-version>
         <huaweicloud-obs-version>3.25.10</huaweicloud-obs-version>
-        <huaweicloud-sdk-version>3.1.183</huaweicloud-sdk-version>
+        <huaweicloud-sdk-version>3.1.184</huaweicloud-sdk-version>
         <ibm-cos-sdk-version>2.15.0</ibm-cos-sdk-version>
         <ibm-secrets-manager-version>2.0.22</ibm-secrets-manager-version>
         <ibm-watson-sdk-version>16.2.0</ibm-watson-sdk-version>
@@ -360,7 +360,7 @@
         <leveldbjni-version>1.8</leveldbjni-version>
         <leveldb-api-version>0.12</leveldb-api-version>
         <leveldb-version>0.12</leveldb-version>
-        <libphonenumber-version>9.0.22</libphonenumber-version>
+        <libphonenumber-version>9.0.23</libphonenumber-version>
         <!-- virtual dependency only used by Eclipse m2e -->
         <lifecycle-mapping-version>1.0.0</lifecycle-mapping-version>
         <log4j2-version>2.25.3</log4j2-version>
@@ -460,12 +460,13 @@
         <protobuf-maven-plugin-version>4.1.2</protobuf-maven-plugin-version>
         <protonpack-version>1.8</protonpack-version>
         <prowide-version>SRU2025-10.3.4</prowide-version>
-        <pubnub-version>12.1.3</pubnub-version>
+        <pubnub-version>12.1.4</pubnub-version>
         <pulsar-version>4.1.2</pulsar-version>
         <qdrant-client-version>1.16.2</qdrant-client-version>
         <qpid-broker-version>10.0.1</qpid-broker-version>
         <qpid-proton-j-version>0.34.1</qpid-proton-j-version>
         <qpid-jms-client-version>2.10.0</qpid-jms-client-version>
+        <quarkus-mcp-server-version>1.9.0</quarkus-mcp-server-version>
         <quarkus-version>3.31.1</quarkus-version>
         <quartz-version>2.5.2</quartz-version>
         <quickfixj-version>2.3.2</quickfixj-version>
@@ -531,7 +532,7 @@
         <testcontainers-version>2.0.3</testcontainers-version>
         <thymeleaf-version>3.1.3.RELEASE</thymeleaf-version>
         <tika-version>3.2.3</tika-version>
-        <twilio-version>11.3.1</twilio-version>
+        <twilio-version>11.3.2</twilio-version>
         <twitter4j-version>4.1.2</twitter4j-version>
         <undertow-version>2.3.22.Final</undertow-version>
         <univocity-parsers-version>2.10.2</univocity-parsers-version>
@@ -548,7 +549,7 @@
         <wiremock-version>3.13.2</wiremock-version>
         <woodstox-version>4.4.1</woodstox-version>
         <woodstox-core-version>7.1.1</woodstox-core-version>
-        <xbean-spring-version>4.29</xbean-spring-version>
+        <xbean-spring-version>4.30</xbean-spring-version>
         <xbean-asm5-shaded-version>4.5</xbean-asm5-shaded-version>
         <xchange-version>5.2.4</xchange-version>
         <xerces-version>2.12.2</xerces-version>
