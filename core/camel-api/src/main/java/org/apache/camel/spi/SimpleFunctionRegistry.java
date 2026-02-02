@@ -16,23 +16,26 @@
  */
 package org.apache.camel.spi;
 
+import java.util.Set;
+
 import org.apache.camel.Expression;
+import org.apache.camel.StaticService;
 
 /**
  * Registry for custom simple functions.
  */
-public interface SimpleFunctionRegistry {
+public interface SimpleFunctionRegistry extends StaticService {
 
     /**
-     * Add a function
+     * Add a custom simple function
      *
-     * @param name       name of function
+     * @param name       name of custom simple function
      * @param expression the expression to use as the function
      */
     void addFunction(String name, Expression expression);
 
     /**
-     * Remove a function
+     * Remove a custom simple function
      *
      * @param name name of function
      */
@@ -47,8 +50,23 @@ public interface SimpleFunctionRegistry {
     Expression getFunction(String name);
 
     /**
+     * Returns a set with all the custom function names
+     */
+    Set<String> getCustomFunctionNames();
+
+    /**
+     * Returns a set with all the core/built-in function names
+     */
+    Set<String> getCoreFunctionNames();
+
+    /**
      * Number of custom functions
      */
-    int size();
+    int customSize();
+
+    /**
+     * Number of core functions
+     */
+    int coreSize();
 
 }
