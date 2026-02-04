@@ -14,16 +14,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.camel.builder.xml;
 
-package org.apache.camel.test.infra.ollama.services;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.support.builder.Namespaces;
 
-public interface OllamaServiceConfiguration {
+public class XPathNamespacePlaceholderTest extends XPathNamespaceTest {
 
-    String modelName();
+    @Override
+    protected RouteBuilder createRouteBuilder() {
+        return new RouteBuilder() {
+            public void configure() {
+                context.getPropertiesComponent().addInitialProperty("myKey", "c");
+                context.getPropertiesComponent().addInitialProperty("myNS", "http://acme.com/cheese");
 
-    default String embeddingModelName() {
-        return null;
+                Namespaces ns = new Namespaces("{{myKey}}", "{{myNS}}");
+
+                from("direct:in").choice().when(xpath("/c:number = 55", Integer.class, ns)).to("mock:55").otherwise()
+                        .to("mock:other").end();
+            }
+        };
     }
-
-    String apiKey();
 }
