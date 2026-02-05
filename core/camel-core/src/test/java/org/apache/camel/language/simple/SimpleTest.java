@@ -17,6 +17,7 @@
 package org.apache.camel.language.simple;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -3029,6 +3030,32 @@ public class SimpleTest extends LanguageTestSupport {
     }
 
     @Test
+    public void testLoad() {
+        exchange.getMessage().setBody("   Hello World ");
+
+        Expression expression = context.resolveLanguage("simple").createExpression("${load(mysimple.txt)}");
+        String s = expression.evaluate(exchange, String.class);
+        assertEquals("The name is ${body}", s);
+
+        expression = context.resolveLanguage("simple").createExpression("${load(mysimple2.txt?optional=true)}");
+        s = expression.evaluate(exchange, String.class);
+        assertNull(s);
+
+        try {
+            expression = context.resolveLanguage("simple").createExpression("${load(mysimple2.txt?optional=false)}");
+            expression.evaluate(exchange, String.class);
+            fail("Should throw exception");
+        } catch (Exception e) {
+            assertIsInstanceOf(FileNotFoundException.class, e.getCause());
+        }
+
+        exchange.setVariable("myFile", "mysimple.txt");
+        expression = context.resolveLanguage("simple").createExpression("${load(${variable.myFile})}");
+        s = expression.evaluate(exchange, String.class);
+        assertEquals("The name is ${body}", s);
+    }
+
+    @Test
     public void testTrim() {
         exchange.getMessage().setBody("   Hello World ");
 
@@ -3253,11 +3280,11 @@ public class SimpleTest extends LanguageTestSupport {
 
         SimpleLanguage sl = (SimpleLanguage) context.resolveLanguage("simple");
 
-        Expression expression = sl.createExpression("  Hi ${body}", Object.class, false, false);
+        Expression expression = sl.createExpression("  Hi ${body}", Object.class, false, false, false);
         String out = expression.evaluate(exchange, String.class);
         assertEquals("  Hi Camel  ", out);
 
-        expression = sl.createExpression("  Hi ${body}", Object.class, false, true);
+        expression = sl.createExpression("  Hi ${body}", Object.class, false, true, false);
         out = expression.evaluate(exchange, String.class);
         assertEquals("Hi Camel", out);
     }
