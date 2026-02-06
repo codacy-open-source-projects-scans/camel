@@ -17,6 +17,8 @@
 
 package org.apache.camel.test.infra.common.services;
 
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -30,6 +32,7 @@ import org.testcontainers.containers.GenericContainer;
 
 public final class ContainerEnvironmentUtil {
     public static final String STARTUP_ATTEMPTS_PROPERTY = ".startup.attempts";
+    public static final String INFRA_PORT_PROPERTY = "camel.infra.port";
     private static final Logger LOG = LoggerFactory.getLogger(ContainerEnvironmentUtil.class);
 
     private static boolean dockerAvailable;
@@ -86,18 +89,23 @@ public final class ContainerEnvironmentUtil {
      * testcontainer isolation).
      *
      * Services implementing an interface with "InfraService" in the name are considered to be intended for use with
-     * Camel JBang and will use fixed default ports.
+     * Camel JBang and will use fixed default ports. This checks both direct and inherited interfaces.
      *
      * @param  cls the service class to check
      * @return     true if the service should use fixed ports, false for random ports
      */
     public static boolean isFixedPort(@SuppressWarnings("rawtypes") Class cls) {
-        for (Class<?> i : cls.getInterfaces()) {
-            if (i.getName().contains("InfraService")) {
-                LOG.debug("Service {} will use fixed ports (detected InfraService interface: {})",
-                        cls.getSimpleName(), i.getSimpleName());
-                return true;
+        // Check the entire class hierarchy for InfraService interfaces
+        Class<?> currentClass = cls;
+        while (currentClass != null) {
+            for (Class<?> i : currentClass.getInterfaces()) {
+                if (i.getName().contains("InfraService")) {
+                    LOG.debug("Service {} will use fixed ports (detected InfraService interface: {})",
+                            cls.getSimpleName(), i.getSimpleName());
+                    return true;
+                }
             }
+            currentClass = currentClass.getSuperclass();
         }
 
         LOG.debug("Service {} will use random ports (no InfraService interface detected)", cls.getSimpleName());
@@ -129,5 +137,123 @@ public final class ContainerEnvironmentUtil {
             }
         }
         return annotation;
+    }
+
+    /**
+     * Gets the configured port from system property, or returns the default port if not set or invalid.
+     *
+     * @param  defaultPort the default port to use if no valid port is configured
+     * @return             the configured port or the default port
+     */
+    public static int getConfiguredPort(int defaultPort) {
+        String portStr = System.getProperty(INFRA_PORT_PROPERTY);
+        if (portStr != null && !portStr.isEmpty()) {
+            try {
+                return Integer.parseInt(portStr);
+            } catch (NumberFormatException e) {
+                LOG.warn("Invalid port value '{}', using default: {}", portStr, defaultPort);
+            }
+        }
+        return defaultPort;
+    }
+
+    /**
+     * Gets the configured port from system property for embedded services. Returns 0 (random port) if no port is
+     * explicitly configured. Embedded services should use random ports by default for test isolation, and only use a
+     * fixed port when explicitly configured.
+     *
+     * @return the configured port, or 0 for random port assignment
+     */
+    public static int getConfiguredPortOrRandom() {
+        String portStr = System.getProperty(INFRA_PORT_PROPERTY);
+        if (portStr != null && !portStr.isEmpty()) {
+            try {
+                return Integer.parseInt(portStr);
+            } catch (NumberFormatException e) {
+                LOG.warn("Invalid port value '{}', using random port", portStr);
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Configures port exposure for a single-port container based on fixed/random port mode.
+     *
+     * @param container   the container to configure
+     * @param fixedPort   true to use fixed ports, false for random ports
+     * @param defaultPort the default container port
+     */
+    public static void configurePort(GenericContainer<?> container, boolean fixedPort, int defaultPort) {
+        configurePorts(container, fixedPort, PortConfig.primary(defaultPort));
+    }
+
+    /**
+     * Configures port exposure for a container based on fixed/random port mode. Primary port uses configured value from
+     * system property; secondary ports use defaults.
+     *
+     * @param container the container to configure
+     * @param fixedPort true to use fixed ports, false for random ports
+     * @param ports     the port configurations (primary and secondary)
+     */
+    public static void configurePorts(GenericContainer<?> container, boolean fixedPort, PortConfig... ports) {
+        // Always expose the ports first - this is needed for wait strategies and port mapping
+        Integer[] containerPorts = Arrays.stream(ports)
+                .map(PortConfig::containerPort)
+                .toArray(Integer[]::new);
+        container.withExposedPorts(containerPorts);
+
+        // If fixed port mode, also add the fixed port bindings
+        if (fixedPort) {
+            for (PortConfig port : ports) {
+                int hostPort = port.primary() ? getConfiguredPort(port.containerPort()) : port.containerPort();
+                invokeAddFixedExposedPort(container, hostPort, port.containerPort());
+            }
+        }
+    }
+
+    /**
+     * Invokes the protected addFixedExposedPort method on a container using reflection. This method is protected in
+     * GenericContainer to discourage use, but is necessary for fixed port scenarios like Camel JBang.
+     *
+     * @param container     the container to configure
+     * @param hostPort      the host port to bind
+     * @param containerPort the container port to expose
+     */
+    private static void invokeAddFixedExposedPort(GenericContainer<?> container, int hostPort, int containerPort) {
+        try {
+            Method method = GenericContainer.class.getDeclaredMethod("addFixedExposedPort", int.class, int.class);
+            method.setAccessible(true);
+            method.invoke(container, hostPort, containerPort);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to add fixed exposed port " + hostPort + " -> " + containerPort, e);
+        }
+    }
+
+    /**
+     * Configuration for a container port, indicating whether it's the primary port or a secondary port.
+     *
+     * @param containerPort the container port number
+     * @param primary       true if this is the primary port (uses configured port from system property)
+     */
+    public record PortConfig(int containerPort, boolean primary) {
+        /**
+         * Creates a primary port configuration. The host port will be read from system property if configured.
+         *
+         * @param  port the container port
+         * @return      a primary port configuration
+         */
+        public static PortConfig primary(int port) {
+            return new PortConfig(port, true);
+        }
+
+        /**
+         * Creates a secondary port configuration. The host port will use the same value as container port.
+         *
+         * @param  port the container port
+         * @return      a secondary port configuration
+         */
+        public static PortConfig secondary(int port) {
+            return new PortConfig(port, false);
+        }
     }
 }
