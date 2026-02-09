@@ -2159,6 +2159,18 @@ public class SimpleTest extends LanguageTestSupport {
     }
 
     @Test
+    public void testRange() {
+        exchange.getMessage().setBody("5");
+        assertExpression("${range(1,4)}", "[1, 2, 3]");
+        assertExpression("${range(1,${body})}", "[1, 2, 3, 4]");
+        assertExpression("${range(0,10)}", "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
+        assertExpression("${range(1,2)}", "[1]");
+        assertExpression("${range(1,1)}", null);
+        assertExpression("${range(0,0)}", null);
+        assertExpression("${range(4,1)}", null);
+    }
+
+    @Test
     public void testSubstringExpression() {
         exchange.getMessage().setBody("ABCDEFGHIJK");
         // head
@@ -3747,6 +3759,51 @@ public class SimpleTest extends LanguageTestSupport {
         expression = context.resolveLanguage("simple").createExpression("${forEach(${body},'Hello ${body}')}");
         list = expression.evaluate(exchange, List.class);
         assertEquals(0, list.size());
+    }
+
+    @Test
+    public void testContains() {
+        exchange.getMessage().setBody("Hello Camel");
+
+        Predicate p = context.resolveLanguage("simple").createPredicate("${contains(Camel)}");
+        assertTrue(p.matches(exchange));
+
+        p = context.resolveLanguage("simple").createPredicate("${contains(camel)}");
+        assertTrue(p.matches(exchange));
+
+        p = context.resolveLanguage("simple").createPredicate("${contains(world)}");
+        assertFalse(p.matches(exchange));
+
+        exchange.setVariable("myVar", "Cat");
+        p = context.resolveLanguage("simple").createPredicate("${contains(${variable.myVar})}");
+        assertFalse(p.matches(exchange));
+        exchange.setVariable("myVar", "Camel");
+        p = context.resolveLanguage("simple").createPredicate("${contains(${variable.myVar})}");
+        assertTrue(p.matches(exchange));
+
+        exchange.getMessage().setBody(List.of("Hello", "Dog", "Cat", "Camel", "Bye", "World"));
+        p = context.resolveLanguage("simple").createPredicate("${contains(camel)}");
+        assertTrue(p.matches(exchange));
+        p = context.resolveLanguage("simple").createPredicate("${contains(world)}");
+        assertTrue(p.matches(exchange));
+        p = context.resolveLanguage("simple").createPredicate("${contains(fish)}");
+        assertFalse(p.matches(exchange));
+    }
+
+    @Test
+    public void testFilter() {
+        exchange.getMessage().setBody("Camel,Dog,Cheese");
+
+        Expression expression = context.resolveLanguage("simple").createExpression("${filter(${body},${length()} > 4)}");
+        List list = expression.evaluate(exchange, List.class);
+        assertEquals(2, list.size());
+        assertEquals("Camel", list.get(0));
+        assertEquals("Cheese", list.get(1));
+
+        expression = context.resolveLanguage("simple").createExpression("${filter(${body},${contains(dog)})}");
+        list = expression.evaluate(exchange, List.class);
+        assertEquals(1, list.size());
+        assertEquals("Dog", list.get(0));
     }
 
     @Test

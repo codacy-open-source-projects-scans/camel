@@ -2320,6 +2320,18 @@ public class OriginalSimpleTest extends LanguageTestSupport {
     }
 
     @Test
+    public void testRange() {
+        exchange.getMessage().setBody("5");
+        assertExpression("${range(1,4)}", "[1, 2, 3]");
+        assertExpression("${range(1,${body})}", "[1, 2, 3, 4]");
+        assertExpression("${range(0,10)}", "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
+        assertExpression("${range(1,2)}", "[1]");
+        assertExpression("${range(1,1)}", null);
+        assertExpression("${range(0,0)}", null);
+        assertExpression("${range(4,1)}", null);
+    }
+
+    @Test
     public void testSubstringBefore() {
         exchange.getMessage().setBody("Hello World");
 
@@ -2728,6 +2740,35 @@ public class OriginalSimpleTest extends LanguageTestSupport {
         expression = context.resolveLanguage("csimple").createExpression("${load(${variable.myFile})}");
         s = expression.evaluate(exchange, String.class);
         assertEquals("The name is ${body}", s);
+    }
+
+    @Test
+    public void testContains() {
+        exchange.getMessage().setBody("Hello Camel");
+
+        Predicate p = context.resolveLanguage("csimple").createPredicate("${contains(Camel)}");
+        assertTrue(p.matches(exchange));
+
+        p = context.resolveLanguage("csimple").createPredicate("${contains(camel)}");
+        assertTrue(p.matches(exchange));
+
+        p = context.resolveLanguage("csimple").createPredicate("${contains(world)}");
+        assertFalse(p.matches(exchange));
+
+        exchange.setVariable("myVar", "Cat");
+        p = context.resolveLanguage("csimple").createPredicate("${contains(${variable.myVar})}");
+        assertFalse(p.matches(exchange));
+        exchange.setVariable("myVar", "Camel");
+        p = context.resolveLanguage("csimple").createPredicate("${contains(${variable.myVar})}");
+        assertTrue(p.matches(exchange));
+
+        exchange.getMessage().setBody(List.of("Hello", "Dog", "Cat", "Camel", "Bye", "World"));
+        p = context.resolveLanguage("csimple").createPredicate("${contains(camel)}");
+        assertTrue(p.matches(exchange));
+        p = context.resolveLanguage("csimple").createPredicate("${contains(world)}");
+        assertTrue(p.matches(exchange));
+        p = context.resolveLanguage("csimple").createPredicate("${contains(fish)}");
+        assertFalse(p.matches(exchange));
     }
 
     @Test

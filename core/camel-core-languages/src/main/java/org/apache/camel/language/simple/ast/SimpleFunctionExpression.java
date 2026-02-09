@@ -1002,6 +1002,34 @@ public class SimpleFunctionExpression extends LiteralExpression {
             return SimpleExpressionBuilder.substringBetweenExpression(exp1, after, before);
         }
 
+        // contains function
+        remainder = ifStartsWithReturnRemainder("contains(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (values == null || ObjectHelper.isEmpty(values)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${contains(text)} or ${contains(exp,text)} was: "
+                                                + function,
+                        token.getIndex());
+            }
+            String[] tokens = StringQuoteHelper.splitSafeQuote(values, ',', false);
+            if (tokens.length < 1 || tokens.length > 2) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${contains(text)} or ${contains(exp,text)} was: "
+                                                + function,
+                        token.getIndex());
+            }
+            String exp = "${body}";
+            String pattern;
+            if (tokens.length == 1) {
+                pattern = tokens[0];
+            } else {
+                exp = tokens[0];
+                pattern = tokens[1];
+            }
+            return SimpleExpressionBuilder.containsExpression(exp, pattern);
+        }
+
         // random function
         remainder = ifStartsWithReturnRemainder("random(", function);
         if (remainder != null) {
@@ -1019,6 +1047,25 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 return SimpleExpressionBuilder.randomExpression(tokens[0].trim(), tokens[1].trim());
             } else {
                 return SimpleExpressionBuilder.randomExpression("0", values.trim());
+            }
+        }
+        // range function
+        remainder = ifStartsWithReturnRemainder("range(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (values == null || ObjectHelper.isEmpty(values)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${range(min,max)} or ${range(max)} was: " + function, token.getIndex());
+            }
+            if (values.contains(",")) {
+                String[] tokens = values.split(",", 3);
+                if (tokens.length > 2) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${range(min,max)} or ${range(max)} was: " + function, token.getIndex());
+                }
+                return SimpleExpressionBuilder.rangeExpression(tokens[0].trim(), tokens[1].trim());
+            } else {
+                return SimpleExpressionBuilder.rangeExpression("1", values.trim());
             }
         }
 
@@ -1146,6 +1193,24 @@ public class SimpleFunctionExpression extends LiteralExpression {
             // the function takes the remainder of the tokens
             String exp2 = Arrays.stream(tokens).skip(1).collect(Collectors.joining(","));
             return SimpleExpressionBuilder.forEachExpression(exp1, exp2);
+        }
+        // filter function
+        remainder = ifStartsWithReturnRemainder("filter(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (ObjectHelper.isEmpty(values)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${filter(exp,exp)} was: " + function, token.getIndex());
+            }
+            String[] tokens = StringQuoteHelper.splitSafeQuote(values, ',', false);
+            if (tokens.length < 2) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${filter(exp,exp)} was: " + function, token.getIndex());
+            }
+            String exp1 = tokens[0];
+            // the function takes the remainder of the tokens
+            String exp2 = Arrays.stream(tokens).skip(1).collect(Collectors.joining(","));
+            return SimpleExpressionBuilder.filterExpression(exp1, exp2);
         }
 
         // isEmpty function
@@ -2812,6 +2877,50 @@ public class SimpleFunctionExpression extends LiteralExpression {
         if (remainder != null) {
             throw new UnsupportedOperationException("forEach is not supported in csimple language");
         }
+        // filter function
+        remainder = ifStartsWithReturnRemainder("filter(", function);
+        if (remainder != null) {
+            throw new UnsupportedOperationException("filter is not supported in csimple language");
+        }
+
+        // contains function
+        remainder = ifStartsWithReturnRemainder("contains(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (values == null || ObjectHelper.isEmpty(values)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${contains(text)} or ${contains(exp,text)} was: "
+                                                + function,
+                        token.getIndex());
+            }
+            String[] tokens = codeSplitSafe(values, ',', true, true);
+            if (tokens.length < 1 || tokens.length > 2) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${contains(text)} or ${contains(exp,text)} was: "
+                                                + function,
+                        token.getIndex());
+            }
+            // single quotes should be double quotes
+            for (int i = 0; i < tokens.length; i++) {
+                String s = tokens[i];
+                if (StringHelper.isSingleQuoted(s)) {
+                    s = StringHelper.removeLeadingAndEndingQuotes(s);
+                    s = StringQuoteHelper.doubleQuote(s);
+                    tokens[i] = s;
+                }
+            }
+            String exp = "body";
+            String pattern;
+            if (tokens.length == 1) {
+                pattern = tokens[0];
+            } else {
+                exp = tokens[0];
+                pattern = tokens[1];
+            }
+            pattern = StringHelper.removeLeadingAndEndingQuotes(pattern);
+            pattern = StringQuoteHelper.doubleQuote(pattern);
+            return "Object value = " + exp + ";\n        return containsIgnoreCase(exchange, value, " + pattern + ");";
+        }
 
         // random function
         remainder = ifStartsWithReturnRemainder("random(", function);
@@ -2832,6 +2941,26 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 return "random(exchange, " + before + ", " + after + ")";
             } else {
                 return "random(exchange, 0, " + values.trim() + ")";
+            }
+        }
+        remainder = ifStartsWithReturnRemainder("range(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            if (values == null || ObjectHelper.isEmpty(values)) {
+                throw new SimpleParserException(
+                        "Valid syntax: ${range(min,max)} or ${range(max)} was: " + function, token.getIndex());
+            }
+            if (values.contains(",")) {
+                String before = StringHelper.before(remainder, ",");
+                before = before.trim();
+                String after = StringHelper.after(remainder, ",");
+                after = after.trim();
+                if (after.endsWith(")")) {
+                    after = after.substring(0, after.length() - 1);
+                }
+                return "rangeList(exchange, " + before + ", " + after + ")";
+            } else {
+                return "rangeList(exchange, 0, " + values.trim() + ")";
             }
         }
 

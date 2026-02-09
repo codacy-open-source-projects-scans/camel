@@ -1862,6 +1862,47 @@ public final class SimpleExpressionBuilder {
     }
 
     /**
+     * Filters the values from the source that matches the predicate function
+     */
+    public static Expression filterExpression(final String source, final String function) {
+        return new ExpressionAdapter() {
+            private CamelContext context;
+            private Expression exp1;
+            private Predicate exp2;
+
+            @Override
+            public void init(CamelContext context) {
+                this.context = context;
+                exp1 = context.resolveLanguage("simple").createExpression(source);
+                exp1.init(context);
+                exp2 = context.resolveLanguage("simple").createPredicate(function);
+                exp2.init(context);
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                List<Object> answer = new ArrayList<>();
+                Object o = exp1.evaluate(exchange, Object.class);
+                Iterable<?> it = org.apache.camel.support.ObjectHelper.createIterable(o);
+                for (Object i : it) {
+                    // use a dummy exchange as the input is to be the message body
+                    Exchange dummy = ExchangeHelper.createCopy(exchange, true);
+                    dummy.getMessage().setBody(i);
+                    if (exp2.matches(dummy)) {
+                        answer.add(i);
+                    }
+                }
+                return answer;
+            }
+
+            @Override
+            public String toString() {
+                return "filter(" + source + ", " + function + ")";
+            }
+        };
+    }
+
+    /**
      * Sets the message header with the given expression value
      */
     public static Expression setHeaderExpression(final String name, final String type, final String expression) {
@@ -2118,6 +2159,34 @@ public final class SimpleExpressionBuilder {
     }
 
     /**
+     * Whether the expression matches the pattern
+     */
+    public static Expression containsExpression(final String expression, final String pattern) {
+        return new ExpressionAdapter() {
+            private Expression right;
+            private Expression left;
+
+            @Override
+            public void init(CamelContext context) {
+                left = context.resolveLanguage("simple").createExpression(expression);
+                left.init(context);
+                right = context.resolveLanguage("simple").createExpression(pattern);
+                right.init(context);
+            }
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                return PredicateBuilder.containsIgnoreCase(left, right).matches(exchange);
+            }
+
+            @Override
+            public String toString() {
+                return "contains(" + expression + "," + pattern + ")";
+            }
+        };
+    }
+
+    /**
      * Hashes the value using the given algorithm
      */
     public static Expression hashExpression(final String expression, final String algorithm) {
@@ -2189,6 +2258,43 @@ public final class SimpleExpressionBuilder {
             @Override
             public String toString() {
                 return "random(" + min + "," + max + ")";
+            }
+        };
+    }
+
+    /**
+     * Returns a range of number between min and max (exclusive)
+     */
+    public static Expression rangeExpression(final String min, final String max) {
+        return new ExpressionAdapter() {
+            private Expression exp1;
+            private Expression exp2;
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                int num1 = exp1.evaluate(exchange, Integer.class);
+                int num2 = exp2.evaluate(exchange, Integer.class);
+                if (num1 >= 0 && num1 <= num2 && num1 != num2) {
+                    List<Integer> answer = new ArrayList<>();
+                    for (int i = num1; i < num2; i++) {
+                        answer.add(i);
+                    }
+                    return answer;
+                }
+                return null;
+            }
+
+            @Override
+            public void init(CamelContext context) {
+                exp1 = ExpressionBuilder.simpleExpression(min);
+                exp1.init(context);
+                exp2 = ExpressionBuilder.simpleExpression(max);
+                exp2.init(context);
+            }
+
+            @Override
+            public String toString() {
+                return "range(" + min + "," + max + ")";
             }
         };
     }
