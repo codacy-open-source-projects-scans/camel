@@ -78,7 +78,7 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.41.24</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.41.25</aws-java-sdk2-version>
         <aws-xray-version>2.20.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.34</azure-storage-blob-changefeed-version>
@@ -107,7 +107,7 @@
         <chunk-templates-version>3.6.2</chunk-templates-version>
         <citrus-version>4.9.2</citrus-version>
         <classgraph-version>4.8.184</classgraph-version>
-        <cloudant-version>0.10.14</cloudant-version>
+        <cloudant-version>0.10.15</cloudant-version>
         <com-ibm-mq-jakarta-client-version>9.4.5.0</com-ibm-mq-jakarta-client-version>
         <cometd-java-client-version>9.0.0</cometd-java-client-version>
         <cometd-java-server-version>9.0.0</cometd-java-server-version>
@@ -177,7 +177,7 @@
         <formatter-maven-plugin-version>2.29.0</formatter-maven-plugin-version>
         <ftpserver-version>1.2.1</ftpserver-version>
         <freemarker-version>2.3.34</freemarker-version>
-        <fory-version>0.14.1</fory-version>
+        <fory-version>0.15.0</fory-version>
         <geronimo-annotation-1.0-spec-version>1.1.1</geronimo-annotation-1.0-spec-version>
         <geronimo-annotation-1.2-spec-version>1.0</geronimo-annotation-1.2-spec-version>
         <geronimo-atinject-1.0-spec-version>1.0</geronimo-atinject-1.0-spec-version>
@@ -321,7 +321,7 @@
         <jline-version>3.30.6</jline-version>
         <libthrift-version>0.22.0</libthrift-version>
         <jodatime2-version>2.14.0</jodatime2-version>
-        <jolokia-version>2.4.3</jolokia-version>
+        <jolokia-version>2.5.0</jolokia-version>
         <jolt-version>0.1.8</jolt-version>
         <jool-version>0.9.15</jool-version>
         <!-- jooq 3.20 is Java 21+ only so we need to be 3.19.x -->
@@ -366,7 +366,7 @@
         <!-- virtual dependency only used by Eclipse m2e -->
         <lifecycle-mapping-version>1.0.0</lifecycle-mapping-version>
         <log4j2-version>2.25.3</log4j2-version>
-        <logback-version>1.5.28</logback-version>
+        <logback-version>1.5.29</logback-version>
         <lucene-version>9.12.3</lucene-version>
         <lightcouch-version>0.2.0</lightcouch-version>
         <littleproxy-version>2.6.0</littleproxy-version>
@@ -401,7 +401,7 @@
         <micrometer-version>1.15.6</micrometer-version>
         <micrometer-tracing-version>1.5.5</micrometer-tracing-version>
         <microprofile-config-version>3.1</microprofile-config-version>
-        <milo-version>1.1.0</milo-version>
+        <milo-version>1.1.1</milo-version>
         <milvus-client-version>2.6.13</milvus-client-version>
         <mina-version>2.2.5</mina-version>
         <minidns-version>0.3.4</minidns-version>
@@ -539,7 +539,7 @@
         <undertow-version>2.3.23.Final</undertow-version>
         <univocity-parsers-version>2.10.2</univocity-parsers-version>
         <validation-api-version>2.0.1.Final</validation-api-version>
-        <vavr-version>0.11.0</vavr-version>
+        <vavr-version>1.0.0</vavr-version>
         <velocity-tools-version>3.1</velocity-tools-version>
         <velocity-version>2.4.1</velocity-version>
         <vertx-version>4.5.24</vertx-version>
