@@ -16,6 +16,11 @@
  */
 package org.apache.camel.dsl.jbang.core.commands.mcp;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -23,12 +28,21 @@ import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
 
+import com.networknt.schema.ValidationMessage;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
 import io.quarkiverse.mcp.server.ToolCallException;
 import org.apache.camel.catalog.CamelCatalog;
 import org.apache.camel.catalog.DefaultCamelCatalog;
 import org.apache.camel.catalog.EndpointValidationResult;
+import org.apache.camel.dsl.yaml.validator.YamlValidator;
+import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.model.RouteDefinition;
+import org.apache.camel.model.RoutesDefinition;
+import org.apache.camel.spi.Resource;
+import org.apache.camel.support.PluginHelper;
+import org.apache.camel.support.ResourceHelper;
+import org.apache.camel.xml.in.ModelParser;
 
 /**
  * MCP Tools for validating and transforming Camel routes using Quarkus MCP Server.
@@ -37,6 +51,7 @@ import org.apache.camel.catalog.EndpointValidationResult;
 public class TransformTools {
 
     private final CamelCatalog catalog;
+    private YamlValidator yamlValidator;
 
     public TransformTools() {
         this.catalog = new DefaultCamelCatalog(true);
@@ -142,12 +157,136 @@ public class TransformTools {
         TransformResult result = new TransformResult();
         result.fromFormat = fromFormat;
         result.toFormat = toFormat;
-        result.note = "Route transformation requires the full Camel route parser. " +
-                      "Use 'camel transform route' CLI command for complete transformation.";
-        result.supported = true;
-        result.recommendation = "Use 'camel transform route --format=" + toFormat + " <file>' for DSL transformation";
+
+        String from = fromFormat.toLowerCase();
+        String to = toFormat.toLowerCase();
+
+        if (from.equals(to)) {
+            result.supported = true;
+            result.result = route;
+            return result;
+        }
+
+        if ("java".equals(from)) {
+            result.supported = false;
+            result.note = "Java DSL to " + toFormat + " transformation is not supported. "
+                          + "There is no lightweight Java DSL parser available.";
+            return result;
+        }
+
+        try {
+            if ("xml".equals(from) && "yaml".equals(to)) {
+                result.result = transformXmlToYaml(route);
+                result.supported = true;
+            } else if ("yaml".equals(from) && "xml".equals(to)) {
+                result.result = transformYamlToXml(route);
+                result.supported = true;
+            } else {
+                result.supported = false;
+                result.note = "Unsupported transformation: " + fromFormat + " to " + toFormat;
+            }
+        } catch (Exception e) {
+            throw new ToolCallException("Failed to transform route: " + e.getMessage(), e);
+        }
 
         return result;
+    }
+
+    /**
+     * Transform an XML route definition to YAML format.
+     */
+    private String transformXmlToYaml(String xml) throws Exception {
+        // Try Spring namespace first (most common), then fall back to no namespace
+        RoutesDefinition routes = null;
+        try (ByteArrayInputStream is = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))) {
+            routes = new ModelParser(is, "http://camel.apache.org/schema/spring")
+                    .parseRoutesDefinition().orElse(null);
+        }
+        if (routes == null) {
+            try (ByteArrayInputStream is = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))) {
+                routes = new ModelParser(is)
+                        .parseRoutesDefinition().orElse(null);
+            }
+        }
+        if (routes == null) {
+            throw new IllegalArgumentException(
+                    "Could not parse XML route. Ensure it contains a valid <routes> or <route> element.");
+        }
+
+        StringWriter sw = new StringWriter();
+        new org.apache.camel.yaml.out.ModelWriter(sw).writeRoutesDefinition(routes);
+        return sw.toString();
+    }
+
+    /**
+     * Transform a YAML route definition to XML format.
+     */
+    private String transformYamlToXml(String yaml) throws Exception {
+        DefaultCamelContext ctx = new DefaultCamelContext();
+        try {
+            ctx.build();
+
+            Resource resource = ResourceHelper.fromString("route.yaml", yaml);
+            PluginHelper.getRoutesLoader(ctx).loadRoutes(resource);
+
+            List<RouteDefinition> routeDefs = ctx.getRouteDefinitions();
+            if (routeDefs == null || routeDefs.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Could not parse YAML route. Ensure it contains a valid route definition.");
+            }
+
+            RoutesDefinition rd = new RoutesDefinition();
+            rd.setRoutes(routeDefs);
+
+            StringWriter sw = new StringWriter();
+            new org.apache.camel.xml.out.ModelWriter(sw).writeRoutesDefinition(rd);
+            return sw.toString();
+        } finally {
+            ctx.stop();
+        }
+    }
+
+    /**
+     * Tool to validate a YAML DSL route definition against the Camel YAML DSL JSON schema.
+     */
+    @Tool(description = "Validate a YAML DSL route definition against the Camel YAML DSL JSON schema. "
+                        + "Checks for valid DSL elements, correct route structure, and returns detailed schema validation errors.")
+    public YamlDslValidationResult camel_validate_yaml_dsl(
+            @ToolArg(description = "YAML DSL route definition to validate") String route) {
+
+        if (route == null || route.isBlank()) {
+            throw new ToolCallException("'route' parameter is required", null);
+        }
+
+        try {
+            if (yamlValidator == null) {
+                yamlValidator = new YamlValidator();
+                yamlValidator.init();
+            }
+
+            File tempFile = File.createTempFile("camel-validate-", ".yaml");
+            try {
+                Files.writeString(tempFile.toPath(), route);
+                List<ValidationMessage> messages = yamlValidator.validate(tempFile);
+
+                List<YamlDslError> errors = null;
+                if (!messages.isEmpty()) {
+                    errors = messages.stream()
+                            .map(m -> new YamlDslError(
+                                    m.getMessage(),
+                                    m.getInstanceLocation() != null ? m.getInstanceLocation().toString() : null,
+                                    m.getType(),
+                                    m.getSchemaLocation() != null ? m.getSchemaLocation().toString() : null))
+                            .toList();
+                }
+
+                return new YamlDslValidationResult(messages.isEmpty(), messages.size(), errors);
+            } finally {
+                tempFile.delete();
+            }
+        } catch (Exception e) {
+            throw new ToolCallException("Failed to validate YAML DSL: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -211,6 +350,12 @@ public class TransformTools {
         public String toFormat;
         public String note;
         public boolean supported;
-        public String recommendation;
+        public String result;
+    }
+
+    public record YamlDslValidationResult(boolean valid, int numberOfErrors, List<YamlDslError> errors) {
+    }
+
+    public record YamlDslError(String error, String instancePath, String type, String schemaPath) {
     }
 }

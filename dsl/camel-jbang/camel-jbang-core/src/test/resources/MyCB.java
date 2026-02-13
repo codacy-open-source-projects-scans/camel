@@ -14,19 +14,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.camel.dsl.jbang.it;
+// use modeline to configure properties directly in the same source file
+// camel-k: language=java name=Cool property=period=1000
 
-import java.io.IOException;
+public class MyCB extends org.apache.camel.builder.RouteBuilder {
 
-import org.apache.camel.dsl.jbang.it.support.JBangTestSupport;
-import org.junit.jupiter.api.Test;
-
-public class RouteFromDirITCase extends JBangTestSupport {
-
-    @Test
-    public void runFromDirTest() throws IOException {
-        copyResourceInDataFolder(TestResources.DIR_ROUTE);
-        executeBackground(String.format("run --source-dir=%s", mountPoint()));
-        checkLogContains("Hello world!");
-    }
+  @Override
+  public void configure() throws Exception {
+      // Write your routes here, for example:
+      from("direct:start")
+          .circuitBreaker()
+              .to("http://fooservice.com/slow")
+          .onFallback()
+              .transform().constant("Fallback message")
+          .end()
+          .to("mock:result");
+  }
 }

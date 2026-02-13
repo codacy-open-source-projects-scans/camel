@@ -48,6 +48,7 @@ import org.apache.camel.util.StringHelper;
 import org.apache.camel.util.StringQuoteHelper;
 
 import static org.apache.camel.util.ObjectHelper.isNotEmpty;
+import static org.apache.camel.util.StringHelper.isQuoted;
 import static org.apache.camel.util.StringHelper.removeLeadingAndEndingQuotes;
 import static org.apache.camel.util.StringHelper.startsWithIgnoreCase;
 
@@ -1327,7 +1328,7 @@ public final class PropertyBindingSupport {
                 Class<?> parameterType = getValidParameterType(camelContext, parameter);
                 Class<?> expectedType = ctr.getParameterTypes()[i];
 
-                if (parameterType != null && expectedType != null) {
+                if (parameterType != null) {
                     // skip java.lang.Object type, when we have multiple possible methods we want to avoid it if possible
                     if (Object.class.equals(expectedType)) {
                         fallbackCandidate = ctr;
@@ -1453,7 +1454,7 @@ public final class PropertyBindingSupport {
                 Class<?> parameterType = getValidParameterType(camelContext, parameter);
                 Class<?> expectedType = method.getParameterTypes()[i];
 
-                if (parameterType != null && expectedType != null) {
+                if (parameterType != null) {
                     // skip java.lang.Object type, when we have multiple possible methods we want to avoid it if possible
                     if (Object.class.equals(expectedType)) {
                         fallbackCandidate = method;
@@ -1494,18 +1495,20 @@ public final class PropertyBindingSupport {
         // trim value
         value = value.trim();
 
-        // single quoted is valid
-        if (value.startsWith("'") && value.endsWith("'")) {
-            return String.class;
-        }
-
-        // double quoted is valid
-        if (value.startsWith("\"") && value.endsWith("\"")) {
-            return String.class;
+        // parameters may be wrapped in single/double-quoted, so special check
+        if (isQuoted(value)) {
+            String unquoted = removeLeadingAndEndingQuotes(value);
+            // try same logic again but unquoted (look for special types)
+            Class<?> answer = getValidParameterType(camelContext, unquoted);
+            if (answer == null) {
+                // okay then it's a string
+                answer = String.class;
+            }
+            return answer;
         }
 
         // true or false is valid (boolean)
-        if (value.equals("true") || value.equals("false")) {
+        if (isBooleanValue(value)) {
             return Boolean.class;
         }
 
@@ -1529,6 +1532,20 @@ public final class PropertyBindingSupport {
         }
 
         // numeric is valid
+        if (isNumericValue(value)) {
+            return Number.class;
+        }
+
+        // unknown type
+        return null;
+    }
+
+    private static boolean isBooleanValue(String value) {
+        return "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value);
+    }
+
+    private static boolean isNumericValue(String value) {
+        // numeric is valid
         boolean numeric = true;
         for (char ch : value.toCharArray()) {
             if (!Character.isDigit(ch)) {
@@ -1536,12 +1553,7 @@ public final class PropertyBindingSupport {
                 break;
             }
         }
-        if (numeric) {
-            return Number.class;
-        }
-
-        // not valid
-        return null;
+        return numeric;
     }
 
     private static boolean isParameterMatchingType(Class<?> parameterType, Class<?> expectedType) {
