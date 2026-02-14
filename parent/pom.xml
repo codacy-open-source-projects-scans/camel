@@ -78,7 +78,7 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.41.27</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.41.28</aws-java-sdk2-version>
         <aws-xray-version>2.20.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.34</azure-storage-blob-changefeed-version>
@@ -402,7 +402,7 @@
         <micrometer-tracing-version>1.5.5</micrometer-tracing-version>
         <microprofile-config-version>3.1</microprofile-config-version>
         <milo-version>1.1.1</milo-version>
-        <milvus-client-version>2.6.13</milvus-client-version>
+        <milvus-client-version>2.6.14</milvus-client-version>
         <mina-version>2.2.5</mina-version>
         <minidns-version>0.3.4</minidns-version>
         <minimal-json-version>0.9.5</minimal-json-version>
@@ -445,7 +445,7 @@
         <parquet-common-version>1.17.0</parquet-common-version>
         <parquet-avro-version>1.16.0</parquet-avro-version>
         <pdfbox-version>3.0.6</pdfbox-version>
-        <pgjdbc-driver-version>42.7.9</pgjdbc-driver-version>
+        <pgjdbc-driver-version>42.7.10</pgjdbc-driver-version>
         <pgjdbc-ng-driver-version>0.8.9</pgjdbc-ng-driver-version>
         <picocli-version>4.7.7</picocli-version>
         <pinecone-client-version>3.1.0</pinecone-client-version>
