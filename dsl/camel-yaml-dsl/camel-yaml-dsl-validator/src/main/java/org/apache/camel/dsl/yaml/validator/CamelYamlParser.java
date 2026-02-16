@@ -25,12 +25,12 @@ import com.networknt.schema.ValidationMessage;
 import org.apache.camel.CamelContext;
 import org.apache.camel.component.stub.StubComponent;
 import org.apache.camel.dsl.yaml.YamlRoutesBuilderLoader;
-import org.apache.camel.dsl.yaml.validator.stub.StubBeanRepository;
-import org.apache.camel.dsl.yaml.validator.stub.StubDataFormat;
-import org.apache.camel.dsl.yaml.validator.stub.StubLanguage;
-import org.apache.camel.dsl.yaml.validator.stub.StubReifier;
-import org.apache.camel.dsl.yaml.validator.stub.StubTransformer;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.main.stub.StubBeanRepository;
+import org.apache.camel.main.stub.StubDataFormat;
+import org.apache.camel.main.stub.StubEipReifier;
+import org.apache.camel.main.stub.StubLanguage;
+import org.apache.camel.main.stub.StubTransformer;
 import org.apache.camel.spi.ComponentResolver;
 import org.apache.camel.spi.DataFormatResolver;
 import org.apache.camel.spi.LanguageResolver;
@@ -51,7 +51,7 @@ public class CamelYamlParser {
         CamelContext camelContext = null;
         try {
             DefaultRegistry registry = new DefaultRegistry();
-            registry.addBeanRepository(new StubBeanRepository());
+            registry.addBeanRepository(new StubBeanRepository("*"));
 
             camelContext = new DefaultCamelContext(registry);
             camelContext.setAutoStartup(false);
@@ -63,18 +63,20 @@ public class CamelYamlParser {
                     (name, context) -> new StubLanguage());
             camelContext.getCamelContextExtension().addContextPlugin(TransformerResolver.class,
                     (name, context) -> new StubTransformer());
+            // stub EIPs
+            StubEipReifier.registerStubEipReifiers(camelContext);
+
+            // start camel
             camelContext.start();
 
-            StubReifier.registerStubReifiers();
-
-            YamlRoutesBuilderLoader loader = new YamlRoutesBuilderLoader();
-            loader.setCamelContext(camelContext);
-            loader.start();
-
-            var rb = loader.doLoadRouteBuilder(ResourceHelper.fromString(file.getName(), Files.readString(file.toPath())));
-            camelContext.addRoutes(rb);
-            return Collections.emptyList();
-
+            // load yaml to validate
+            try (YamlRoutesBuilderLoader loader = new YamlRoutesBuilderLoader()) {
+                loader.setCamelContext(camelContext);
+                loader.start();
+                var rb = loader.doLoadRouteBuilder(ResourceHelper.fromString(file.getName(), Files.readString(file.toPath())));
+                camelContext.addRoutes(rb);
+                return Collections.emptyList();
+            }
         } catch (Exception e) {
             ValidationMessage vm = ValidationMessage.builder().type("parser")
                     .messageSupplier(() -> e.getClass().getName() + ": " + e.getMessage()).build();

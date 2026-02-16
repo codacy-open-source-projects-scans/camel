@@ -73,13 +73,13 @@ import org.apache.camel.main.download.MavenDependencyDownloader;
 import org.apache.camel.main.download.PackageNameSourceLoader;
 import org.apache.camel.main.download.PromptPropertyPlaceholderSource;
 import org.apache.camel.main.download.SagaDownloader;
-import org.apache.camel.main.download.StubBeanRepository;
 import org.apache.camel.main.download.StubComponentAutowireStrategy;
 import org.apache.camel.main.download.TransactedDownloader;
 import org.apache.camel.main.download.TypeConverterLoaderDownloadListener;
 import org.apache.camel.main.injection.AnnotationDependencyInjection;
 import org.apache.camel.main.reload.OpenApiGeneratorReloadStrategy;
-import org.apache.camel.main.stub.BeanStubReifier;
+import org.apache.camel.main.stub.StubBeanRepository;
+import org.apache.camel.main.stub.StubEipReifier;
 import org.apache.camel.main.util.ClipboardReloadStrategy;
 import org.apache.camel.main.util.ExtraClassesClassLoader;
 import org.apache.camel.main.util.ExtraFilesClassLoader;
@@ -491,8 +491,8 @@ public class KameletMain extends MainCommandLineSupport {
             // turn off inlining routes
             configure().rest().withInlineRoutes(false);
             blueprintXmlBeansHandler.setTransform(true);
-            // stub beans
-            BeanStubReifier.registerStubBeanReifiers();
+            // stub EIPs
+            StubEipReifier.registerStubEipReifiers(answer);
         }
         if (silent) {
             // silent should not include http server
@@ -663,7 +663,7 @@ public class KameletMain extends MainCommandLineSupport {
             answer.getCamelContextExtension().addContextPlugin(DataFormatResolver.class,
                     new DependencyDownloaderDataFormatResolver(answer, stubPattern, silent));
             answer.getCamelContextExtension().addContextPlugin(LanguageResolver.class,
-                    new DependencyDownloaderLanguageResolver(answer, stubPattern, silent));
+                    new DependencyDownloaderLanguageResolver(answer, stubPattern, silent, transform));
             answer.getCamelContextExtension().addContextPlugin(TransformerResolver.class,
                     new DependencyDownloaderTransformerResolver(answer, stubPattern, silent));
             answer.getCamelContextExtension().addContextPlugin(UriFactoryResolver.class,
@@ -682,11 +682,8 @@ public class KameletMain extends MainCommandLineSupport {
             }
             answer.setInjector(new KameletMainInjector(answer.getInjector(), stubPattern, silent));
             Object kameletsVersion = getInitialProperties().get(getInstanceType() + ".kameletsVersion");
-            if (kameletsVersion != null) {
-                answer.addService(new DependencyDownloaderKamelet(answer, kameletsVersion.toString()));
-            } else {
-                answer.addService(new DependencyDownloaderKamelet(answer));
-            }
+            answer.addService(new DependencyDownloaderKamelet(
+                    answer, kameletsVersion != null ? kameletsVersion.toString() : null));
             answer.addService(new DependencyDownloaderPropertiesComponent(answer, knownDeps, silent));
 
             // reloader
