@@ -46,6 +46,7 @@ import org.apache.camel.catalog.DefaultCamelCatalog;
 import org.apache.camel.dsl.jbang.core.commands.CamelCommand;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
+import org.apache.camel.dsl.jbang.core.common.QuarkusHelper;
 import org.apache.camel.dsl.jbang.core.common.RuntimeCompletionCandidates;
 import org.apache.camel.dsl.jbang.core.common.RuntimeType;
 import org.apache.camel.dsl.jbang.core.common.RuntimeTypeConverter;
@@ -177,6 +178,12 @@ public class VersionList extends CamelCommand {
         List<Row> rows = new ArrayList<>();
         filterVersions(versions, rows, releases);
 
+        // resolve actual Quarkus platform versions from registry
+        if (RuntimeType.quarkus == runtime) {
+            QuarkusHelper.resolveQuarkusPlatformVersions(
+                    rows, r -> r.runtimeVersion, (r, v) -> r.quarkusVersion = v);
+        }
+
         if (lts) {
             rows.removeIf(r -> !"lts".equalsIgnoreCase(r.kind));
         }
@@ -226,17 +233,20 @@ public class VersionList extends CamelCommand {
                     Jsoner.serialize(
                             rows.stream()
                                     .map(row -> new VersionListDTO(
-                                            row.coreVersion, runtime.runtime(), row.runtimeVersion, row.jdks, row.kind,
-                                            row.releaseDate,
-                                            row.eolDate))
+                                            row.coreVersion, runtime.runtime(), row.runtimeVersion,
+                                            row.quarkusVersion, row.jdks, row.kind,
+                                            row.releaseDate, row.eolDate))
                                     .map(VersionListDTO::toMap)
                                     .collect(Collectors.toList())));
         } else {
             printer().println(AsciiTable.getTable(AsciiTable.NO_BORDERS, rows, Arrays.asList(
                     new Column().header("CAMEL VERSION")
                             .headerAlign(HorizontalAlign.CENTER).dataAlign(HorizontalAlign.CENTER).with(r -> r.coreVersion),
-                    new Column().header("QUARKUS").visible(RuntimeType.quarkus == runtime)
+                    new Column().header("CAMEL_QUARKUS").visible(RuntimeType.quarkus == runtime)
                             .headerAlign(HorizontalAlign.CENTER).dataAlign(HorizontalAlign.CENTER).with(r -> r.runtimeVersion),
+                    new Column().header("QUARKUS").visible(RuntimeType.quarkus == runtime)
+                            .headerAlign(HorizontalAlign.CENTER).dataAlign(HorizontalAlign.CENTER)
+                            .with(r -> r.quarkusVersion != null ? r.quarkusVersion : ""),
                     new Column().header("SPRING-BOOT").visible(RuntimeType.springBoot == runtime)
                             .headerAlign(HorizontalAlign.CENTER).dataAlign(HorizontalAlign.CENTER).with(r -> r.runtimeVersion),
                     new Column().header("JDK")
@@ -602,6 +612,7 @@ public class VersionList extends CamelCommand {
     private static class Row {
         String coreVersion;
         String runtimeVersion;
+        String quarkusVersion;
         String releaseDate;
         long daysSince = -1;
         String eolDate;
