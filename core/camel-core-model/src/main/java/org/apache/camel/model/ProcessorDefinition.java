@@ -47,7 +47,6 @@ import org.apache.camel.builder.DataFormatClause;
 import org.apache.camel.builder.EndpointConsumerBuilder;
 import org.apache.camel.builder.EndpointProducerBuilder;
 import org.apache.camel.builder.EnrichClause;
-import org.apache.camel.builder.ExpressionBuilder;
 import org.apache.camel.builder.ExpressionClause;
 import org.apache.camel.builder.ProcessClause;
 import org.apache.camel.model.cloud.ServiceCallDefinition;
@@ -1424,10 +1423,10 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * Creates a validation expression which only if it is <tt>true</tt> then the exchange is forwarded to the
      * destination. Otherwise a {@link org.apache.camel.support.processor.PredicateValidationException} is thrown.
      *
-     * @param  expression the expression
+     * @param  expression the predicate
      * @return            the builder
      */
-    public Type validate(@AsPredicate Expression expression) {
+    public Type validate(@AsPredicate ExpressionDefinition expression) {
         ValidateDefinition answer = new ValidateDefinition(expression);
         addOutput(answer);
         return asType();
@@ -2064,7 +2063,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @return       the builder
      */
     public DelayDefinition delay(long delay) {
-        return delay(ExpressionBuilder.constantExpression(delay));
+        return delay(new ConstantExpression(Long.toString(delay)));
     }
 
     /**
@@ -2090,7 +2089,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @return                           the builder
      */
     public ThrottleDefinition throttle(long maximumConcurrentRequests) {
-        return throttle(ExpressionBuilder.constantExpression(maximumConcurrentRequests));
+        return throttle(new ConstantExpression(Long.toString(maximumConcurrentRequests)));
     }
 
     /**
@@ -2126,9 +2125,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @return                           the builder
      */
     public ThrottleDefinition throttle(Expression maximumConcurrentRequests, long correlationExpressionKey) {
-        ThrottleDefinition answer
-                = new ThrottleDefinition(
-                        maximumConcurrentRequests, ExpressionBuilder.constantExpression(correlationExpressionKey));
+        ThrottleDefinition answer = new ThrottleDefinition(maximumConcurrentRequests, maximumConcurrentRequests);
         addOutput(answer);
         return answer;
     }
@@ -2901,7 +2898,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @return        the builder
      */
     public Type transformDataType(DataType toType) {
-        TransformDataTypeDefinition answer = new TransformDataTypeDefinition(DataType.ANY, toType);
+        TransformDataTypeDefinition answer = new TransformDataTypeDefinition(null, toType);
         addOutput(answer);
         return asType();
     }
