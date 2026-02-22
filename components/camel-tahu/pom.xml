@@ -155,7 +155,7 @@
         <!-- testing -->
         <dependency>
             <groupId>org.apache.camel</groupId>
-            <artifactId>camel-test-junit5</artifactId>
+            <artifactId>camel-test-junit6</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -171,6 +171,12 @@
             <version>${project.version}</version>
             <scope>test</scope>
             <type>test-jar</type>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-test-infra-core</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.camel</groupId>
@@ -191,6 +197,12 @@
             <version>${project.version}</version>
             <scope>test</scope>
             <type>test-jar</type>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-test-infra-hivemq</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.eclipse.tahu</groupId>

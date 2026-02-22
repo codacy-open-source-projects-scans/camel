@@ -76,7 +76,7 @@
         </dependency>
         <dependency>
             <groupId>org.apache.camel</groupId>
-            <artifactId>camel-test-junit5</artifactId>
+            <artifactId>camel-test-junit6</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -151,6 +151,7 @@
                             <goal>fromApis</goal>
                         </goals>
                         <configuration>
+                            <apiSrcDir>../camel-olingo2-api/src/main/java</apiSrcDir>
                             <apis>
                                 <api>
                                     <apiName />
@@ -176,15 +177,6 @@
                         </configuration>
                     </execution>
                 </executions>
-                <dependencies>
-                    <!-- Component API to read API -->
-                    <dependency>
-                        <groupId>org.apache.camel</groupId>
-                        <artifactId>camel-olingo2-api</artifactId>
-                        <version>${project.version}</version>
-                        <classifier>sources</classifier>
-                    </dependency>
-                </dependencies>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

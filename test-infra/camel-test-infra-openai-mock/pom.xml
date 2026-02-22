@@ -40,11 +40,16 @@
             <version>${project.version}</version>
             <type>test-jar</type>
         </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-test-infra-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
-            <version>${junit-jupiter-version}</version>
+            <version>${junit6-jupiter-version}</version>
         </dependency>
         
         <dependency>
@@ -61,7 +66,7 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
-            <version>${junit-jupiter-version}</version>
+            <version>${junit6-jupiter-version}</version>
             <scope>test</scope>
         </dependency>
 

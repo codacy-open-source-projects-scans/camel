@@ -60,7 +60,7 @@
         <!-- test dependencies -->
         <dependency>
             <groupId>org.apache.camel</groupId>
-            <artifactId>camel-test-junit5</artifactId>
+            <artifactId>camel-test-junit6</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -88,6 +88,12 @@
             <version>${project.version}</version>
             <scope>test</scope>
             <type>test-jar</type>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-test-infra-ignite</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

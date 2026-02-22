@@ -65,7 +65,7 @@
         </dependency>
         <dependency>
             <groupId>org.apache.camel</groupId>
-            <artifactId>camel-test-spring-junit5</artifactId>
+            <artifactId>camel-test-spring-junit6</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -79,6 +79,12 @@
             <version>${project.version}</version>
             <scope>test</scope>
             <type>test-jar</type>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-test-infra-hazelcast</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

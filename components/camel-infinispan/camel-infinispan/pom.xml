@@ -70,7 +70,7 @@
         <!-- testing - camel -->
         <dependency>
             <groupId>org.apache.camel</groupId>
-            <artifactId>camel-test-spring-junit5</artifactId>
+            <artifactId>camel-test-spring-junit6</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -91,6 +91,12 @@
             <artifactId>camel-test-infra-infinispan</artifactId>
             <version>${project.version}</version>
             <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-test-infra-infinispan</artifactId>
+            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -132,7 +138,7 @@
         <!-- testing - misc -->
         <dependency>
             <groupId>org.apache.camel</groupId>
-            <artifactId>camel-test-junit5</artifactId>
+            <artifactId>camel-test-junit6</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

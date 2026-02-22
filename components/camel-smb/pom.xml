@@ -56,7 +56,7 @@
     <!-- testing -->
     <dependency>
       <groupId>org.apache.camel</groupId>
-      <artifactId>camel-test-junit5</artifactId>
+      <artifactId>camel-test-junit6</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -72,6 +72,12 @@
       <artifactId>camel-test-infra-smb</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.camel</groupId>
+      <artifactId>camel-test-infra-smb</artifactId>
+      <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

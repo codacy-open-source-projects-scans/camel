@@ -57,13 +57,13 @@ import org.apache.camel.spi.VariableRepositoryFactory;
 import org.apache.camel.support.DefaultUuidGenerator;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.LanguageHelper;
-import org.apache.camel.test.junit5.LanguageTestSupport;
+import org.apache.camel.test.junit6.LanguageTestSupport;
 import org.apache.camel.util.InetAddressUtil;
 import org.apache.camel.util.StringHelper;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import static org.apache.camel.test.junit5.TestSupport.assertIsInstanceOf;
+import static org.apache.camel.test.junit6.TestSupport.assertIsInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -2865,6 +2865,24 @@ public class OriginalSimpleTest extends LanguageTestSupport {
         expression = context.resolveLanguage("csimple").createExpression("${lowercase(${header.beer})}");
         s = expression.evaluate(exchange, String.class);
         assertEquals("carlsberg", s);
+    }
+
+    @Test
+    public void testVal() {
+        exchange.getMessage().setBody(123);
+
+        Expression expression = context.resolveLanguage("csimple").createExpression("${val(abc)}");
+        String s = expression.evaluate(exchange, String.class);
+        assertEquals("abc", s);
+
+        expression = context.resolveLanguage("csimple").createExpression("${val(${body})}");
+        s = expression.evaluate(exchange, String.class);
+        assertEquals("123", s);
+
+        expression = context.resolveLanguage("csimple").createExpression("${val(${body})}");
+        Object obj = expression.evaluate(exchange, Object.class);
+        assertIsInstanceOf(Integer.class, obj);
+        assertEquals(123, obj);
     }
 
     @Test
