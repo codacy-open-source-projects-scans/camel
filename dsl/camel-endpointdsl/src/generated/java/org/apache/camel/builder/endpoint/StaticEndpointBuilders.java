@@ -6056,66 +6056,6 @@ public class StaticEndpointBuilders {
         return GooglePubsubEndpointBuilderFactory.endpointBuilder(componentName, path);
     }
     /**
-     * Google PubSub Lite (camel-google-pubsub-lite)
-     * Send and receive messages to/from Google Cloud Platform PubSub Lite
-     * Service.
-     * 
-     * Category: cloud,messaging
-     * Since: 4.6
-     * Maven coordinates: org.apache.camel:camel-google-pubsub-lite
-     * 
-     * Syntax:
-     * <code>google-pubsub-lite:projectId:location:destinationName</code>
-     * 
-     * Path parameter: projectId (required)
-     * The Google Cloud PubSub Lite Project Id
-     * 
-     * Path parameter: location (required)
-     * The Google Cloud PubSub Lite location
-     * 
-     * Path parameter: destinationName (required)
-     * The Destination Name. For the consumer this will be the subscription
-     * name, while for the producer this will be the topic name.
-     * 
-     * @param path projectId:location:destinationName
-     * @return the dsl builder
-     */
-    @Deprecated
-    public static GooglePubsubLiteEndpointBuilderFactory.GooglePubsubLiteEndpointBuilder googlePubsubLite(String path) {
-        return googlePubsubLite("google-pubsub-lite", path);
-    }
-    /**
-     * Google PubSub Lite (camel-google-pubsub-lite)
-     * Send and receive messages to/from Google Cloud Platform PubSub Lite
-     * Service.
-     * 
-     * Category: cloud,messaging
-     * Since: 4.6
-     * Maven coordinates: org.apache.camel:camel-google-pubsub-lite
-     * 
-     * Syntax:
-     * <code>google-pubsub-lite:projectId:location:destinationName</code>
-     * 
-     * Path parameter: projectId (required)
-     * The Google Cloud PubSub Lite Project Id
-     * 
-     * Path parameter: location (required)
-     * The Google Cloud PubSub Lite location
-     * 
-     * Path parameter: destinationName (required)
-     * The Destination Name. For the consumer this will be the subscription
-     * name, while for the producer this will be the topic name.
-     * 
-     * @param componentName to use a custom component name for the endpoint
-     * instead of the default name
-     * @param path projectId:location:destinationName
-     * @return the dsl builder
-     */
-    @Deprecated
-    public static GooglePubsubLiteEndpointBuilderFactory.GooglePubsubLiteEndpointBuilder googlePubsubLite(String componentName, String path) {
-        return GooglePubsubLiteEndpointBuilderFactory.endpointBuilder(componentName, path);
-    }
-    /**
      * Google Secret Manager (camel-google-secret-manager)
      * Manage Google Secret Manager Secrets
      * 
@@ -6582,6 +6522,7 @@ public class StaticEndpointBuilders {
      * @param path cacheName
      * @return the dsl builder
      */
+    @Deprecated
     public static HazelcastAtomicnumberEndpointBuilderFactory.HazelcastAtomicnumberEndpointBuilder hazelcastAtomicvalue(String path) {
         return hazelcastAtomicvalue("hazelcast-atomicvalue", path);
     }
@@ -6604,6 +6545,7 @@ public class StaticEndpointBuilders {
      * @param path cacheName
      * @return the dsl builder
      */
+    @Deprecated
     public static HazelcastAtomicnumberEndpointBuilderFactory.HazelcastAtomicnumberEndpointBuilder hazelcastAtomicvalue(String componentName, String path) {
         return HazelcastAtomicnumberEndpointBuilderFactory.endpointBuilder(componentName, path);
     }
@@ -6766,6 +6708,48 @@ public class StaticEndpointBuilders {
      */
     public static HazelcastMultimapEndpointBuilderFactory.HazelcastMultimapEndpointBuilder hazelcastMultimap(String componentName, String path) {
         return HazelcastMultimapEndpointBuilderFactory.endpointBuilder(componentName, path);
+    }
+    /**
+     * Hazelcast PN Counter (camel-hazelcast)
+     * Increment, decrement, get, etc. operations on a Hazelcast PN Counter
+     * (CRDT counter).
+     * 
+     * Category: cache,clustering
+     * Since: 4.19
+     * Maven coordinates: org.apache.camel:camel-hazelcast
+     * 
+     * Syntax: <code>hazelcast-pncounter:cacheName</code>
+     * 
+     * Path parameter: cacheName (required)
+     * The name of the cache
+     * 
+     * @param path cacheName
+     * @return the dsl builder
+     */
+    public static HazelcastPNCounterEndpointBuilderFactory.HazelcastPNCounterEndpointBuilder hazelcastPncounter(String path) {
+        return hazelcastPncounter("hazelcast-pncounter", path);
+    }
+    /**
+     * Hazelcast PN Counter (camel-hazelcast)
+     * Increment, decrement, get, etc. operations on a Hazelcast PN Counter
+     * (CRDT counter).
+     * 
+     * Category: cache,clustering
+     * Since: 4.19
+     * Maven coordinates: org.apache.camel:camel-hazelcast
+     * 
+     * Syntax: <code>hazelcast-pncounter:cacheName</code>
+     * 
+     * Path parameter: cacheName (required)
+     * The name of the cache
+     * 
+     * @param componentName to use a custom component name for the endpoint
+     * instead of the default name
+     * @param path cacheName
+     * @return the dsl builder
+     */
+    public static HazelcastPNCounterEndpointBuilderFactory.HazelcastPNCounterEndpointBuilder hazelcastPncounter(String componentName, String path) {
+        return HazelcastPNCounterEndpointBuilderFactory.endpointBuilder(componentName, path);
     }
     /**
      * Hazelcast Queue (camel-hazelcast)

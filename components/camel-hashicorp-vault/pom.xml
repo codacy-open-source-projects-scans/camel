@@ -48,18 +48,16 @@
            <artifactId>spring-vault-core</artifactId>
            <version>${spring-vault-core-version}</version>
         </dependency>
+            
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
 
         <!-- for testing -->
         <dependency>
             <groupId>org.apache.camel</groupId>
             <artifactId>camel-test-junit6</artifactId>
-            <scope>test</scope>
-        </dependency>
-       <dependency>
-            <groupId>org.apache.camel</groupId>
-            <artifactId>camel-test-infra-hashicorp-vault</artifactId>
-            <version>${project.version}</version>
-            <type>test-jar</type>
             <scope>test</scope>
         </dependency>
         <dependency>

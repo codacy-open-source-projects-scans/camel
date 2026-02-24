@@ -57,6 +57,38 @@ Should be changed to have semicolons as shown below:
 ----
 
 
+=== camel-test-infra
+
+The test infrastructure modules no longer produce `test-jar` artifacts. All classes (service interfaces,
+container implementations, JUnit extensions, and service factories) are now packaged in the regular JAR artifact.
+
+If your project depends on `camel-test-infra-*` modules with `<type>test-jar</type>`, remove the `<type>` element:
+
+Before:
+[source,xml]
+----
+<dependency>
+    <groupId>org.apache.camel</groupId>
+    <artifactId>camel-test-infra-kafka</artifactId>
+    <version>${camel.version}</version>
+    <type>test-jar</type>
+    <scope>test</scope>
+</dependency>
+----
+
+After:
+[source,xml]
+----
+<dependency>
+    <groupId>org.apache.camel</groupId>
+    <artifactId>camel-test-infra-kafka</artifactId>
+    <version>${camel.version}</version>
+    <scope>test</scope>
+</dependency>
+----
+
+This applies to all `camel-test-infra-*` artifacts, including `camel-test-infra-common`.
+
 === camel-yaml-io / camel-xml-io
 
 In the YAML DSL we have renamed `routePolicy` to `routePolicyRef` on the `route` node,
@@ -69,3 +101,16 @@ For example `id` is always first, and the following attributes are ordered so th
 commonly used at in the top. EIPs such as `circuitBreaker` now has `onFallback` last.
 
 This order is also the same order that UI builders like Camel Karavan and Kaoto do as well.
+
+=== camel-google-pubsub-lite
+
+The `camel-google-pubsub-lite` component has been removed. The component was deprecated in Camel 4.10 following Google Cloud Platform's deprecation of the underlying Pub/Sub Lite service.
+
+Google recommends migrating your Pub/Sub Lite workloads to either:
+
+* **Google Cloud Pub/Sub** → use the `camel-google-pubsub` component
+* **Google Cloud Managed Service for Apache Kafka** → use the `camel-kafka` component
+=== camel-mail
+
+When configured a custom `IdempotentRepository` on `camel-mail` endpoint, then Camel will now auto-start
+the bean which is similar to what `camel-file` do as well.
