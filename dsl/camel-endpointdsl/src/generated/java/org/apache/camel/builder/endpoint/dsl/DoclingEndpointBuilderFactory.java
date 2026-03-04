@@ -310,8 +310,11 @@ public interface DoclingEndpointBuilderFactory {
             return this;
         }
         /**
-         * Maximum number of documents to process in a single batch (batch
-         * operations only).
+         * Number of documents to submit per sub-batch. Documents are
+         * partitioned into sub-batches of this size and each sub-batch is
+         * processed before starting the next one. Within each sub-batch, up to
+         * batchParallelism threads are used concurrently. This controls memory
+         * usage and back-pressure when processing large document sets.
          * 
          * The option is a: <code>int</code> type.
          * 
@@ -326,8 +329,11 @@ public interface DoclingEndpointBuilderFactory {
             return this;
         }
         /**
-         * Maximum number of documents to process in a single batch (batch
-         * operations only).
+         * Number of documents to submit per sub-batch. Documents are
+         * partitioned into sub-batches of this size and each sub-batch is
+         * processed before starting the next one. Within each sub-batch, up to
+         * batchParallelism threads are used concurrently. This controls memory
+         * usage and back-pressure when processing large document sets.
          * 
          * The option will be converted to a <code>int</code> type.
          * 
@@ -691,6 +697,23 @@ public interface DoclingEndpointBuilderFactory {
          */
         default DoclingEndpointBuilder maxFileSize(String maxFileSize) {
             doSetProperty("maxFileSize", maxFileSize);
+            return this;
+        }
+        /**
+         * OAuth profile name for obtaining an access token via the OAuth 2.0
+         * Client Credentials grant. When set, the token is acquired from the
+         * configured identity provider and used as authenticationToken.
+         * Requires camel-oauth on the classpath.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param oauthProfile the value to set
+         * @return the dsl builder
+         */
+        default DoclingEndpointBuilder oauthProfile(String oauthProfile) {
+            doSetProperty("oauthProfile", oauthProfile);
             return this;
         }
     }

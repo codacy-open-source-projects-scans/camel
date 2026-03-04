@@ -86,6 +86,12 @@ public class DoclingConfiguration implements Cloneable {
     private String authenticationToken;
 
     @UriParam(label = "security")
+    @Metadata(description = "OAuth profile name for obtaining an access token via the OAuth 2.0 Client Credentials grant. "
+                            + "When set, the token is acquired from the configured identity provider and used as authenticationToken. "
+                            + "Requires camel-oauth on the classpath.")
+    private String oauthProfile;
+
+    @UriParam(label = "security")
     @Metadata(description = "Authentication scheme (BEARER, API_KEY, NONE)", defaultValue = "NONE",
               enums = "BEARER,API_KEY,NONE")
     private AuthenticationScheme authenticationScheme = AuthenticationScheme.NONE;
@@ -107,7 +113,10 @@ public class DoclingConfiguration implements Cloneable {
     private long asyncTimeout = 300000; // 5 minutes
 
     @UriParam(label = "batch")
-    @Metadata(description = "Maximum number of documents to process in a single batch (batch operations only)",
+    @Metadata(description = "Number of documents to submit per sub-batch. Documents are partitioned into sub-batches of this size"
+                            + " and each sub-batch is processed before starting the next one. Within each sub-batch, up to"
+                            + " batchParallelism threads are used concurrently. This controls memory usage and back-pressure"
+                            + " when processing large document sets.",
               defaultValue = "10")
     private int batchSize = 10;
 
@@ -331,6 +340,14 @@ public class DoclingConfiguration implements Cloneable {
 
     public void setAuthenticationToken(String authenticationToken) {
         this.authenticationToken = authenticationToken;
+    }
+
+    public String getOauthProfile() {
+        return oauthProfile;
+    }
+
+    public void setOauthProfile(String oauthProfile) {
+        this.oauthProfile = oauthProfile;
     }
 
     public AuthenticationScheme getAuthenticationScheme() {
