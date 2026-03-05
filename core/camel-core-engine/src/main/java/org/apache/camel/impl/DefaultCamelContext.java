@@ -42,7 +42,6 @@ import org.apache.camel.impl.engine.SimpleCamelContext;
 import org.apache.camel.model.BeanFactoryDefinition;
 import org.apache.camel.model.DataFormatDefinition;
 import org.apache.camel.model.FaultToleranceConfigurationDefinition;
-import org.apache.camel.model.Model;
 import org.apache.camel.model.ModelCamelContext;
 import org.apache.camel.model.ModelLifecycleStrategy;
 import org.apache.camel.model.ProcessorDefinition;
@@ -83,7 +82,7 @@ import org.apache.camel.support.scan.InvertingPackageScanFilter;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.OrderedLocationProperties;
 import org.apache.camel.util.StopWatch;
-import org.apache.camel.util.concurrent.NamedThreadLocal;
+import org.apache.camel.util.concurrent.ContextValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,9 +96,8 @@ public class DefaultCamelContext extends SimpleCamelContext implements ModelCame
     // instance
     // use a HashMap to store only JDK classes in the thread-local so there will not
     // be any Camel classes leaking
-    private static final ThreadLocal<Map<String, Object>> OPTIONS = new NamedThreadLocal<>(
-            "CamelContextOptions",
-            HashMap::new);
+    private static final ContextValue<Map<String, Object>> OPTIONS
+            = ContextValue.newThreadLocal("CamelContextOptions", HashMap::new);
     private static final String OPTION_NO_START = "OptionNoStart";
     private static final String OPTION_DISABLE_JMX = "OptionDisableJMX";
     private static final String OPTION_EXCLUDE_ROUTES = "OptionExcludeRoutes";
@@ -107,7 +105,7 @@ public class DefaultCamelContext extends SimpleCamelContext implements ModelCame
     private static final Logger LOG = LoggerFactory.getLogger(DefaultCamelContext.class);
     private static final UuidGenerator UUID = new SimpleUuidGenerator();
 
-    private final Model model = new DefaultModel(this);
+    private final DefaultModel model = new DefaultModel(this);
 
     /**
      * Creates the {@link ModelCamelContext} using {@link org.apache.camel.support.DefaultRegistry} as registry.
@@ -760,13 +758,19 @@ public class DefaultCamelContext extends SimpleCamelContext implements ModelCame
                         StartupStep step = recorder.beginStep(Route.class, routeDefinition.getRouteId(),
                                 "Create Route");
 
-                        getCamelContextExtension().createRoute(routeDefinition.getRouteId());
+                        getCamelContextExtension().createRoute(routeDefinition.getRouteId(), () -> {
+                            try {
+                                Route route = model.getModelReifierFactory().createRoute(this, routeDefinition);
+                                recorder.endStep(step);
 
-                        Route route = model.getModelReifierFactory().createRoute(this, routeDefinition);
-                        recorder.endStep(step);
-
-                        RouteService routeService = new RouteService(route);
-                        startRouteService(routeService, true);
+                                RouteService routeService = new RouteService(route);
+                                startRouteService(routeService, true);
+                            } catch (RuntimeException e) {
+                                throw e;
+                            } catch (Exception e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
                     } else {
                         // Add the definition to the list of definitions to remove as the route is
                         // excluded
@@ -791,7 +795,6 @@ public class DefaultCamelContext extends SimpleCamelContext implements ModelCame
             if (!alreadyStartingRoutes) {
                 setStartingRoutes(false);
             }
-            getCamelContextExtension().createRoute(null);
         }
     }
 
@@ -835,9 +838,10 @@ public class DefaultCamelContext extends SimpleCamelContext implements ModelCame
 
     @Override
     protected boolean removeRoute(String routeId, LoggingLevel loggingLevel) throws Exception {
-        // synchronize on model first to avoid deadlock with concurrent 'addRoutes'
+        // lock on model first to avoid deadlock with concurrent 'addRoutes'
         // calls:
-        synchronized (model) {
+        model.getLock().lock();
+        try {
             getLock().lock();
             try {
                 boolean removed = super.removeRoute(routeId, loggingLevel);
@@ -852,15 +856,20 @@ public class DefaultCamelContext extends SimpleCamelContext implements ModelCame
             } finally {
                 getLock().unlock();
             }
+        } finally {
+            model.getLock().unlock();
         }
     }
 
     @Override
     public boolean removeRoute(String routeId) throws Exception {
-        // synchronize on model first to avoid deadlock with concurrent 'addRoutes'
+        // lock on model first to avoid deadlock with concurrent 'addRoutes'
         // calls:
-        synchronized (model) {
+        model.getLock().lock();
+        try {
             return super.removeRoute(routeId);
+        } finally {
+            model.getLock().unlock();
         }
     }
 

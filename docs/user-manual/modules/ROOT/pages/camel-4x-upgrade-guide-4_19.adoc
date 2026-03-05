@@ -228,6 +228,10 @@ This order is also the same order that UI builders like Camel Karavan and Kaoto 
 Support for exporting to use Gradle as build tool has been removed (it was deprecated and not working well)
 The deprecated options `buildToool` and `gradleWrapper` has been removed.
 
+The `camel-tooling-maven` which is used for downloading JARs from Maven has been refactored to use
+the new https://github.com/maveniverse/mima[MIMA] project (jbang is using this also).
+
+
 === camel-kafka
 
 The Kafka client library has been upgraded from 3.9.1 to 4.2.0. This is a major version upgrade of Apache Kafka with several notable changes:
@@ -311,3 +315,24 @@ The intention is to allow to configure the `base.path` _as is_ in the return API
 
 The camel-nitrite is removed in this version. It was deprecated in 4.10.
 
+=== camel-as2
+
+Some public constants were deprecated:
+
+```
+org.apache.camel.component.as2.api.AS2AsynchronousMDNManager.HTTP_REQUEST
+org.apache.camel.component.as2.api.AS2AsynchronousMDNManager.HTTP_RESPONSE
+org.apache.camel.component.as2.api.AS2ClientManager.HTTP_REQUEST
+org.apache.camel.component.as2.api.AS2ClientManager.HTTP_RESPONSE
+org.apache.camel.component.as2.api.AS2Constants.HTTP_CLIENT_CONNECTION
+```
+
+They can be replaced by the the getter/setter method of the HttpContext implementation, for example:
+
+```
+# the deprecated way
+HttpRequest request = context.getAttribute(AS2ClientManager.HTTP_REQUEST, HttpRequest.class);
+
+# new way
+HttpRequest request = context.getRequest();
+```
