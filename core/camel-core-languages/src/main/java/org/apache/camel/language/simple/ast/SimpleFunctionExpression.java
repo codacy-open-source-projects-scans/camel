@@ -203,6 +203,29 @@ public class SimpleFunctionExpression extends LiteralExpression {
             return ExpressionBuilder.prettyExpression(inlined);
         }
 
+        // toJson
+        remainder = ifStartsWithReturnRemainder("toJson(", function);
+        if (remainder != null) {
+            String exp = StringHelper.beforeLast(remainder, ")");
+            if (exp == null) {
+                throw new SimpleParserException("Valid syntax: ${toJson(exp)} was: " + function, token.getIndex());
+            }
+            exp = StringHelper.removeLeadingAndEndingQuotes(exp);
+            Expression inlined = camelContext.resolveLanguage("simple").createExpression(exp);
+            return ExpressionBuilder.toJsonExpression(inlined, false);
+        }
+        // toPrettyJson
+        remainder = ifStartsWithReturnRemainder("toPrettyJson(", function);
+        if (remainder != null) {
+            String exp = StringHelper.beforeLast(remainder, ")");
+            if (exp == null) {
+                throw new SimpleParserException("Valid syntax: ${toPrettyJson(exp)} was: " + function, token.getIndex());
+            }
+            exp = StringHelper.removeLeadingAndEndingQuotes(exp);
+            Expression inlined = camelContext.resolveLanguage("simple").createExpression(exp);
+            return ExpressionBuilder.toJsonExpression(inlined, true);
+        }
+
         // file: prefix
         remainder = ifStartsWithReturnRemainder("file:", function);
         if (remainder != null) {
@@ -719,6 +742,10 @@ public class SimpleFunctionExpression extends LiteralExpression {
             return ExpressionBuilder.bodyTypeExpression();
         } else if (ObjectHelper.equal(expression, "prettyBody")) {
             return ExpressionBuilder.prettyBodyExpression();
+        } else if (ObjectHelper.equal(expression, "toJsonBody")) {
+            return ExpressionBuilder.toJsonExpression(ExpressionBuilder.bodyExpression(), false);
+        } else if (ObjectHelper.equal(expression, "toPrettyJsonBody")) {
+            return ExpressionBuilder.toJsonExpression(ExpressionBuilder.bodyExpression(), true);
         } else if (ObjectHelper.equal(expression, "bodyOneLine")) {
             return ExpressionBuilder.bodyOneLine();
         } else if (ObjectHelper.equal(expression, "originalBody")) {
@@ -1164,6 +1191,27 @@ public class SimpleFunctionExpression extends LiteralExpression {
                 separator = values;
             }
             return SimpleExpressionBuilder.splitStringExpression(exp, separator);
+        }
+        // sort function
+        remainder = ifStartsWithReturnRemainder("sort(", function);
+        if (remainder != null) {
+            String values = StringHelper.beforeLast(remainder, ")");
+            String exp = "${body}";
+            boolean reverse = false;
+            if (ObjectHelper.isNotEmpty(values)) {
+                String[] tokens = StringQuoteHelper.splitSafeQuote(values, ',', false);
+                if (tokens.length > 2) {
+                    throw new SimpleParserException(
+                            "Valid syntax: ${sort(reverse)} or ${sort(exp,reverse)} was: " + function, token.getIndex());
+                }
+                if (tokens.length == 2) {
+                    exp = tokens[0];
+                    reverse = Boolean.parseBoolean(tokens[1]);
+                } else {
+                    reverse = Boolean.parseBoolean(tokens[0]);
+                }
+            }
+            return SimpleExpressionBuilder.sortExpression(exp, reverse);
         }
         // foreach function
         remainder = ifStartsWithReturnRemainder("forEach(", function);
@@ -1987,6 +2035,10 @@ public class SimpleFunctionExpression extends LiteralExpression {
             return "bodyType(exchange)";
         } else if (ObjectHelper.equal(expression, "prettyBody")) {
             return "prettyBody(exchange)";
+        } else if (ObjectHelper.equal(expression, "toJsonBody")) {
+            return "toJsonBody(exchange, false)";
+        } else if (ObjectHelper.equal(expression, "toPrettyJsonBody")) {
+            return "toJsonBody(exchange, true)";
         } else if (ObjectHelper.equal(expression, "bodyOneLine")) {
             return "bodyOneLine(exchange)";
         } else if (ObjectHelper.equal(expression, "id")) {

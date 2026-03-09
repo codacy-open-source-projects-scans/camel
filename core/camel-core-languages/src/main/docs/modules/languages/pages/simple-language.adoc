@@ -262,6 +262,7 @@ in arrays or lists.
 |`size()` | `int` | Returns the number of elements in collection or array based message body. If the value is null then 0 is returned, otherwise 1.
 |`size(exp)` | `int` | Returns the number of elements in collection or array based value. If the value is null then 0 is returned, otherwise 1.
 |`skip(number)` | `Iterator` | The skip function iterates the message body and skips the first number of items. This can be used with the Splitter EIP to split a message body and skip the first N number of items.
+|`sort(exp,reverse)` | `List` | Sorts the message body or expression in natural order
 |`split(separator)` | `String[]` | Splits the message body as a `String` value using the separator into a `String` array. The separator is comma by default.
 |`split(exp,separator)` | `String[]` | Splits the expression as a `String` value using the separator into a `String` array. The separator is comma by default.
 |====
@@ -290,7 +291,8 @@ To create an empty `Map` use `${createEmpty(map)}`.
 
 The `reverse` function is to reverse the order of the values.
 For example `${reverse(1,2,3,4,5)}` will return a `List` with the values `5,4,3,2,1`.
-And the `shuffle` function will randomize the order of the values.
+
+And the `shuffle` function will randomize the order of the values. The `sort` function will sort the order of the values (in natural order A...Z).
 
 The `size` functions is used to determine the number of elements, when using `Collection` or array based payloads.
 If not then either 0 or 1 is returned whether the body is `null` or not.
@@ -592,6 +594,10 @@ Functions to work with XML and JSon payloads.
 |`jsonpath(input,exp)` | `Object` | Same as `jsonpath(exp)` but to use the _input_ expression as the source of the JSon document.
 |`pretty(exp)` | `String` | Converts the expression to a `String`, and attempts to pretty print (if JSon or XML) otherwise return the value as-is.
 |`prettyBody` | `String` | Converts the message body to a `String`, and attempts to pretty print (if JSon or XML) otherwise return the value as-is.
+|`toJson(exp)` | `String` | Converts the expression to a JSon `String` representation. String values are returned as-is, null values return null, all other types are serialized to JSon.
+|`toJsonBody` | `String` | Converts the message body to a JSon `String` representation. String values are returned as-is, null values return null, all other types are serialized to JSon.
+|`toPrettyJson(exp)` | `String` | Converts the expression to a JSon `String` representation. String values are returned as-is, null values return null, all other types are serialized to JSon in pretty mode.
+|`toPrettyJsonBody` | `String` | Converts the message body to a JSon `String` representation. String values are returned as-is, null values return null, all other types are serialized to JSon in pretty mode.
 |`xpath(exp)` | `Object` | When working with XML data, then this allows using the XPath language, for example, to extract data from the message body (in XML format). This requires having camel-xpath JAR on the classpath.
 |`xpath(input,exp)` | `Object` | When working with XML data, then this allows using the XPath language, for example, to extract data from the message body (in XML format). This requires having camel-xpath JAR on the classpath. For input you can choose `header:key`, `exchangeProperty:key` or `variable:key` to use as input for the JSon payload instead of the message body.
 |====
@@ -640,6 +646,21 @@ from("direct:map")
             }""")
         .to("log:data");
 ----
+
+The `toJson` function is to convert the payload to JSon as a `String` value. However if the payload is already a `String` then no conversion happens.
+So suppose the payload is a `Map` object as follows:
+
+[source,java]
+----
+Map<String, Object> map = new LinkedHashMap<>();
+map.put("name", "Jack");
+map.put("id", 123);
+----
+
+Then `toJson` will output: `{"name":"Jack","id":123}`.
+
+There are also _pretty_ alternatives so when calling `toPrettyJson` will output: TODO:
+
 
 The `xpath` function is for working with XML and using XPath expressions to extract data from XML payloads.
 
