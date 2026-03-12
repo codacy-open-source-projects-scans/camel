@@ -72,6 +72,9 @@ import org.apache.camel.util.OgnlHelper;
 import org.apache.camel.util.SkipIterator;
 import org.apache.camel.util.StringHelper;
 import org.apache.camel.util.StringQuoteHelper;
+import org.apache.camel.util.json.JsonArray;
+import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.Jsonable;
 
 /**
  * Expression builder used by the simple language.
@@ -3359,6 +3362,9 @@ public final class SimpleExpressionBuilder {
         };
     }
 
+    /**
+     * Executes a custom simple function
+     */
     public static Expression customFunction(final String name, final String parameter) {
         return new ExpressionAdapter() {
             private Expression func;
@@ -3391,6 +3397,41 @@ public final class SimpleExpressionBuilder {
 
             public String toString() {
                 return "function(" + name + ")";
+            }
+        };
+    }
+
+    /**
+     * Evaluates the simple jsonpath with the source input
+     */
+    public static Expression simpleJsonPathExpression(String source, String path) {
+        return new ExpressionAdapter() {
+            private Expression input;
+
+            @Override
+            public Object evaluate(Exchange exchange) {
+                Jsonable j = input.evaluate(exchange, Jsonable.class);
+                if (j instanceof JsonObject jo) {
+                    return jo.path(path);
+                } else if (j instanceof JsonArray ja) {
+                    // wrap array in pseudo root to leverage json-path here
+                    JsonObject jo = new JsonObject();
+                    jo.put("_root_", ja);
+                    return jo.path("_root_." + path);
+                }
+                return null;
+            }
+
+            @Override
+            public void init(CamelContext context) {
+                super.init(context);
+                input = ExpressionBuilder.singleInputExpression(source);
+                input.init(context);
+            }
+
+            @Override
+            public String toString() {
+                return "simpleJsonpath[" + path + "]";
             }
         };
     }
