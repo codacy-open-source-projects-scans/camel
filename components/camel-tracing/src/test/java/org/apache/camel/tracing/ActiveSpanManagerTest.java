@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Deprecated(since = "4.19.0")
 class ActiveSpanManagerTest extends ExchangeTestSupport {
 
     @Test

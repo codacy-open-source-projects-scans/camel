@@ -147,6 +147,12 @@ After:
             uri: mock:end
 ----
 
+=== camel-csimple (Deprecation)
+
+The `csimple` (compiled simple) language has been deprecated. Use the `simple` language instead.
+The `camel-csimple-joor` module is also deprecated. The csimple language and related modules
+will be removed in a future release.
+
 === camel-simple
 
 In the simple language then init blocks syntax has changed to require that each variable ends with a semicolon and new line (no trailing comments etc is allowed)
@@ -286,6 +292,9 @@ The Kafka client library has been upgraded from 3.9.1 to 4.2.0. This is a major 
 
 * If you had explicitly configured the `partitioner` option to use `org.apache.kafka.clients.producer.internals.DefaultPartitioner` or `org.apache.kafka.clients.producer.UniformStickyPartitioner`, you must remove that configuration as these classes have been removed in Kafka 4.0. The built-in default partitioner (used when no partitioner is set) continues to work.
 
+Camel will now defer starting Kafka consumers during startup of `CamelContext` to after the context is fully started, to ensure
+that any incoming message from Kafka brokers are only received by Camel when everything is fully started.
+
 === camel-google-pubsub-lite
 
 The `camel-google-pubsub-lite` component has been removed. The component was deprecated in Camel 4.10 following Google Cloud Platform's deprecation of the underlying Pub/Sub Lite service.
@@ -377,13 +386,48 @@ HttpRequest request = context.getAttribute(AS2ClientManager.HTTP_REQUEST, HttpRe
 HttpRequest request = context.getRequest();
 ----
 
+=== camel-ftp
+
+The `camel-ftp` component has been refactored to extract shared FTP/SFTP code into a new `camel-ftp-common` module.
+Classes such as `BaseSftpConfiguration` and `AbstractSftpConsumer` have been moved from `camel-ftp` to `camel-ftp-common`.
+
+This is an internal refactoring that should not affect most users. However, if you extend these classes directly,
+you will need to add the `camel-ftp-common` dependency to your project:
+
+[source,xml]
+----
+<dependency>
+    <groupId>org.apache.camel</groupId>
+    <artifactId>camel-ftp-common</artifactId>
+    <version>${camel.version}</version>
+</dependency>
+----
+
 === camel-quickfix
 
 Upgraded QuickFixJ from 2.3.2 to 3.0.0 in `camel-quickfix` component.
 
+=== camel-ssh
+
+Five new configuration properties have been added to the SSH endpoint to expose additional Apache MINA SSHD `CoreModuleProperties`:
+
+- `heartbeatInterval` -- interval for SSH keep-alive heartbeats.
+- `heartbeatReplyMaxWait` -- maximum wait time for a heartbeat reply.
+- `authTimeout` -- timeout for the SSH authentication phase.
+- `connectTimeout` -- timeout for establishing the SSH connection.
+- `channelOpenTimeout` -- timeout for opening an SSH channel.
+
+All properties default to `0`, which means the Apache MINA SSHD defaults are used. This is an additive change with no impact on existing configurations.
+
 === MDC older logic (Deprecation)
 
 The older logic used for MDC (enabled via `camel.main.useMdcLogging = true`) is deprecated in favor of `camel-mdc` component.
+
+=== camel-tracing (Deprecation)
+
+The `camel-tracing` and related components (`camel-opentelemetry` and `camel-observation`) are now deprecated. You should move your implementation to the newer `camel-telemetry` components (`camel-opentelemetry2` and `camel-micrometer-observability`). We have implemented these new components in order to fix certain design flaws (mainly, span duplications) identified in the older components.
+
+Some minor difference may be expected when moving to the new components, make sure to read the documentation carefully.
 
 == Removed deprecated components
 

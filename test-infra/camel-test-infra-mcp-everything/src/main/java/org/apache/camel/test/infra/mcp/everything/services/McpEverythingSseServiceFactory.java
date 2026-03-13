@@ -14,48 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.camel.component.file.remote.mina;
+package org.apache.camel.test.infra.mcp.everything.services;
 
-import org.apache.camel.component.file.remote.SftpRemoteFile;
+import org.apache.camel.test.infra.common.services.SimpleTestServiceBuilder;
 
-/**
- * Single file representation for MINA SFTP when LIST is disabled.
- */
-public class MinaSftpRemoteFileSingle implements SftpRemoteFile<Object> {
+public final class McpEverythingSseServiceFactory {
 
-    private final String filename;
-
-    public MinaSftpRemoteFileSingle(String filename) {
-        this.filename = filename;
+    private McpEverythingSseServiceFactory() {
     }
 
-    @Override
-    public Object getRemoteFile() {
-        return null;
+    public static SimpleTestServiceBuilder<McpEverythingSseService> builder() {
+        return new SimpleTestServiceBuilder<>("mcp-everything-sse");
     }
 
-    @Override
-    public String getFilename() {
-        return filename;
+    public static McpEverythingSseService createService() {
+        return builder()
+                .addLocalMapping(McpEverythingSseLocalContainerService::new)
+                .build();
     }
 
-    @Override
-    public String getLongname() {
-        return null;
-    }
-
-    @Override
-    public boolean isDirectory() {
-        return false;
-    }
-
-    @Override
-    public long getFileLength() {
-        return -1;
-    }
-
-    @Override
-    public long getLastModified() {
-        return -1;
+    public static class McpEverythingSseLocalContainerService extends McpEverythingSseLocalContainerInfraService
+            implements McpEverythingSseService {
     }
 }

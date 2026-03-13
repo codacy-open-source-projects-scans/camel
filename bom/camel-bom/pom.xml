@@ -899,6 +899,11 @@
       </dependency>
       <dependency>
         <groupId>org.apache.camel</groupId>
+        <artifactId>camel-ftp-common</artifactId>
+        <version>4.19.0-SNAPSHOT</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.camel</groupId>
         <artifactId>camel-geocoder</artifactId>
         <version>4.19.0-SNAPSHOT</version>
       </dependency>
@@ -2160,6 +2165,11 @@
       <dependency>
         <groupId>org.apache.camel</groupId>
         <artifactId>camel-spring-ai-embeddings</artifactId>
+        <version>4.19.0-SNAPSHOT</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.camel</groupId>
+        <artifactId>camel-spring-ai-image</artifactId>
         <version>4.19.0-SNAPSHOT</version>
       </dependency>
       <dependency>
