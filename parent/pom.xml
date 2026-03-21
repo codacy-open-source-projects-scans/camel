@@ -34,6 +34,7 @@
 
     <properties>
         <maven.build.timestamp.format>yyyy-MM-dd</maven.build.timestamp.format>
+        <argLine /><!-- Empty by default, allows Quarkus/JaCoCo extensions to inject via @{argLine} -->
         <camel.surefire.fork.additional-vmargs /><!-- Empty by default -->
         <camel.surefire.fork.vmargs>-XX:+EnableDynamicAgentLoading -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError ${camel.surefire.fork.additional-vmargs}</camel.surefire.fork.vmargs>
         <camel.surefire.forkCount>1</camel.surefire.forkCount>
@@ -78,7 +79,7 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.42.16</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.42.17</aws-java-sdk2-version>
         <aws-xray-version>2.20.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.35</azure-storage-blob-changefeed-version>
@@ -242,7 +243,7 @@
         <hapi-base-version>2.6.0</hapi-base-version>
         <hapi-fhir-version>8.8.1</hapi-fhir-version>
         <hawtio-version>4.6.2</hawtio-version>
-        <hazelcast-version>5.4.0</hazelcast-version>
+        <hazelcast-version>5.5.0</hazelcast-version>
         <hdrhistrogram-version>2.2.2</hdrhistrogram-version>
         <hibernate-validator-version>9.1.0.Final</hibernate-validator-version>
         <hibernate-version>6.3.2.Final</hibernate-version>
@@ -255,7 +256,7 @@
         <httpclient4-version>4.5.14</httpclient4-version>
         <httpasyncclient-version>4.1.5</httpasyncclient-version>
         <huaweicloud-obs-version>3.25.10</huaweicloud-obs-version>
-        <huaweicloud-sdk-version>3.1.188</huaweicloud-sdk-version>
+        <huaweicloud-sdk-version>3.1.189</huaweicloud-sdk-version>
         <ibm-cos-sdk-version>2.15.0</ibm-cos-sdk-version>
         <ibm-secrets-manager-version>2.0.28</ibm-secrets-manager-version>
         <ibm-watson-sdk-version>16.2.0</ibm-watson-sdk-version>
@@ -330,7 +331,7 @@
         <jolt-version>0.1.8</jolt-version>
         <jool-version>0.9.15</jool-version>
         <!-- jooq 3.20 is Java 21+ only so we need to be 3.19.x -->
-        <jooq-version>3.19.22</jooq-version>
+        <jooq-version>3.19.30</jooq-version>
         <joor-version>0.9.15</joor-version>
         <jose4j-version>0.9.3</jose4j-version>
         <johnzon-version>2.0.2</johnzon-version>
@@ -408,7 +409,7 @@
         <micrometer-tracing-version>1.6.4</micrometer-tracing-version>
         <microprofile-config-version>3.1</microprofile-config-version>
         <milo-version>1.1.1</milo-version>
-        <milvus-client-version>2.6.15</milvus-client-version>
+        <milvus-client-version>2.6.16</milvus-client-version>
         <mina-version>2.2.5</mina-version>
         <minidns-version>0.3.4</minidns-version>
         <minimal-json-version>0.9.5</minimal-json-version>
@@ -511,8 +512,8 @@
         <spock-version>2.4-groovy-5.0</spock-version>
         <spring-ai-version>1.1.3</spring-ai-version>
         <spring-cloud-config-version>5.0.1</spring-cloud-config-version>
-        <spring-batch-version>6.0.2</spring-batch-version>
-        <spring-boot-version>4.0.3</spring-boot-version>
+        <spring-batch-version>6.0.3</spring-batch-version>
+        <spring-boot-version>4.0.4</spring-boot-version>
         <spring-data-redis-version>4.0.4</spring-data-redis-version>
         <spring-ldap-version>4.0.2</spring-ldap-version>
         <spring-vault-core-version>4.0.1</spring-vault-core-version>
@@ -536,12 +537,12 @@
         <stax-api-version>1.0.1</stax-api-version>
         <stringtemplate-version>4.3.4</stringtemplate-version>
         <tahu-version>1.0.19</tahu-version>
-        <testcontainers-version>2.0.4</testcontainers-version>
+        <testcontainers-version>2.0.3</testcontainers-version>
         <thymeleaf-version>3.1.3.RELEASE</thymeleaf-version>
         <tika-version>3.2.3</tika-version>
         <twilio-version>11.3.5</twilio-version>
         <twitter4j-version>4.1.2</twitter4j-version>
-        <undertow-version>2.4.0.RC1</undertow-version>
+        <undertow-version>2.4.0.RC3</undertow-version>
         <undertow-ee-version>2.0.0.RC1</undertow-ee-version>
         <univocity-parsers-version>2.10.2</univocity-parsers-version>
         <validation-api-version>2.0.1.Final</validation-api-version>
@@ -4347,14 +4348,14 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
-                            <argLine>@{camel.surefire.fork.vmargs}</argLine>
+                            <argLine>@{camel.surefire.fork.vmargs} @{argLine}</argLine>
                         </configuration>
                     </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-failsafe-plugin</artifactId>
                         <configuration>
-                            <argLine>@{camel.failsafe.fork.vmargs}</argLine>
+                            <argLine>@{camel.failsafe.fork.vmargs} @{argLine}</argLine>
                         </configuration>
                     </plugin>
                 </plugins>
@@ -4402,7 +4403,7 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
-                            <argLine>${camel.surefire.fork.vmargs}</argLine>
+                            <argLine>${camel.surefire.fork.vmargs} @{argLine}</argLine>
                             <childDelegation>false</childDelegation>
                             <useFile>true</useFile>
                             <failIfNoTests>false</failIfNoTests>
@@ -4478,14 +4479,14 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
-                            <argLine>${camel.surefire.fork.vmargs} ${jacocoAgent}</argLine>
+                            <argLine>${camel.surefire.fork.vmargs} ${jacocoAgent} @{argLine}</argLine>
                         </configuration>
                     </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-failsafe-plugin</artifactId>
                         <configuration>
-                            <argLine>${camel.failsafe.fork.vmargs} ${jacocoAgent}</argLine>
+                            <argLine>${camel.failsafe.fork.vmargs} ${jacocoAgent} @{argLine}</argLine>
                         </configuration>
                     </plugin>
                 </plugins>
