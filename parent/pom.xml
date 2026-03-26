@@ -58,10 +58,10 @@
         <sourcecheckExcludesComma />
 
         <!-- dependency versions -->
-        <activemq-version>5.19.2</activemq-version>
+        <activemq-version>5.19.3</activemq-version>
         <activemq6-version>6.2.2</activemq6-version>
         <activemq-artemis-version>2.44.0</activemq-artemis-version>
-        <agroal-version>3.0</agroal-version>
+        <agroal-version>3.0.1</agroal-version>
         <allegro-converter-version>0.3.0</allegro-converter-version>
         <amazon-kinesis-client-version>3.4.1</amazon-kinesis-client-version>
         <angus-mail-version>2.0.5</angus-mail-version>
@@ -80,7 +80,7 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.42.19</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.42.20</aws-java-sdk2-version>
         <aws-xray-version>2.20.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.35</azure-storage-blob-changefeed-version>
@@ -105,7 +105,7 @@
             TODO: remove when this issue is solved https://github.com/aws/aws-xray-sdk-java/issues/441
         -->
         <checker-framework-version>3.54.0</checker-framework-version>
-        <chicory-version>1.7.3</chicory-version>
+        <chicory-version>1.7.5</chicory-version>
         <chunk-templates-version>3.6.2</chunk-templates-version>
         <citrus-version>4.9.4</citrus-version>
         <classgraph-version>4.8.184</classgraph-version>
@@ -218,10 +218,10 @@
         <google-cloud-functions-version>2.76.0</google-cloud-functions-version>
         <google-cloud-http-client-version>2.1.0</google-cloud-http-client-version>
         <google-cloud-pubsub-version>1.150.0</google-cloud-pubsub-version>
-        <google-cloud-secretmanager-version>2.87.0</google-cloud-secretmanager-version>
-        <google-cloud-storage-version>2.64.0</google-cloud-storage-version>
+        <google-cloud-secretmanager-version>2.88.0</google-cloud-secretmanager-version>
+        <google-cloud-storage-version>2.64.1</google-cloud-storage-version>
         <google-cloud-aiplatform-version>3.89.0</google-cloud-aiplatform-version>
-        <google-cloud-vision-version>3.85.0</google-cloud-vision-version>
+        <google-cloud-vision-version>3.86.0</google-cloud-vision-version>
         <google-cloud-speech-version>4.83.0</google-cloud-speech-version>
         <google-cloud-texttospeech-version>2.89.0</google-cloud-texttospeech-version>
         <google-genai-version>1.44.0</google-genai-version>
@@ -243,7 +243,7 @@
         <hapi-version>2.6.0</hapi-version>
         <hapi-base-version>2.6.0</hapi-base-version>
         <hapi-fhir-version>8.8.1</hapi-fhir-version>
-        <hapi-fhir-utilities-version>6.9.2</hapi-fhir-utilities-version>
+        <hapi-fhir-utilities-version>6.9.3</hapi-fhir-utilities-version>
         <hawtio-version>4.6.2</hawtio-version>
         <!-- https://issues.apache.org/jira/browse/CAMEL-22041
             hazelcast needs to stay at 5.4.0 for 4.19.0 due to changes where the CP subsystem is only available in
@@ -439,8 +439,8 @@
         <olingo4-version>5.0.0</olingo4-version>
         <ognl-version>3.4.10</ognl-version>
         <mcp-java-sdk-version>1.1.0</mcp-java-sdk-version>
-        <openai-java-version>4.29.0</openai-java-version>
-        <openapi-generator-version>7.20.0</openapi-generator-version>
+        <openai-java-version>4.29.1</openai-java-version>
+        <openapi-generator-version>7.21.0</openapi-generator-version>
         <openjpa-version>4.1.1</openjpa-version>
         <opensearch-rest-client-version>3.5.0</opensearch-rest-client-version>
         <opensearch-java-client-version>3.7.0</opensearch-java-client-version>
@@ -547,7 +547,7 @@
         <tika-version>3.3.0</tika-version>
         <twilio-version>11.3.6</twilio-version>
         <twitter4j-version>4.1.2</twitter4j-version>
-        <undertow-version>2.4.0.RC3</undertow-version>
+        <undertow-version>2.4.0.RC4</undertow-version>
         <undertow-ee-version>2.0.0.RC1</undertow-ee-version>
         <univocity-parsers-version>2.10.2</univocity-parsers-version>
         <validation-api-version>2.0.1.Final</validation-api-version>
