@@ -14,14 +14,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.camel.component.splunk.support;
+package org.apache.camel.dsl.jbang.it;
 
-import org.apache.camel.component.splunk.event.SplunkEvent;
+import java.io.IOException;
 
-/**
- * Processes splunk results
- */
-@Deprecated(since = "4.19")
-public interface SplunkResultProcessor {
-    void process(SplunkEvent splunkData);
+import org.apache.camel.dsl.jbang.it.support.JBangTestSupport;
+import org.junit.jupiter.api.Test;
+
+public class HistoryITCase extends JBangTestSupport {
+    @Test
+    public void testHistory() throws IOException {
+        copyResourceInDataFolder(TestResources.HISTORY_ROUTE);
+        execInContainer(String.format("mkdir inbox"));
+        execInContainer(String.format("echo -e hello\\nworld\\nfrom\\nme > inbox/payload.txt"));
+        executeBackground(String.format("run %s/HistoryRoute.java", mountPoint()));
+        checkCommandOutputs("get history", "status:success");
+        checkCommandOutputs("get history", "File: payload.txt");
+    }
 }

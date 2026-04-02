@@ -14,14 +14,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.camel.component.splunk.support;
+import org.apache.camel.builder.RouteBuilder;
 
-import org.apache.camel.component.splunk.event.SplunkEvent;
+public class HistoryRoute extends RouteBuilder {
 
-/**
- * Processes splunk results
- */
-@Deprecated(since = "4.19")
-public interface SplunkResultProcessor {
-    void process(SplunkEvent splunkData);
+    @Override
+    public void configure() throws Exception {
+        from("file:inbox?noop=true")
+            .log("Incoming file")
+            .split(body().tokenize("\n"))
+              .filter(body().contains("world"))
+                .log("Stop the world")
+                .stop()
+              .end()
+              .to("log:line")
+            .end()
+            .to("https://camel.apache.org/xxx?throwExceptionOnFailure=false")
+            .to("log:after-http")
+            .log("complete");
+    }
 }
