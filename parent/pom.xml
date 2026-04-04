@@ -80,7 +80,7 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.42.26</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.42.27</aws-java-sdk2-version>
         <aws-xray-version>2.21.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.36</azure-storage-blob-changefeed-version>
@@ -98,13 +98,14 @@
         <camel-lsp-version>1.34.0</camel-lsp-version>
         <camel-kamelets-catalog-version>4.18.0</camel-kamelets-catalog-version>
         <camunda-version>7.24.0</camunda-version>
+        <camunda-client-java-version>8.8.19</camunda-client-java-version>
         <cassandra-driver-version>4.19.2</cassandra-driver-version>
         <jta-api-1.2-version>1.2</jta-api-1.2-version>
         <cglib-version>3.3.0</cglib-version>
         <!-- This is exclusively required in camel-aws-xray as the dependency is leaking a build time annotation
             TODO: remove when this issue is solved https://github.com/aws/aws-xray-sdk-java/issues/441
         -->
-        <checker-framework-version>3.54.0</checker-framework-version>
+        <checker-framework-version>3.54.1</checker-framework-version>
         <chicory-version>1.7.5</chicory-version>
         <chunk-templates-version>3.6.2</chunk-templates-version>
         <citrus-version>4.9.4</citrus-version>
@@ -143,8 +144,8 @@
         <cxf-xjc-plugin-version>4.1.2</cxf-xjc-plugin-version>
         <cxf-xjc-utils-version>4.1.2</cxf-xjc-utils-version>
         <daffodil-version>3.10.0</daffodil-version>
-        <dapr-version>1.17.0</dapr-version>
-        <dapr-workflow-version>1.17.0</dapr-workflow-version>
+        <dapr-version>1.17.1</dapr-version>
+        <dapr-workflow-version>1.17.1</dapr-workflow-version>
         <datasonnet-mapper-version>3.0.1.3</datasonnet-mapper-version>
         <debezium-version>3.4.3.Final</debezium-version>
         <debezium-mysql-connector-version>9.6.0</debezium-mysql-connector-version>
@@ -261,13 +262,13 @@
         <httpclient4-version>4.5.14</httpclient4-version>
         <httpasyncclient-version>4.1.5</httpasyncclient-version>
         <huaweicloud-obs-version>3.25.10</huaweicloud-obs-version>
-        <huaweicloud-sdk-version>3.1.190</huaweicloud-sdk-version>
+        <huaweicloud-sdk-version>3.1.191</huaweicloud-sdk-version>
         <ibm-cos-sdk-version>2.15.1</ibm-cos-sdk-version>
         <ibm-secrets-manager-version>2.0.28</ibm-secrets-manager-version>
         <ibm-watson-sdk-version>16.2.0</ibm-watson-sdk-version>
         <ibm-watsonx-ai-sdk-version>0.19.0</ibm-watsonx-ai-sdk-version>
         <ibm-watsonx-data-sdk-version>0.9.0</ibm-watsonx-data-sdk-version>
-        <ical4j-version>4.2.4</ical4j-version>
+        <ical4j-version>4.2.5</ical4j-version>
         <icu4j-version>78.3</icu4j-version>
         <iggy-version>0.7.0</iggy-version>
         <ignite-version>2.17.0</ignite-version>
@@ -374,7 +375,7 @@
         <leveldbjni-version>1.8</leveldbjni-version>
         <leveldb-api-version>0.12</leveldb-api-version>
         <leveldb-version>0.12</leveldb-version>
-        <libphonenumber-version>9.0.26</libphonenumber-version>
+        <libphonenumber-version>9.0.27</libphonenumber-version>
         <!-- virtual dependency only used by Eclipse m2e -->
         <lifecycle-mapping-version>1.0.0</lifecycle-mapping-version>
         <log4j2-version>2.25.3</log4j2-version>
@@ -414,7 +415,7 @@
         <micrometer-version>1.16.4</micrometer-version>
         <micrometer-tracing-version>1.6.4</micrometer-tracing-version>
         <microprofile-config-version>3.1</microprofile-config-version>
-        <milo-version>1.1.1</milo-version>
+        <milo-version>1.1.2</milo-version>
         <milvus-client-version>2.6.16</milvus-client-version>
         <mina-version>2.2.5</mina-version>
         <minidns-version>0.3.4</minidns-version>
@@ -435,7 +436,7 @@
         <netty-version>4.2.12.Final</netty-version>
         <netty-reactive-streams-version>2.0.5</netty-reactive-streams-version>
         <networknt-json-schema-validator-version>1.5.9</networknt-json-schema-validator-version>
-        <nimbus-jose-jwt>10.8</nimbus-jose-jwt>
+        <nimbus-jose-jwt>10.9</nimbus-jose-jwt>
         <olingo2-version>2.0.13</olingo2-version>
         <olingo4-version>5.0.0</olingo4-version>
         <ognl-version>3.4.10</ognl-version>
@@ -483,7 +484,7 @@
         <qpid-jms-client-version>2.10.0</qpid-jms-client-version>
         <quarkus-extension-registry-base-url>https://registry.quarkus.io</quarkus-extension-registry-base-url>
         <quarkus-mcp-server-version>1.11.0</quarkus-mcp-server-version>
-        <quarkus-version>3.34.1</quarkus-version>
+        <quarkus-version>3.34.2</quarkus-version>
         <quartz-version>2.5.2</quartz-version>
         <quickfixj-version>3.0.0</quickfixj-version>
         <reactive-streams-version>1.0.4</reactive-streams-version>
@@ -1114,6 +1115,11 @@
             <dependency>
                 <groupId>org.apache.camel</groupId>
                 <artifactId>camel-caffeine</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.camel</groupId>
+                <artifactId>camel-camunda</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
