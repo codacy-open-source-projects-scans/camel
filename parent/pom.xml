@@ -58,8 +58,8 @@
         <sourcecheckExcludesComma />
 
         <!-- dependency versions -->
-        <activemq-version>5.19.3</activemq-version>
-        <activemq6-version>6.2.3</activemq6-version>
+        <activemq-version>5.19.5</activemq-version>
+        <activemq6-version>6.2.4</activemq6-version>
         <activemq-artemis-version>2.44.0</activemq-artemis-version>
         <agroal-version>3.0.1</agroal-version>
         <allegro-converter-version>0.3.0</allegro-converter-version>
@@ -71,7 +71,7 @@
         <as2-lib-version>5.1.7</as2-lib-version>
         <ascii-table-version>1.9.0</ascii-table-version>
         <asm-version>9.9.1</asm-version>
-        <asn1bean-version>1.16.0</asn1bean-version>
+        <asn1bean-version>1.14.0</asn1bean-version>
         <assertj-version>3.27.7</assertj-version>
         <asterisk-java-version>3.41.0</asterisk-java-version>
         <atlassian-fugue-version>6.1.2</atlassian-fugue-version>
@@ -378,7 +378,7 @@
         <libphonenumber-version>9.0.28</libphonenumber-version>
         <!-- virtual dependency only used by Eclipse m2e -->
         <lifecycle-mapping-version>1.0.0</lifecycle-mapping-version>
-        <log4j2-version>2.25.3</log4j2-version>
+        <log4j2-version>2.25.4</log4j2-version>
         <logback-version>1.5.32</logback-version>
         <lucene-version>9.12.3</lucene-version>
         <lightcouch-version>0.2.0</lightcouch-version>
