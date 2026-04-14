@@ -14,21 +14,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.camel.coap;
+package com.example.external;
 
-import org.apache.camel.support.DefaultHeaderFilterStrategy;
+import java.io.Serializable;
 
 /**
- * Default header filter strategy for CoAP endpoints.
- * <p>
- * Filters out Camel internal headers (starting with "Camel" or "camel") in both directions to prevent external CoAP
- * clients from injecting internal Camel headers via query parameters.
+ * Serializable type living outside the {@code java.**}, {@code javax.**} and {@code org.apache.camel.**} packages, used
+ * to verify that the default deserialization allowlist rejects unknown classes.
  */
-public class CoAPHeaderFilterStrategy extends DefaultHeaderFilterStrategy {
+public final class NotAllowedSerializable implements Serializable {
+    private static final long serialVersionUID = 1L;
 
-    public CoAPHeaderFilterStrategy() {
-        setLowerCase(true);
-        setOutFilterStartsWith(CAMEL_FILTER_STARTS_WITH);
-        setInFilterStartsWith(CAMEL_FILTER_STARTS_WITH);
+    private final String value;
+
+    public NotAllowedSerializable(String value) {
+        this.value = value;
+    }
+
+    public String getValue() {
+        return value;
     }
 }
