@@ -63,7 +63,7 @@
         <activemq-artemis-version>2.44.0</activemq-artemis-version>
         <agroal-version>3.0.1</agroal-version>
         <allegro-converter-version>0.3.0</allegro-converter-version>
-        <amazon-kinesis-client-version>3.4.1</amazon-kinesis-client-version>
+        <amazon-kinesis-client-version>3.4.2</amazon-kinesis-client-version>
         <angus-mail-version>2.0.5</angus-mail-version>
         <apacheds-version>2.0.0.AM27</apacheds-version>
         <apache-drill-version>1.22.0</apache-drill-version>
@@ -80,12 +80,12 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.42.33</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.42.34</aws-java-sdk2-version>
         <aws-xray-version>2.21.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.36</azure-storage-blob-changefeed-version>
         <beanio-version>3.2.1</beanio-version>
-        <bouncycastle-version>1.83</bouncycastle-version>
+        <bouncycastle-version>1.84</bouncycastle-version>
         <box-java-sdk-version>4.16.4</box-java-sdk-version>
         <braintree-gateway-version>3.48.0</braintree-gateway-version>
         <build-helper-maven-plugin-version>3.6.1</build-helper-maven-plugin-version>
@@ -165,7 +165,7 @@
         <ehcache3-version>3.12.0</ehcache3-version>
         <!-- github-api (kohsuke) for camel-github2 -->
         <github-api-version>1.330</github-api-version>
-        <elasticsearch-java-client-version>9.3.1</elasticsearch-java-client-version>
+        <elasticsearch-java-client-version>9.3.3</elasticsearch-java-client-version>
         <elasticsearch-java-client-sniffer-version>9.3.3</elasticsearch-java-client-sniffer-version>
         <elytron-web>4.1.2.Final</elytron-web>
         <extjwnl-version>2.0.5</extjwnl-version>
@@ -214,7 +214,7 @@
         <google-api-services-mail-version>v1-rev20251201-2.0.0</google-api-services-mail-version>
         <google-oauth-client-version>1.39.0</google-oauth-client-version>
         <google-cloud-bigquery-version>2.64.0</google-cloud-bigquery-version>
-        <google-cloud-core-version>2.67.0</google-cloud-core-version>
+        <google-cloud-core-version>2.69.0</google-cloud-core-version>
         <google-cloud-firestore-version>3.39.0</google-cloud-firestore-version>
         <google-cloud-functions-version>2.77.0</google-cloud-functions-version>
         <google-cloud-http-client-version>2.1.0</google-cloud-http-client-version>
@@ -224,7 +224,7 @@
         <google-cloud-aiplatform-version>3.89.0</google-cloud-aiplatform-version>
         <google-cloud-vision-version>3.88.0</google-cloud-vision-version>
         <google-cloud-speech-version>4.85.0</google-cloud-speech-version>
-        <google-cloud-texttospeech-version>2.89.0</google-cloud-texttospeech-version>
+        <google-cloud-texttospeech-version>2.92.0</google-cloud-texttospeech-version>
         <google-genai-version>1.46.0</google-genai-version>
         <graaljs-version>25.0.2</graaljs-version>
         <graphql-java-version>25.0</graphql-java-version>
@@ -284,7 +284,7 @@
         <jackson-jq-version>1.6.1</jackson-jq-version>
         <jackson2-version>2.21.2</jackson2-version>
         <jackson2-annotations-version>2.20</jackson2-annotations-version>
-        <jackson3-version>3.1.1</jackson3-version>
+        <jackson3-version>3.1.2</jackson3-version>
         <jackrabbit-version>2.22.3</jackrabbit-version>
         <jasminb-jsonapi-version>0.15</jasminb-jsonapi-version>
         <jandex-version>3.5.3</jandex-version>
@@ -412,8 +412,8 @@
         <maven-wagon-version>3.5.2</maven-wagon-version>
         <maven-war-plugin-version>3.5.1</maven-war-plugin-version>
         <metrics-version>4.2.38</metrics-version>
-        <micrometer-version>1.16.4</micrometer-version>
-        <micrometer-tracing-version>1.6.4</micrometer-tracing-version>
+        <micrometer-version>1.16.5</micrometer-version>
+        <micrometer-tracing-version>1.6.5</micrometer-tracing-version>
         <microprofile-config-version>3.1</microprofile-config-version>
         <milo-version>1.1.2</milo-version>
         <milvus-client-version>2.6.17</milvus-client-version>
@@ -426,7 +426,7 @@
         <mojo-executor-version>2.4.1</mojo-executor-version>
         <mongo-java-driver-version>5.6.5</mongo-java-driver-version>
         <mongo-hadoop-version>1.5.0</mongo-hadoop-version>
-        <msal4j-version>1.24.0</msal4j-version>
+        <msal4j-version>1.24.1</msal4j-version>
         <mustache-java-version>0.9.14</mustache-java-version>
         <mvel-version>2.5.2.Final</mvel-version>
         <mybatis-version>3.5.19</mybatis-version>
@@ -4467,8 +4467,16 @@
                                     junit.jupiter.execution.parallel.mode.classes.default = concurrent
                                     junit.jupiter.execution.parallel.config.strategy = ${camel.surefire.parallel.strategy}
                                     junit.jupiter.execution.parallel.config.dynamic.factor = ${camel.surefire.parallel.factor}
+                                    junit.jupiter.execution.timeout.default = 10 m
                                 </configurationParameters>
                             </properties>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <argLine>@{camel.failsafe.fork.vmargs} @{argLine} -Djunit.jupiter.execution.timeout.default=10m</argLine>
                         </configuration>
                     </plugin>
                 </plugins>
