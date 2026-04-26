@@ -62,13 +62,13 @@ public class SSLConfigurationProperties implements BootstrapCloseable {
     private String keyStoreType;
     @Metadata(label = "advanced")
     private String keyStoreProvider;
-    @Metadata(secret = true)
+    @Metadata(security = "secret")
     private String keystorePassword;
     @Metadata
     private String trustStore;
-    @Metadata(secret = true)
+    @Metadata(security = "secret")
     private String trustStorePassword;
-    @Metadata
+    @Metadata(security = "insecure:ssl")
     private boolean trustAllCertificates;
     @Metadata
     private boolean selfSigned;
