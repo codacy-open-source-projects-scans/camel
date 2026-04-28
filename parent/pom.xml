@@ -80,7 +80,7 @@
         <avro-ipc-jetty-version>1.12.1</avro-ipc-jetty-version>
         <avro-ipc-netty-version>1.12.1</avro-ipc-netty-version>
         <awaitility-version>4.3.0</awaitility-version>
-        <aws-java-sdk2-version>2.42.40</aws-java-sdk2-version>
+        <aws-java-sdk2-version>2.42.41</aws-java-sdk2-version>
         <aws-xray-version>2.21.0</aws-xray-version>
         <azure-sdk-bom-version>1.3.3</azure-sdk-bom-version>
         <azure-storage-blob-changefeed-version>12.0.0-beta.36</azure-storage-blob-changefeed-version>
@@ -271,7 +271,7 @@
         <ical4j-version>4.2.5</ical4j-version>
         <icu4j-version>78.3</icu4j-version>
         <iggy-version>0.8.0</iggy-version>
-        <ignite-version>2.17.0</ignite-version>
+        <ignite-version>2.18.0</ignite-version>
         <impsort-maven-plugin-version>1.13.0</impsort-maven-plugin-version>
         <infinispan-version>16.0.9</infinispan-version>
         <infinispan-protostream-version>6.0.2</infinispan-protostream-version>
@@ -453,7 +453,7 @@
         <opentelemetry-log4j2-version>2.27.0-alpha</opentelemetry-log4j2-version>
         <opentelemetry-incubator-version>1.43.0-alpha</opentelemetry-incubator-version>
         <opentelemetry-semconv-version>1.30.1-alpha</opentelemetry-semconv-version>
-        <optaplanner-version>10.1.0</optaplanner-version>
+        <optaplanner-version>10.2.0</optaplanner-version>
         <paho-version>1.2.5</paho-version>
         <parson-version>1.1.7</parson-version>
         <parquet-common-version>1.17.0</parquet-common-version>
