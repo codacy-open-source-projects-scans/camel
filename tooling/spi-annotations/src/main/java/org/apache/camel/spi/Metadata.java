@@ -193,6 +193,15 @@ public @interface Metadata {
     boolean largeInput() default false;
 
     /**
+     * Whether the option is evaluated as a Simple expression for each message, so that ${body.foo} in its value is the
+     * value of that message rather than the text itself.
+     *
+     * This is what tells a dynamic option apart from a fixed one: an expression in a fixed option is sent as the text
+     * it is. Tooling uses it to offer expression completion where it belongs, and to say where it does not.
+     */
+    boolean supportSimpleExpression() default false;
+
+    /**
      * If the option is some specific language such as SQL, XSLT, XML, JavaScript or something else.
      *
      * This can be used to help tooling to provide a better user experience.
@@ -208,5 +217,20 @@ public @interface Metadata {
      * Whether this option is important
      */
     boolean important() default false;
+
+    /**
+     * Usage examples for documentation and AI tooling.
+     *
+     * Each entry is a compact expression and result pair such as "${abs(-5)} -> 5".
+     */
+    String[] examples() default {};
+
+    /**
+     * Alternative names or common aliases for this entity.
+     *
+     * Used for AI and search tooling to discover EIPs by common terminology (e.g., "fan-out" for Multicast, "retry" for
+     * Error Handler). Aliases are descriptive names only — they cannot be used in the DSL.
+     */
+    String[] aliases() default {};
 
 }

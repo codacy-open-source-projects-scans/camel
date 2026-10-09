@@ -24,7 +24,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import jakarta.activation.DataHandler;
@@ -44,6 +43,7 @@ import io.vertx.ext.auth.authentication.AuthenticationProvider;
 import io.vertx.ext.auth.properties.PropertyFileAuthentication;
 import io.vertx.ext.web.handler.BasicAuthHandler;
 import org.apache.camel.CamelContext;
+import org.apache.camel.CamelExecutionException;
 import org.apache.camel.Message;
 import org.apache.camel.attachment.AttachmentMessage;
 import org.apache.camel.builder.RouteBuilder;
@@ -56,6 +56,7 @@ import org.apache.camel.model.rest.RestBindingMode;
 import org.apache.camel.model.rest.RestParamType;
 import org.apache.camel.spi.EmbeddedHttpService;
 import org.apache.camel.spi.RestConfiguration;
+import org.apache.camel.support.jsse.CipherSuitesParameters;
 import org.apache.camel.support.jsse.KeyManagersParameters;
 import org.apache.camel.support.jsse.KeyStoreParameters;
 import org.apache.camel.support.jsse.SSLContextParameters;
@@ -70,12 +71,15 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import static io.restassured.RestAssured.get;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.emptyString;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.equalToIgnoringCase;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -359,6 +363,97 @@ public class VertxPlatformHttpEngineTest {
     }
 
     @Test
+    public void testEngineSSLClientAuthenticationRequired() throws Exception {
+        final CamelContext context
+                = createCamelContextForTest(configuration -> configuration.setSslContextParameters(serverSSLParameters));
+
+        try {
+            // the client trusts the server but has no certificate
+            KeyStoreParameters truststoreParameters = new KeyStoreParameters();
+            truststoreParameters.setResource("jsse/truststore.jks");
+            truststoreParameters.setPassword("storepass");
+            TrustManagersParameters trustManagers = new TrustManagersParameters();
+            trustManagers.setKeyStore(truststoreParameters);
+            SSLContextParameters noCertificate = new SSLContextParameters();
+            noCertificate.setTrustManagers(trustManagers);
+            context.getRegistry().bind("noCertificate", noCertificate);
+
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("platform-http:/")
+                            .transform().body(String.class, b -> b.toUpperCase());
+                }
+            });
+
+            context.start();
+
+            // client authentication is required
+            assertThatThrownBy(() -> context.createFluentProducerTemplate()
+                    .toF("https://localhost:%d?sslContextParameters=#noCertificate", RestAssured.port)
+                    .withBody("test")
+                    .request(String.class))
+                    .isInstanceOf(CamelExecutionException.class);
+        } finally {
+            context.stop();
+        }
+    }
+
+    @Test
+    public void testEngineSSLCipherSuites() throws Exception {
+        KeyStoreParameters keystoreParameters = new KeyStoreParameters();
+        keystoreParameters.setResource("jsse/service.jks");
+        keystoreParameters.setPassword("security");
+        KeyManagersParameters keyManagers = new KeyManagersParameters();
+        keyManagers.setKeyPassword("security");
+        keyManagers.setKeyStore(keystoreParameters);
+        KeyStoreParameters truststoreParameters = new KeyStoreParameters();
+        truststoreParameters.setResource("jsse/truststore.jks");
+        truststoreParameters.setPassword("storepass");
+        TrustManagersParameters trustManagers = new TrustManagersParameters();
+        trustManagers.setKeyStore(truststoreParameters);
+
+        // the server only allows one cipher suite
+        SSLContextParameters server = new SSLContextParameters();
+        server.setKeyManagers(keyManagers);
+        server.setTrustManagers(trustManagers);
+        CipherSuitesParameters serverSuites = new CipherSuitesParameters();
+        serverSuites.setCipherSuite(List.of("TLS_AES_256_GCM_SHA384"));
+        server.setCipherSuites(serverSuites);
+
+        // and the client only another cipher suite
+        SSLContextParameters client = new SSLContextParameters();
+        client.setKeyManagers(keyManagers);
+        client.setTrustManagers(trustManagers);
+        CipherSuitesParameters clientSuites = new CipherSuitesParameters();
+        clientSuites.setCipherSuite(List.of("TLS_AES_128_GCM_SHA256"));
+        client.setCipherSuites(clientSuites);
+
+        final CamelContext context = createCamelContextForTest(configuration -> configuration.setSslContextParameters(server));
+
+        try {
+            context.getRegistry().bind("client", client);
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("platform-http:/")
+                            .transform().body(String.class, b -> b.toUpperCase());
+                }
+            });
+
+            context.start();
+
+            assertThatThrownBy(() -> context.createFluentProducerTemplate()
+                    .toF("https://localhost:%d?sslContextParameters=#client", RestAssured.port)
+                    .withBody("test")
+                    .request(String.class))
+                    .isInstanceOf(CamelExecutionException.class);
+        } finally {
+            context.stop();
+        }
+    }
+
+    @Test
     public void testEngineGlobalSSL() throws Exception {
         final CamelContext context
                 = createCamelContextForTest(configuration -> configuration.setUseGlobalSslContextParameters(true));
@@ -421,6 +516,128 @@ public class VertxPlatformHttpEngineTest {
                     .header("Access-Control-Allow-Origin", origin)
                     .header("Access-Control-Allow-Methods", methods)
                     .header("Access-Control-Allow-Headers", headers);
+        } finally {
+            context.stop();
+        }
+    }
+
+    @Test
+    public void testEngineCORSNoOriginListDoesNotAllowCredentials() throws Exception {
+        // With no origins configured the request origin is reflected back. Reflection plus
+        // Access-Control-Allow-Credentials is exactly what the fetch spec forbids expressing as "*",
+        // so credentials must not be granted to an origin the operator never named.
+        final CamelContext context = createCamelContextForTest(configuration -> {
+            configuration.getCors().setEnabled(true);
+            configuration.getCors().setMethods(Arrays.asList("GET", "POST"));
+        });
+
+        try {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("platform-http:/").transform().constant("cors");
+                }
+            });
+            context.start();
+
+            final String origin = "http://attacker.example";
+
+            given()
+                    .header("Origin", origin)
+                    .when()
+                    .get("/")
+                    .then()
+                    .statusCode(200)
+                    .header("Access-Control-Allow-Origin", origin)
+                    .header("Vary", equalToIgnoringCase("origin"))
+                    .header("Access-Control-Allow-Credentials", nullValue());
+        } finally {
+            context.stop();
+        }
+    }
+
+    @Test
+    public void testEngineCORSAllowsCredentialsOnlyForAConfiguredOrigin() throws Exception {
+        final String allowed = "https://app.example";
+        final CamelContext context = createCamelContextForTest(configuration -> {
+            configuration.getCors().setEnabled(true);
+            configuration.getCors().setOrigins(Arrays.asList(allowed));
+            configuration.getCors().setMethods(Arrays.asList("GET", "POST"));
+        });
+
+        try {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("platform-http:/").transform().constant("cors");
+                }
+            });
+            context.start();
+
+            given()
+                    .header("Origin", allowed)
+                    .when()
+                    .get("/")
+                    .then()
+                    .statusCode(200)
+                    .header("Access-Control-Allow-Origin", allowed)
+                    .header("Access-Control-Allow-Credentials", "true");
+
+            // An origin outside the configured list gets neither header
+            given()
+                    .header("Origin", "https://other.example")
+                    .when()
+                    .get("/")
+                    .then()
+                    .statusCode(200)
+                    .header("Access-Control-Allow-Origin", nullValue())
+                    .header("Access-Control-Allow-Credentials", nullValue());
+        } finally {
+            context.stop();
+        }
+    }
+
+    /**
+     * CAMEL-24910: a path parameter is single-valued and part of the route's contract, so it wins over an incoming
+     * header of the same name; before, the two were merged into a list and ${header.name} answered "[X, Camel]".
+     */
+    @Test
+    public void testPathParameterWinsOverAHeaderOfTheSameName() throws Exception {
+        final CamelContext context = createCamelContextForTest();
+        try {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("platform-http:/greeting/{name}")
+                            .transform().simple("Hello ${header.name}");
+                }
+            });
+
+            context.start();
+
+            given()
+                    .when()
+                    .get("/greeting/Camel")
+                    .then()
+                    .statusCode(200)
+                    .body(equalTo("Hello Camel"));
+
+            // the same request with a header of that name: the path still decides
+            given()
+                    .header("name", "Rider")
+                    .when()
+                    .get("/greeting/Camel")
+                    .then()
+                    .statusCode(200)
+                    .body(equalTo("Hello Camel"));
+
+            // and a query parameter may still repeat, which is a list
+            given()
+                    .when()
+                    .get("/greeting/Camel?other=a&other=b")
+                    .then()
+                    .statusCode(200)
+                    .body(equalTo("Hello Camel"));
         } finally {
             context.stop();
         }
@@ -1160,9 +1377,11 @@ public class VertxPlatformHttpEngineTest {
                                 assertEquals(1, message.getRequest().cookieCount());
                                 message.getRequest().response()
                                         .addCookie(Cookie.cookie("XSRF-TOKEN", "88533580000c314").setPath("/"));
-                                Map<String, Cookie> deprecatedMap = message.getRequest().cookieMap();
-                                assertFalse(((ServerCookie) deprecatedMap.get("XSRF-TOKEN")).isFromUserAgent());
-                                assertEquals("/", deprecatedMap.get("XSRF-TOKEN").getPath());
+                                Cookie xsrfCookie = message.getRequest().cookies().stream()
+                                        .filter(c -> "XSRF-TOKEN".equals(c.getName()))
+                                        .findFirst().orElseThrow();
+                                assertFalse(((ServerCookie) xsrfCookie).isFromUserAgent());
+                                assertEquals("/", xsrfCookie.getPath());
                             })
                             .setBody().constant("replace");
                 }
@@ -1352,6 +1571,10 @@ public class VertxPlatformHttpEngineTest {
         return createCamelContext(port.getPort(), customizer);
     }
 
+    static CamelContext createCamelContext() throws Exception {
+        return createCamelContext(0, null);
+    }
+
     static CamelContext createCamelContext(int port) throws Exception {
         return createCamelContext(port, null);
     }
@@ -1360,7 +1583,9 @@ public class VertxPlatformHttpEngineTest {
         VertxPlatformHttpServerConfiguration conf = new VertxPlatformHttpServerConfiguration();
         conf.setBindPort(port);
 
-        RestAssured.port = port;
+        if (port != 0) {
+            RestAssured.port = port;
+        }
 
         if (customizer != null) {
             customizer.customize(conf);
@@ -1369,6 +1594,14 @@ public class VertxPlatformHttpEngineTest {
         CamelContext context = new DefaultCamelContext();
         context.addService(new VertxPlatformHttpServer(conf));
         return context;
+    }
+
+    static void startCamelContext(CamelContext context) throws Exception {
+        context.start();
+        VertxPlatformHttpServer server = context.hasService(VertxPlatformHttpServer.class);
+        if (server != null) {
+            RestAssured.port = server.getPort();
+        }
     }
 
     interface ServerConfigurationCustomizer {

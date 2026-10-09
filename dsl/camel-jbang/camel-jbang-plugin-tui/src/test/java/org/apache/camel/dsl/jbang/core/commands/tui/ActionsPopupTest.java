@@ -1,0 +1,138 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.camel.dsl.jbang.core.commands.tui;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import dev.tamboui.layout.Rect;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Tests for {@link ActionsPopup#listItemAt}, which maps a click to an entry in a single-line, bordered list popup. The
+ * popup has a one-cell border on every side, so the first entry sits at {@code popup.y() + 1} and the interior spans
+ * {@code [popup.x() + 1, popup.x() + width - 1)}. For scrolled lists, {@code offset} is the index of the first visible
+ * entry, so on-screen row r maps to entry {@code offset + (r - firstRow)}.
+ */
+class ActionsPopupTest {
+
+    @Test
+    void menuLabelsResolveToActionsIgnoringCaseEllipsisAndShortcutHints() {
+        assertEquals(ActionsPopup.Action.DOCTOR, ActionsPopup.actionForLabel("Run Doctor"));
+        assertEquals(ActionsPopup.Action.DOCTOR, ActionsPopup.actionForLabel("run doctor"));
+        assertEquals(ActionsPopup.Action.RUN_EXAMPLE, ActionsPopup.actionForLabel("Run an Example..."));
+        assertEquals(ActionsPopup.Action.GOTO_TAB, ActionsPopup.actionForLabel("Go to... (Shift+F2)"));
+        assertEquals(ActionsPopup.Action.SWITCH_INTEGRATION, ActionsPopup.actionForLabel("Switch Integration (F3)"));
+        assertEquals(ActionsPopup.Action.RUN_INFRA, ActionsPopup.actionForLabel("Run Dev/Infra Service..."));
+        assertEquals(ActionsPopup.Action.TAPE_RECORDING, ActionsPopup.actionForLabel("Stop Tape Recording"));
+        assertEquals(ActionsPopup.Action.SHOW_KEYSTROKES, ActionsPopup.actionForLabel("Hide Keystrokes"));
+        assertEquals(ActionsPopup.Action.QUIT, ActionsPopup.actionForLabel("Quit"));
+        assertEquals(ActionsPopup.Action.QUIT, ActionsPopup.actionForLabel("exit"));
+    }
+
+    @Test
+    void aScreenshotKeepsTheMenuOpenSoItIsInThePicture() {
+        AtomicBoolean shot = new AtomicBoolean();
+        ActionsPopup popup = new ActionsPopup(
+                Set::of, List::of, List::of, null, () -> shot.set(true), () -> {
+                }, () -> false, () -> {
+                }, () -> false, () -> {
+                }, new HashSet<>());
+        popup.open();
+        assertTrue(popup.executeActionByName("screenshot"));
+        assertTrue(shot.get());
+        assertTrue(popup.isVisible(), "the menu stays, as it was on the screen");
+    }
+
+    @Test
+    void quitIsTheLastMenuEntryAndRunsTheWiredAction() {
+        ActionsPopup popup = new ActionsPopup(
+                Set::of, List::of, List::of, null, () -> {
+                }, () -> {
+                }, () -> false, () -> {
+                }, () -> false, () -> {
+                }, new HashSet<>());
+        List<String> labels = popup.getActionLabels();
+        assertEquals("Quit", labels.get(labels.size() - 1), "the last entry of the main menu");
+
+        // nothing wired (a test harness, or before the monitor is up): the action reports it did nothing
+        assertFalse(popup.executeActionByName("quit"));
+
+        AtomicBoolean quit = new AtomicBoolean();
+        popup.setQuitAction(() -> quit.set(true));
+        assertTrue(popup.executeActionByName("quit"), "tui_action Quit runs the monitor's quit path");
+        assertTrue(quit.get());
+        quit.set(false);
+        assertTrue(popup.executeActionByName("Quit"), "the menu label works as well as the kebab name");
+        assertTrue(quit.get());
+    }
+
+    @Test
+    void submenuAndDividerLabelsHaveNoAction() {
+        assertNull(ActionsPopup.actionForLabel("Screen..."));
+        assertNull(ActionsPopup.actionForLabel("AI & MCP..."));
+        assertNull(ActionsPopup.actionForLabel(".."));
+        assertNull(ActionsPopup.actionForLabel("───"));
+        assertNull(ActionsPopup.actionForLabel(null));
+    }
+
+    @Test
+    void resolvesClicksToEntriesWhenNotScrolled() {
+        Rect popup = new Rect(0, 0, 40, 12);
+        assertEquals(0, ActionsPopup.listItemAt(popup, 0, 20, 5, 1), "first row under the top border is entry 0");
+        assertEquals(3, ActionsPopup.listItemAt(popup, 0, 20, 5, 4), "the fourth interior row is entry 3");
+    }
+
+    @Test
+    void appliesScrollOffsetToClickedRow() {
+        // The list is scrolled so the first visible entry is index 7; the top interior row therefore maps to entry 7.
+        Rect popup = new Rect(0, 0, 40, 12);
+        assertEquals(7, ActionsPopup.listItemAt(popup, 7, 50, 5, 1), "offset shifts the first visible row to entry 7");
+        assertEquals(9, ActionsPopup.listItemAt(popup, 7, 50, 5, 3), "third visible row maps to entry 7 + 2");
+    }
+
+    @Test
+    void rejectsBorderAndOutsideClicks() {
+        Rect popup = new Rect(0, 0, 40, 12);
+        assertEquals(-1, ActionsPopup.listItemAt(popup, 0, 20, 5, 0), "the top border row is not an entry");
+        assertEquals(-1, ActionsPopup.listItemAt(popup, 0, 20, 0, 5), "the left border column is not an entry");
+        assertEquals(-1, ActionsPopup.listItemAt(popup, 0, 20, 39, 5), "the right border column is not an entry");
+        assertEquals(-1, ActionsPopup.listItemAt(popup, 0, 20, 5, 11), "the bottom border row is not an entry");
+        assertEquals(-1, ActionsPopup.listItemAt(popup, 0, 20, 60, 5), "a click outside the popup is not an entry");
+    }
+
+    @Test
+    void rejectsRowsPastTheLastEntry() {
+        // A popup with more interior rows than entries: a click below the last entry must not resolve to a phantom row.
+        Rect popup = new Rect(0, 0, 40, 12);
+        assertEquals(-1, ActionsPopup.listItemAt(popup, 0, 3, 5, 5), "row 4 has no entry when only 3 entries exist");
+        // With an offset, an interior row that lands past the end is likewise rejected.
+        assertEquals(-1, ActionsPopup.listItemAt(popup, 48, 50, 5, 4), "offset 48 + row 3 = entry 51 exceeds 50 entries");
+    }
+
+    @Test
+    void handlesNullGeometry() {
+        assertEquals(-1, ActionsPopup.listItemAt(null, 0, 20, 5, 5), "no captured geometry yet");
+    }
+}

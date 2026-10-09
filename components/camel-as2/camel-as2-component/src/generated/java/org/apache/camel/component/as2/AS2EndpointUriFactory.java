@@ -21,15 +21,17 @@ public class AS2EndpointUriFactory extends org.apache.camel.support.component.En
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(53);
+        Set<String> props = new HashSet<>(55);
         props.add("accessToken");
         props.add("apiName");
         props.add("as2From");
         props.add("as2MessageStructure");
         props.add("as2To");
         props.add("as2Version");
+        props.add("asyncMdnAllowedHosts");
         props.add("asyncMdnPortNumber");
         props.add("attachedFileName");
         props.add("clientFqdn");
@@ -66,6 +68,7 @@ public class AS2EndpointUriFactory extends org.apache.camel.support.component.En
         props.add("server");
         props.add("serverFqdn");
         props.add("serverPortNumber");
+        props.add("signatureVerificationRequired");
         props.add("signedReceiptMicAlgorithms");
         props.add("signingAlgorithm");
         props.add("signingCertificateChain");
@@ -86,6 +89,7 @@ public class AS2EndpointUriFactory extends org.apache.camel.support.component.En
         secretProps.add("password");
         secretProps.add("userName");
         SECRET_PROPERTY_NAMES = Collections.unmodifiableSet(secretProps);
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         MULTI_VALUE_PREFIXES = Collections.emptyMap();
     }
 
@@ -99,7 +103,7 @@ public class AS2EndpointUriFactory extends org.apache.camel.support.component.En
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "apiName", null, true, copy);
         uri = buildPathParameter(syntax, uri, "methodName", null, true, copy);
@@ -115,6 +119,11 @@ public class AS2EndpointUriFactory extends org.apache.camel.support.component.En
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

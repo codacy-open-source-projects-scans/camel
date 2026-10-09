@@ -26,10 +26,8 @@ import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.component.nats.NatsConstants;
 import org.apache.camel.component.nats.integration.NatsITSupport;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.junit.jupiter.api.parallel.Isolated;
 
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Flaky on GitHub Actions")
 @Isolated
 public class NatsJetstreamConsumerRedeliveryIT extends NatsITSupport {
 
@@ -42,18 +40,20 @@ public class NatsJetstreamConsumerRedeliveryIT extends NatsITSupport {
     @Test
     public void testConsumer() throws Exception {
         mockResultEndpoint.expectedBodiesReceived("Hello World");
-        mockResultEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "mytopic2");
+        mockResultEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "mytopic2-redelivery");
         mockResultEndpoint.expectedHeaderReceived("counter", 3);
         mockResultEndpoint.expectedHeaderReceived(NatsConstants.NATS_DELIVERY_COUNTER, 3);
 
         mockInputEndpoint.expectedMessageCount(3);
-        mockInputEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "mytopic2");
+        mockInputEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "mytopic2-redelivery");
         mockInputEndpoint.message(0).header(NatsConstants.NATS_DELIVERY_COUNTER).isEqualTo(1);
         mockInputEndpoint.message(1).header(NatsConstants.NATS_DELIVERY_COUNTER).isEqualTo(2);
         mockInputEndpoint.message(2).header(NatsConstants.NATS_DELIVERY_COUNTER).isEqualTo(3);
 
         template.sendBody("direct:send", "Hello World");
 
+        mockResultEndpoint.setAssertPeriod(5000);
+        mockInputEndpoint.setAssertPeriod(5000);
         MockEndpoint.assertIsSatisfied(context);
     }
 
@@ -63,7 +63,7 @@ public class NatsJetstreamConsumerRedeliveryIT extends NatsITSupport {
             @Override
             public void configure() {
                 String uri
-                        = "nats:mytopic2?jetstreamEnabled=true&jetstreamName=mystream2&jetstreamAsync=false&durableName=camel2&pullSubscription=false&nackWait=10";
+                        = "nats:mytopic2-redelivery?jetstreamEnabled=true&jetstreamName=mystream2-redelivery&jetstreamAsync=false&durableName=camel2-redelivery&pullSubscription=false&nackWait=10";
 
                 from("direct:send")
                         // when running full test suite then send can fail due to nats server setup/teardown

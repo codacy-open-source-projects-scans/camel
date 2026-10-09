@@ -40,12 +40,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Unit test for Camel attachments and Mail attachments.
  */
 public class MailAttachmentDuplicateNamesTest extends CamelTestSupport {
-    private static final MailboxUser james = Mailbox.getOrCreateUser("james", "secret");
+    private static final MailboxUser james = Mailbox.getOrCreateUser("MailAttachmentDuplicateNamesTest-james", "secret");
 
     @Test
     public void testSendAndReceiveMailWithAttachmentsWithDuplicateNames() throws Exception {
         // clear mailbox
-        Mailbox.clearAll();
+        james.clear();
 
         // START SNIPPET: e1
 
@@ -70,6 +70,7 @@ public class MailAttachmentDuplicateNamesTest extends CamelTestSupport {
 
         MockEndpoint mock = getMockEndpoint("mock:result");
         mock.expectedMessageCount(1);
+        mock.setResultWaitTime(30_000);
         mock.assertIsSatisfied();
         Exchange out = mock.assertExchangeReceived(0);
 
@@ -96,7 +97,9 @@ public class MailAttachmentDuplicateNamesTest extends CamelTestSupport {
     protected RouteBuilder createRouteBuilder() {
         return new RouteBuilder() {
             public void configure() {
-                from(james.uriPrefix(Protocol.pop3) + "&initialDelay=100&delay=100").to("mock:result");
+                from(james.uriPrefix(Protocol.pop3) + "&initialDelay=100&delay=100")
+                        .convertBodyTo(String.class)
+                        .to("mock:result");
             }
         };
     }

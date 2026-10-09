@@ -16,25 +16,60 @@
  */
 package org.apache.camel;
 
+import java.util.Objects;
+
+import org.apache.camel.util.ArtifactUtils;
+
 import static org.apache.camel.util.URISupport.sanitizeUri;
 
 /**
- * A runtime exception thrown if a routing processor such as a recipient list is unable to resolve an {@link Endpoint}
- * from a URI.
+ * Thrown when a routing processor (such as a recipient list or dynamic router) cannot resolve a URI to a known
+ * {@link Endpoint}, typically because the required Camel component is missing from the classpath.
+ * <p/>
+ * Contrast with {@link ResolveEndpointFailedException}, which is thrown when the component is present but the URI is
+ * malformed or configuration fails.
+ *
+ * @see ResolveEndpointFailedException
+ * @see Endpoint
  */
 public class NoSuchEndpointException extends RuntimeCamelException {
 
     private final String uri;
 
+    /**
+     * @param uri the endpoint URI that could not be found
+     */
     public NoSuchEndpointException(String uri) {
-        super("No endpoint could be found for: " + sanitizeUri(uri)
-              + ", please check your classpath contains the needed Camel component jar.");
+        super("No endpoint could be found for: " + sanitizeUri(Objects.requireNonNull(uri, "uri"))
+              + ", please check your classpath contains the needed Camel component jar"
+              + ArtifactUtils.componentHint(scheme(uri)) + ".");
         this.uri = sanitizeUri(uri);
     }
 
+    /**
+     * The component scheme the endpoint would be resolved by: the text before the first colon or question mark, or the
+     * whole uri when it has neither.
+     */
+    private static String scheme(String uri) {
+        int pos1 = uri.indexOf(':');
+        int pos2 = uri.indexOf('?');
+        if (pos1 != -1 && pos2 != -1) {
+            return uri.substring(0, Math.min(pos1, pos2));
+        } else if (pos1 != -1) {
+            return uri.substring(0, pos1);
+        } else if (pos2 != -1) {
+            return uri.substring(0, pos2);
+        }
+        return uri;
+    }
+
+    /**
+     * @param uri           the endpoint URI that could not be found
+     * @param resolveMethod a resolution instruction appended after "please" in the error message
+     */
     public NoSuchEndpointException(String uri, String resolveMethod) {
-        super("No endpoint could be found for: " + sanitizeUri(uri)
-              + ", please " + resolveMethod);
+        super("No endpoint could be found for: " + sanitizeUri(Objects.requireNonNull(uri, "uri"))
+              + ", please " + Objects.requireNonNull(resolveMethod, "resolveMethod"));
         this.uri = sanitizeUri(uri);
     }
 

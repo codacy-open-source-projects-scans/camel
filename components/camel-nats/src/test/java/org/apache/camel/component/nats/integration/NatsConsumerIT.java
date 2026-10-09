@@ -21,9 +21,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.component.nats.NatsConstants;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Flaky on GitHub Actions")
 public class NatsConsumerIT extends NatsITSupport {
 
     @EndpointInject("mock:result")
@@ -32,7 +30,9 @@ public class NatsConsumerIT extends NatsITSupport {
     @Test
     public void testConsumer() throws Exception {
         mockResultEndpoint.expectedBodiesReceived("Hello World");
-        mockResultEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "test");
+        mockResultEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "consumer");
+
+        waitForNatsConsumers(1);
 
         template.sendBody("direct:send", "Hello World");
 
@@ -44,9 +44,9 @@ public class NatsConsumerIT extends NatsITSupport {
         return new RouteBuilder() {
             @Override
             public void configure() {
-                from("direct:send").to("nats:test?flushConnection=true");
+                from("direct:send").to("nats:consumer?flushConnection=true");
 
-                from("nats:test?flushConnection=true").to(mockResultEndpoint);
+                from("nats:consumer?flushConnection=true").to(mockResultEndpoint);
             }
         };
     }

@@ -33,11 +33,13 @@ import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
+import org.apache.camel.SSLContextParametersAware;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.support.jsse.KeyStoreParameters;
 import org.apache.camel.support.jsse.SSLContextParameters;
 import org.apache.camel.support.jsse.TrustManagersParameters;
 import org.apache.camel.test.infra.openai.mock.MockExpectation;
+import org.apache.camel.test.infra.openai.mock.OpenAIMockExpectations;
 import org.apache.camel.test.infra.openai.mock.OpenAIMockServerHandler;
 import org.apache.camel.test.junit6.CamelTestSupport;
 import org.junit.jupiter.api.AfterEach;
@@ -89,7 +91,7 @@ class OpenAISslContextParametersTest extends CamelTestSupport {
         expectations.add(expectation);
 
         httpsServer.createContext("/",
-                new OpenAIMockServerHandler(expectations, List.of(), new ObjectMapper()));
+                new OpenAIMockServerHandler(OpenAIMockExpectations.ofChat(expectations), new ObjectMapper()));
 
         executor = Executors.newSingleThreadExecutor();
         httpsServer.setExecutor(executor);
@@ -199,7 +201,7 @@ class OpenAISslContextParametersTest extends CamelTestSupport {
     @Test
     void componentImplementsSslContextParametersAware() {
         OpenAIComponent component = (OpenAIComponent) context().getComponent("openai");
-        assertTrue(component instanceof org.apache.camel.SSLContextParametersAware,
+        assertTrue(component instanceof SSLContextParametersAware,
                 "OpenAIComponent should implement SSLContextParametersAware");
     }
 

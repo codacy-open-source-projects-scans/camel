@@ -152,8 +152,15 @@ public class UndertowProducer extends DefaultAsyncProducer {
                     camelExchange, callback, getEndpoint(),
                     request, (InputStream) body);
         } else {
-            final TypeConverter tc = endpoint.getCamelContext().getTypeConverter();
-            final ByteBuffer bodyAsByte = tc.tryConvertTo(ByteBuffer.class, body);
+            ByteBuffer bodyAsByte = null;
+            if (body instanceof String text) {
+                // write the text in the charset that the request Content-Type declares, if any
+                bodyAsByte = UndertowHelper.toByteBuffer(text, requestHeaders.getFirst(Headers.CONTENT_TYPE));
+            }
+            if (bodyAsByte == null) {
+                final TypeConverter tc = endpoint.getCamelContext().getTypeConverter();
+                bodyAsByte = tc.tryConvertTo(ByteBuffer.class, body);
+            }
 
             // As tryConvertTo is used to convert the body, we should do null check
             // or the call bodyAsByte.remaining() may throw an NPE
@@ -249,8 +256,9 @@ public class UndertowProducer extends DefaultAsyncProducer {
         client = UndertowClient.getInstance();
 
         if (endpoint.isWebSocket()) {
-            this.webSocketHandler = (CamelWebSocketHandler) endpoint.getComponent().registerEndpoint(null,
+            this.webSocketHandler = (CamelWebSocketHandler) endpoint.getComponent().registerEndpoint(endpoint, null,
                     endpoint.getHttpHandlerRegistrationInfo(), endpoint.getSslContext(), new CamelWebSocketHandler());
+            this.webSocketHandler.addProducer(endpoint);
         }
 
         LOG.debug("Created worker: {} with options: {}", worker, options);
@@ -261,6 +269,9 @@ public class UndertowProducer extends DefaultAsyncProducer {
         super.doStop();
 
         if (endpoint.isWebSocket()) {
+            if (webSocketHandler != null) {
+                webSocketHandler.removeProducer(endpoint);
+            }
             endpoint.getComponent().unregisterEndpoint(null, endpoint.getHttpHandlerRegistrationInfo(),
                     endpoint.getSslContext());
         }

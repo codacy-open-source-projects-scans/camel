@@ -25,6 +25,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mail.Mailbox.MailboxUser;
 import org.apache.camel.component.mail.Mailbox.Protocol;
 import org.apache.camel.test.junit6.CamelTestSupport;
+import org.apache.camel.test.junit6.TestSupport;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -47,9 +48,9 @@ public class MailRecipientsTest extends CamelTestSupport {
 
     @Test
     public void testMultiRecipients() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(you, camelRiders, easyRiders, me, someone, to);
 
-        sendBody("direct:a", "Camel does really rock");
+        TestSupport.sendBody(template, "direct:a", "Camel does really rock");
 
         Mailbox inbox = camelRiders.getInbox();
         Message msg = inbox.get(0);
@@ -91,7 +92,7 @@ public class MailRecipientsTest extends CamelTestSupport {
 
     @Test
     public void testHeadersBlocked() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(you, camelRiders, easyRiders, me, someone, to);
 
         // direct:b blocks all message headers
         Map<String, Object> headers = new HashMap<>();
@@ -109,7 +110,7 @@ public class MailRecipientsTest extends CamelTestSupport {
 
     @Test
     public void testSpecificHeaderBlocked() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(you, camelRiders, easyRiders, me, someone, to);
 
         // direct:c blocks the "cc" message header - so only "to" will be used here
         Map<String, Object> headers = new HashMap<>();
@@ -126,7 +127,7 @@ public class MailRecipientsTest extends CamelTestSupport {
 
     @Test
     public void testSpecificHeaderBlockedInjection() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(you, camelRiders, easyRiders, me, someone, to);
 
         // direct:c blocks the "cc" message header - but we are trying to inject cc in via another header
         Map<String, Object> headers = new HashMap<>();
@@ -157,7 +158,8 @@ public class MailRecipientsTest extends CamelTestSupport {
                 from("direct:b").removeHeaders("*")
                         .to(you.uriPrefix(Protocol.smtp) + "&from=" + you.getEmail() + recipients);
                 from("direct:c").removeHeaders("cc")
-                        .to(you.uriPrefix(Protocol.smtp) + "&from=" + you.getEmail() + recipients);
+                        .to(you.uriPrefix(Protocol.smtp) + "&from=" + you.getEmail() + recipients
+                            + "&useHeaderRecipients=true");
                 // END SNIPPET: e1
             }
         };

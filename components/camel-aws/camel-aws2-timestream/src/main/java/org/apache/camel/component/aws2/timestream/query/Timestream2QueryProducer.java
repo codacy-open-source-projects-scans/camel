@@ -23,6 +23,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.component.aws2.timestream.Timestream2Configuration;
 import org.apache.camel.component.aws2.timestream.Timestream2Constants;
 import org.apache.camel.component.aws2.timestream.Timestream2Operations;
@@ -108,11 +109,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.describeEndpoints(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Endpoints command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Endpoints command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeEndpoints operation requires DescribeEndpointsRequest in POJO mode");
             }
         } else {
             DescribeEndpointsRequest.Builder builder = DescribeEndpointsRequest.builder();
@@ -121,7 +125,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.describeEndpoints(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Endpoints command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Endpoints command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -138,11 +142,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.createScheduledQuery(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createScheduledQuery operation requires CreateScheduledQueryRequest in POJO mode");
             }
         } else {
             CreateScheduledQueryRequest.Builder builder = CreateScheduledQueryRequest.builder();
@@ -199,11 +206,6 @@ public class Timestream2QueryProducer extends DefaultProducer {
                         = ErrorReportConfiguration.builder().s3Configuration(s3Configuration.build()).build();
                 builder.errorReportConfiguration(errorReportConfiguration);
             }
-            if (ObjectHelper.isNotEmpty(exchange.getIn().getHeader(Timestream2Constants.SCHEDULED_QUERY_EXECUTION_ROLE_ARN))) {
-                String roleArn
-                        = exchange.getIn().getHeader(Timestream2Constants.SCHEDULED_QUERY_EXECUTION_ROLE_ARN, String.class);
-                builder.scheduledQueryExecutionRoleArn(roleArn);
-            }
 
             TargetConfiguration.Builder targetConfiguration = TargetConfiguration.builder();
             TimestreamConfiguration.Builder timestreamConfigBuilder = TimestreamConfiguration.builder();
@@ -217,7 +219,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             }
             if (ObjectHelper.isNotEmpty(exchange.getIn().getHeader(Timestream2Constants.TIME_COLUMN))) {
                 String timeColumn = exchange.getIn().getHeader(Timestream2Constants.TIME_COLUMN, String.class);
-                timestreamConfigBuilder.tableName(timeColumn);
+                timestreamConfigBuilder.timeColumn(timeColumn);
             }
             if (ObjectHelper.isNotEmpty(exchange.getIn().getHeader(Timestream2Constants.MEASURE_NAME_COLUMN))) {
                 String measureNameColumn = exchange.getIn().getHeader(Timestream2Constants.MEASURE_NAME_COLUMN, String.class);
@@ -246,7 +248,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.createScheduledQuery(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -263,11 +265,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.deleteScheduledQuery(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteScheduledQuery operation requires DeleteScheduledQueryRequest in POJO mode");
             }
         } else {
             DeleteScheduledQueryRequest.Builder builder = DeleteScheduledQueryRequest.builder();
@@ -281,7 +286,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.deleteScheduledQuery(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -299,11 +304,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.executeScheduledQuery(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Execute Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Execute Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "executeScheduledQuery operation requires ExecuteScheduledQueryRequest in POJO mode");
             }
         } else {
             ExecuteScheduledQueryRequest.Builder builder = ExecuteScheduledQueryRequest.builder();
@@ -328,7 +336,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.executeScheduledQuery(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Execute Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Execute Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -345,11 +353,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.updateScheduledQuery(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Update Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Update Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "updateScheduledQuery operation requires UpdateScheduledQueryRequest in POJO mode");
             }
         } else {
             UpdateScheduledQueryRequest.Builder builder = UpdateScheduledQueryRequest.builder();
@@ -368,7 +379,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.updateScheduledQuery(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Update Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Update Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -385,11 +396,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.describeScheduledQuery(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeScheduledQuery operation requires DescribeScheduledQueryRequest in POJO mode");
             }
         } else {
             DescribeScheduledQueryRequest.Builder builder = DescribeScheduledQueryRequest.builder();
@@ -398,7 +412,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.describeScheduledQuery(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Scheduled Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Scheduled Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -415,11 +429,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.listScheduledQueries(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Scheduled Queries command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Scheduled Queries command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listScheduledQueries operation requires ListScheduledQueriesRequest in POJO mode");
             }
         } else {
             ListScheduledQueriesRequest.Builder builder = ListScheduledQueriesRequest.builder();
@@ -433,7 +450,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.listScheduledQueries(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Scheduled Queries command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Scheduled Queries command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -449,11 +466,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.prepareQuery(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Prepare Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Prepare Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "prepareQuery operation requires PrepareQueryRequest in POJO mode");
             }
         } else {
             PrepareQueryRequest.Builder builder = PrepareQueryRequest.builder();
@@ -472,7 +492,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.prepareQuery(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Prepare Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Prepare Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -488,11 +508,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.query(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "query operation requires QueryRequest in POJO mode");
             }
         } else {
             QueryRequest.Builder builder = QueryRequest.builder();
@@ -511,7 +534,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.query(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -527,11 +550,14 @@ public class Timestream2QueryProducer extends DefaultProducer {
                 try {
                     result = timestreamQueryClient.cancelQuery(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Cancel Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Cancel Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "cancelQuery operation requires CancelQueryRequest in POJO mode");
             }
         } else {
             CancelQueryRequest.Builder builder = CancelQueryRequest.builder();
@@ -545,7 +571,7 @@ public class Timestream2QueryProducer extends DefaultProducer {
             try {
                 result = timestreamQueryClient.cancelQuery(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Cancel Query command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Cancel Query command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);

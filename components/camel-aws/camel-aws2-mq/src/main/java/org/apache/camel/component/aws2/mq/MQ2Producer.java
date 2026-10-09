@@ -22,6 +22,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.health.HealthCheck;
 import org.apache.camel.health.HealthCheckHelper;
 import org.apache.camel.health.WritableHealthCheckRepository;
@@ -56,6 +57,8 @@ public class MQ2Producer extends DefaultProducer {
 
     private static final Logger LOG = LoggerFactory.getLogger(MQ2Producer.class);
     public static final String MISSING_BROKER_NAME = "Broker Name must be specified";
+    public static final String MISSING_BROKER_ID = "Broker Id must be specified";
+    public static final String MISSING_CONFIGURATION_ID = "Configuration Id must be specified";
 
     private transient String mqProducerToString;
     private HealthCheck producerHealthCheck;
@@ -124,13 +127,16 @@ public class MQ2Producer extends DefaultProducer {
                 try {
                     result = mqClient.listBrokers(listBrokersRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Brokers command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Brokers command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
                 message.setHeader(MQ2Constants.NEXT_TOKEN, result.nextToken());
                 message.setHeader(MQ2Constants.IS_TRUNCATED, ObjectHelper.isNotEmpty(result.nextToken()));
+            } else {
+                throw new IllegalArgumentException(
+                        "listBrokers operation requires ListBrokersRequest in POJO mode");
             }
         } else {
             ListBrokersRequest.Builder builder = ListBrokersRequest.builder();
@@ -146,7 +152,7 @@ public class MQ2Producer extends DefaultProducer {
             try {
                 result = mqClient.listBrokers(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Brokers command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Brokers command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -172,11 +178,14 @@ public class MQ2Producer extends DefaultProducer {
                 try {
                     result = mqClient.createBroker(createBrokerRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createBroker operation requires CreateBrokerRequest in POJO mode");
             }
         } else {
             CreateBrokerRequest.Builder builder = CreateBrokerRequest.builder();
@@ -226,7 +235,7 @@ public class MQ2Producer extends DefaultProducer {
             try {
                 result = mqClient.createBroker(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -245,11 +254,14 @@ public class MQ2Producer extends DefaultProducer {
                 try {
                     result = mqClient.deleteBroker(deleteBrokerRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteBroker operation requires DeleteBrokerRequest in POJO mode");
             }
         } else {
             DeleteBrokerRequest.Builder builder = DeleteBrokerRequest.builder();
@@ -257,13 +269,13 @@ public class MQ2Producer extends DefaultProducer {
                 brokerId = exchange.getIn().getHeader(MQ2Constants.BROKER_ID, String.class);
                 builder.brokerId(brokerId);
             } else {
-                throw new IllegalArgumentException(MISSING_BROKER_NAME);
+                throw new IllegalArgumentException(MISSING_BROKER_ID);
             }
             DeleteBrokerResponse result;
             try {
                 result = mqClient.deleteBroker(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -280,11 +292,14 @@ public class MQ2Producer extends DefaultProducer {
                 try {
                     result = mqClient.rebootBroker(rebootBrokerRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Reboot Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Reboot Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "rebootBroker operation requires RebootBrokerRequest in POJO mode");
             }
         } else {
             RebootBrokerRequest.Builder builder = RebootBrokerRequest.builder();
@@ -292,13 +307,13 @@ public class MQ2Producer extends DefaultProducer {
                 brokerId = exchange.getIn().getHeader(MQ2Constants.BROKER_ID, String.class);
                 builder.brokerId(brokerId);
             } else {
-                throw new IllegalArgumentException(MISSING_BROKER_NAME);
+                throw new IllegalArgumentException(MISSING_BROKER_ID);
             }
             RebootBrokerResponse result;
             try {
                 result = mqClient.rebootBroker(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Reboot Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Reboot Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -316,11 +331,14 @@ public class MQ2Producer extends DefaultProducer {
                 try {
                     result = mqClient.updateBroker(updateBrokerRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Update Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Update Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "updateBroker operation requires UpdateBrokerRequest in POJO mode");
             }
         } else {
             UpdateBrokerRequest.Builder builder = UpdateBrokerRequest.builder();
@@ -328,19 +346,19 @@ public class MQ2Producer extends DefaultProducer {
                 brokerId = exchange.getIn().getHeader(MQ2Constants.BROKER_ID, String.class);
                 builder.brokerId(brokerId);
             } else {
-                throw new IllegalArgumentException(MISSING_BROKER_NAME);
+                throw new IllegalArgumentException(MISSING_BROKER_ID);
             }
             if (ObjectHelper.isNotEmpty(exchange.getIn().getHeader(MQ2Constants.CONFIGURATION_ID))) {
                 configurationId = exchange.getIn().getHeader(MQ2Constants.CONFIGURATION_ID, ConfigurationId.class);
                 builder.configuration(configurationId);
             } else {
-                throw new IllegalArgumentException(MISSING_BROKER_NAME);
+                throw new IllegalArgumentException(MISSING_CONFIGURATION_ID);
             }
             UpdateBrokerResponse result;
             try {
                 result = mqClient.updateBroker(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Update Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Update Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -357,11 +375,14 @@ public class MQ2Producer extends DefaultProducer {
                 try {
                     result = mqClient.describeBroker(describeBrokerRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Reboot Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Reboot Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeBroker operation requires DescribeBrokerRequest in POJO mode");
             }
         } else {
             DescribeBrokerRequest.Builder builder = DescribeBrokerRequest.builder();
@@ -369,13 +390,13 @@ public class MQ2Producer extends DefaultProducer {
                 brokerId = exchange.getIn().getHeader(MQ2Constants.BROKER_ID, String.class);
                 builder.brokerId(brokerId);
             } else {
-                throw new IllegalArgumentException(MISSING_BROKER_NAME);
+                throw new IllegalArgumentException(MISSING_BROKER_ID);
             }
             DescribeBrokerResponse result;
             try {
                 result = mqClient.describeBroker(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Broker command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Broker command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);

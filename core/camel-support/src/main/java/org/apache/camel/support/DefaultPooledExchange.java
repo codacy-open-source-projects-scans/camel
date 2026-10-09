@@ -16,8 +16,6 @@
  */
 package org.apache.camel.support;
 
-import java.util.concurrent.ConcurrentHashMap;
-
 import org.apache.camel.CamelContext;
 import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
@@ -28,7 +26,10 @@ import org.apache.camel.clock.Clock;
 
 /**
  * The default and only implementation of {@link PooledExchange}.
+ *
+ * @deprecated Exchange pooling is deprecated and will be removed in a future release.
  */
+@Deprecated(since = "4.23.0")
 public final class DefaultPooledExchange extends AbstractExchange implements PooledExchange {
     private final ResetableClock clock;
     private OnDoneTask onDone;
@@ -40,29 +41,21 @@ public final class DefaultPooledExchange extends AbstractExchange implements Poo
     public DefaultPooledExchange(CamelContext context) {
         super(context);
         this.originalPattern = getPattern();
-        this.properties = new ConcurrentHashMap<>(8);
         this.clock = new ResetableClock();
     }
 
     public DefaultPooledExchange(Exchange parent) {
         super(parent);
         this.originalPattern = parent.getPattern();
-        this.properties = new ConcurrentHashMap<>(8);
 
-        Clock parentClock = parent.getClock();
-
-        if (parentClock instanceof ResetableClock rs) {
-            this.clock = rs;
-        } else {
-            this.clock = new ResetableClock(parent.getClock());
-        }
+        // the copy must own its clock: sharing the parent's clock makes done() on the parent unset the
+        // created time of the copy as well, and the copy is then returned to the pool without being reset
+        this.clock = new ResetableClock(parent.getClock());
     }
 
     public DefaultPooledExchange(CamelContext context, ExchangePattern pattern) {
         super(context, pattern);
         this.originalPattern = getPattern();
-        this.properties = new ConcurrentHashMap<>(8);
-
         this.clock = new ResetableClock();
     }
 
@@ -90,7 +83,16 @@ public final class DefaultPooledExchange extends AbstractExchange implements Poo
             // by unsetting (setting to 0) we also flag that this exchange is done and needs to be reset to use again
             clock.unset();
 
-            this.properties.clear();
+            // Reuse properties map if it's not too large
+            if (this.properties != null) {
+                if (this.properties.size() > 50) {
+                    // Too big, discard and recreate smaller map next time
+                    this.properties = null;
+                } else {
+                    // Small enough, just clear and reuse
+                    this.properties.clear();
+                }
+            }
             internalProperties.clear();
             if (this.safeCopyProperties != null) {
                 this.safeCopyProperties.clear();
@@ -111,7 +113,7 @@ public final class DefaultPooledExchange extends AbstractExchange implements Poo
             this.pattern = originalPattern;
             // do not reset endpoint/fromRouteId as it would be the same consumer/endpoint again
 
-            getExchangeExtension().reset();
+            resetExtension();
 
             if (onDone != null) {
                 onDone.onDone(this);

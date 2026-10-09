@@ -19,11 +19,10 @@ package org.apache.camel.converter.crypto;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.security.Key;
+import java.security.MessageDigest;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-
-import static org.apache.camel.converter.crypto.HexUtils.byteArrayToHexString;
 
 /**
  * <code>HMACAccumulator</code> is used to build Hash Message Authentication Codes. It has two modes, one where all the
@@ -95,16 +94,32 @@ public class HMACAccumulator {
         return appended;
     }
 
+    /**
+     * The single message reported for every authentication failure. Bad padding and a bad MAC must be indistinguishable
+     * to a caller who can submit ciphertext and observe the outcome, because telling them apart is what turns a CBC
+     * decryption into a padding oracle.
+     */
+    static final String AUTHENTICATION_FAILED = "Message authentication failed";
+
     public void validate() {
+        validate(false);
+    }
+
+    /**
+     * Validates the appended MAC. When the cipher has already failed (bad padding) the MAC is still finalized and
+     * compared before failing, so that a padding failure costs the same final work as a MAC failure and the two cannot
+     * be told apart by timing either.
+     *
+     * @param cipherFailed whether decryption already failed, in which case this always fails
+     */
+    void validate(boolean cipherFailed) {
         byte[] actual = getCalculatedMac();
         byte[] expected = getAppendedMac();
-        for (int x = 0; x < actual.length; x++) {
-            if (expected[x] != actual[x]) {
-                throw new IllegalStateException(
-                        "Expected mac did not match actual mac\nexpected:"
-                                                + byteArrayToHexString(expected) + "\n     actual:"
-                                                + byteArrayToHexString(actual));
-            }
+        // Use a constant-time comparison to avoid leaking MAC-match progress through timing (side-channel).
+        if (!MessageDigest.isEqual(expected, actual) || cipherFailed) {
+            // The computed MAC is HMAC_k over the plaintext that was just produced, so reporting it hands the
+            // caller a value they could not otherwise compute. Neither MAC belongs in the message.
+            throw new IllegalStateException(AUTHENTICATION_FAILED);
         }
     }
 
@@ -129,29 +144,26 @@ public class HMACAccumulator {
 
         public void write(byte[] data, int pos, int len) {
             if (available >= len) {
-                if (write + len > buffer.length) {
-                    int overlap = write + len % buffer.length;
-                    System.arraycopy(data, 0, buffer, write, len - overlap);
-                    System.arraycopy(data, len - overlap, buffer, 0, overlap);
-                } else {
-                    System.arraycopy(data, pos, buffer, write, len);
-                }
+                // copy up to the end of the array, and the rest (if any) to its start
+                int first = Math.min(len, buffer.length - write);
+                System.arraycopy(data, pos, buffer, write, first);
+                System.arraycopy(data, pos + first, buffer, 0, len - first);
                 write = (write + len) % buffer.length;
                 available -= len;
+            } else {
+                // cannot happen with the sizes used by decryptUpdate, but fail loudly rather than drop data
+                throw new IllegalStateException(
+                        "Cannot write " + len + " bytes to the circular buffer, only " + available + " available");
             }
         }
 
         public int read(byte[] dest, int position, int len) {
             if (dest.length - position >= len) {
                 if (buffer.length - available >= len) {
-                    int overlap = (read + len) % buffer.length;
-                    if (read > write) {
-                        int x = buffer.length - read;
-                        System.arraycopy(buffer, read, dest, position, buffer.length - read);
-                        System.arraycopy(buffer, 0, dest, position + x, overlap);
-                    } else {
-                        System.arraycopy(buffer, read, dest, position, len);
-                    }
+                    // copy up to the end of the array, and the rest (if any) from its start
+                    int first = Math.min(len, buffer.length - read);
+                    System.arraycopy(buffer, read, dest, position, first);
+                    System.arraycopy(buffer, 0, dest, position + first, len - first);
                     read = (read + len) % buffer.length;
                     available += len;
                     return len;

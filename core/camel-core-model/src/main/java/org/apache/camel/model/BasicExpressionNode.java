@@ -27,14 +27,17 @@ import org.apache.camel.Predicate;
 import org.apache.camel.builder.ExpressionClause;
 import org.apache.camel.model.language.ExpressionDefinition;
 import org.apache.camel.spi.Metadata;
+import org.apache.camel.spi.annotations.DslArg;
 
 @XmlAccessorType(XmlAccessType.FIELD)
 @XmlTransient
 public abstract class BasicExpressionNode<T extends BasicExpressionNode<T>> extends OptionalIdentifiedDefinition<T>
         implements HasExpressionType, CopyableDefinition<T> {
 
-    @Metadata(description = "Expression used as the predicate to evaluate whether this when should trigger and route the message or not.")
+    @Metadata(required = true,
+              description = "Expression used as the predicate to evaluate whether this when should trigger and route the message or not.")
     @XmlElementRef
+    @DslArg
     private ExpressionDefinition expression;
 
     protected BasicExpressionNode() {

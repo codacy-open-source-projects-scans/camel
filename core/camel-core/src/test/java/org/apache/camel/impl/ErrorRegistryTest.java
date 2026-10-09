@@ -17,19 +17,20 @@
 package org.apache.camel.impl;
 
 import java.util.Collection;
+import java.util.Map;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.ContextTestSupport;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.spi.BacklogErrorEventMessage;
 import org.apache.camel.spi.ErrorRegistry;
-import org.apache.camel.spi.ErrorRegistryEntry;
 import org.apache.camel.spi.ErrorRegistryView;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ErrorRegistryTest extends ContextTestSupport {
@@ -51,19 +52,24 @@ public class ErrorRegistryTest extends ContextTestSupport {
         assertMockEndpointsSatisfied();
 
         ErrorRegistry registry = context.getErrorRegistry();
-        Collection<ErrorRegistryEntry> entries = registry.browse();
+        Collection<BacklogErrorEventMessage> entries = registry.browse();
         assertEquals(1, entries.size());
 
-        ErrorRegistryEntry entry = entries.iterator().next();
-        assertNotNull(entry.exchangeId());
-        assertEquals("foo", entry.routeId());
-        assertNotNull(entry.timestamp());
-        assertTrue(entry.handled());
-        assertEquals("java.lang.IllegalArgumentException", entry.exceptionType());
-        assertEquals("Forced error", entry.exceptionMessage());
-        // stack trace is enabled by default
-        assertNotNull(entry.stackTrace());
-        assertTrue(entry.stackTrace().length > 0);
+        BacklogErrorEventMessage entry = entries.iterator().next();
+        assertNotNull(entry.getExchangeId());
+        assertEquals("foo", entry.getRouteId());
+        assertTrue(entry.getTimestamp() > 0);
+        assertTrue(entry.isHandled());
+        assertEquals("java.lang.IllegalArgumentException", entry.getExceptionType());
+        assertEquals("Forced error", entry.getExceptionMessage());
+        assertNotNull(entry.getException());
+        assertTrue(entry.getException() instanceof IllegalArgumentException);
+        assertTrue(entry.getUid() > 0);
+        assertNotNull(entry.getProcessingThreadName());
+        assertEquals("direct://start", entry.getFromEndpointUri());
+        assertTrue(entry.getRouteUptime() >= 0, "Route uptime should be non-negative");
+        assertTrue(entry.getElapsed() >= 0, "Elapsed time should be non-negative");
+        assertNotNull(entry.getToNode(), "Node id should be captured from message history");
     }
 
     @Test
@@ -89,16 +95,14 @@ public class ErrorRegistryTest extends ContextTestSupport {
         ErrorRegistry registry = context.getErrorRegistry();
         assertEquals(2, registry.size());
 
-        // test forRoute view
         ErrorRegistryView fooView = registry.forRoute("foo");
         assertEquals(1, fooView.size());
-        ErrorRegistryEntry fooEntry = fooView.browse().iterator().next();
-        assertEquals("foo", fooEntry.routeId());
+        BacklogErrorEventMessage fooEntry = fooView.browse().iterator().next();
+        assertEquals("foo", fooEntry.getRouteId());
 
         ErrorRegistryView barView = registry.forRoute("bar");
         assertEquals(1, barView.size());
 
-        // clear only foo route
         fooView.clear();
         assertEquals(1, registry.size());
         assertEquals(0, fooView.size());
@@ -117,32 +121,7 @@ public class ErrorRegistryTest extends ContextTestSupport {
 
         assertMockEndpointsSatisfied();
 
-        // only 2 most recent entries should be kept
         assertEquals(2, context.getErrorRegistry().size());
-    }
-
-    @Test
-    public void testErrorRegistryWithStackTrace() throws Exception {
-        getMockEndpoint("mock:dead").expectedMessageCount(1);
-        template.sendBody("direct:start", "Hello World");
-        assertMockEndpointsSatisfied();
-
-        ErrorRegistryEntry entry = context.getErrorRegistry().browse().iterator().next();
-        assertNotNull(entry.stackTrace());
-        assertTrue(entry.stackTrace().length > 0);
-        assertTrue(entry.stackTrace()[0].contains("IllegalArgumentException"));
-    }
-
-    @Test
-    public void testErrorRegistryWithoutStackTrace() throws Exception {
-        context.getErrorRegistry().setStackTraceEnabled(false);
-
-        getMockEndpoint("mock:dead").expectedMessageCount(1);
-        template.sendBody("direct:start", "Hello World");
-        assertMockEndpointsSatisfied();
-
-        ErrorRegistryEntry entry = context.getErrorRegistry().browse().iterator().next();
-        assertNull(entry.stackTrace());
     }
 
     @Test
@@ -179,15 +158,46 @@ public class ErrorRegistryTest extends ContextTestSupport {
         }
 
         ErrorRegistry registry = context.getErrorRegistry();
-        Collection<ErrorRegistryEntry> entries = registry.browse();
+        Collection<BacklogErrorEventMessage> entries = registry.browse();
         assertEquals(1, entries.size());
 
-        ErrorRegistryEntry entry = entries.iterator().next();
-        assertNotNull(entry.exchangeId());
-        assertEquals("unhandled", entry.routeId());
-        assertFalse(entry.handled());
-        assertEquals("java.lang.IllegalArgumentException", entry.exceptionType());
-        assertEquals("Unhandled error", entry.exceptionMessage());
+        BacklogErrorEventMessage entry = entries.iterator().next();
+        assertNotNull(entry.getExchangeId());
+        assertEquals("unhandled", entry.getRouteId());
+        assertFalse(entry.isHandled());
+        assertEquals("java.lang.IllegalArgumentException", entry.getExceptionType());
+        assertEquals("Unhandled error", entry.getExceptionMessage());
+        assertNotNull(entry.getToNode(), "Node id should be captured for unhandled errors");
+    }
+
+    @Test
+    public void testErrorRegistryHandledErrorReportsOriginNode() throws Exception {
+        getMockEndpoint("mock:handlerStep").expectedMessageCount(1);
+
+        template.sendBody("direct:handledWithSteps", "Hello World");
+
+        assertMockEndpointsSatisfied();
+
+        BacklogErrorEventMessage entry = context.getErrorRegistry().browse().iterator().next();
+        assertThat(entry.isHandled()).isTrue();
+        assertThat(entry.getToNode())
+                .as("toNode should point to the node that actually failed, not a node touched by the onException handler")
+                .isEqualTo("throwOrigin");
+    }
+
+    @Test
+    public void testErrorRegistryDoCatchReportsOriginNode() throws Exception {
+        getMockEndpoint("mock:catchStep").expectedMessageCount(1);
+
+        template.sendBody("direct:doCatchWithSteps", "Hello World");
+
+        assertMockEndpointsSatisfied();
+
+        BacklogErrorEventMessage entry = context.getErrorRegistry().browse().iterator().next();
+        assertThat(entry.isHandled()).isTrue();
+        assertThat(entry.getToNode())
+                .as("toNode should point to the node that actually failed, not a node touched by the doCatch block")
+                .isEqualTo("throwInTry");
     }
 
     @Test
@@ -196,10 +206,10 @@ public class ErrorRegistryTest extends ContextTestSupport {
         template.sendBody("direct:withEndpoint", "Hello World");
         assertMockEndpointsSatisfied();
 
-        ErrorRegistryEntry entry = context.getErrorRegistry().browse().iterator().next();
-        assertNotNull(entry.endpointUri());
-        assertTrue(entry.endpointUri().contains("direct://fail"),
-                "Expected endpoint URI to contain direct://fail but was: " + entry.endpointUri());
+        BacklogErrorEventMessage entry = context.getErrorRegistry().browse().iterator().next();
+        assertNotNull(entry.getEndpointUri());
+        assertTrue(entry.getEndpointUri().contains("direct://fail"),
+                "Expected endpoint URI to contain direct://fail but was: " + entry.getEndpointUri());
     }
 
     @Test
@@ -208,11 +218,106 @@ public class ErrorRegistryTest extends ContextTestSupport {
         template.sendBody("direct:start", "Hello World");
         assertMockEndpointsSatisfied();
 
-        ErrorRegistryEntry entry = context.getErrorRegistry().browse().iterator().next();
-        assertNotNull(entry.messageHistory(), "Message history should be captured when enabled");
-        assertTrue(entry.messageHistory().length > 0, "Message history should have at least one entry");
-        // verify format includes route and node info
-        assertTrue(entry.messageHistory()[0].contains("foo"), "Message history should contain route id");
+        BacklogErrorEventMessage entry = context.getErrorRegistry().browse().iterator().next();
+        assertNotNull(entry.getMessageHistory(), "Message history should be captured when enabled");
+        assertTrue(entry.getMessageHistory().length > 0, "Message history should have at least one entry");
+        assertTrue(entry.getMessageHistory()[0].contains("foo"), "Message history should contain route id");
+        // the body as each step was reached (CAMEL-24844)
+        assertTrue(entry.getMessageHistory()[0].contains(" bodyType=java.lang.String"), entry.getMessageHistory()[0]);
+    }
+
+    @Test
+    public void testErrorRegistryCapturesExchangeData() throws Exception {
+        getMockEndpoint("mock:dead").expectedMessageCount(1);
+        template.sendBodyAndHeader("direct:start", "Hello World", "MyHeader", "MyValue");
+        assertMockEndpointsSatisfied();
+
+        BacklogErrorEventMessage entry = context.getErrorRegistry().browse().iterator().next();
+        assertNotNull(entry.getMessageAsJSon());
+        assertTrue(entry.getMessageAsJSon().contains("MyHeader"),
+                "Message JSON should contain header name");
+        assertTrue(entry.getMessageAsJSon().contains("MyValue"),
+                "Message JSON should contain header value");
+        assertTrue(entry.getMessageAsJSon().contains("Hello World"),
+                "Message JSON should contain body");
+    }
+
+    @Test
+    public void testErrorRegistryCapturesVariablesPropertiesHeaders() throws Exception {
+        getMockEndpoint("mock:dead").expectedMessageCount(1);
+        template.sendBody("direct:withData", "Test Body");
+        assertMockEndpointsSatisfied();
+
+        BacklogErrorEventMessage entry = context.getErrorRegistry().browse().iterator().next();
+
+        // verify in toJSon output
+        String json = entry.toJSon(2);
+        assertTrue(json.contains("myVar"), "JSON should contain variable name");
+        assertTrue(json.contains("varValue"), "JSON should contain variable value");
+        assertTrue(json.contains("myProp"), "JSON should contain property name");
+        assertTrue(json.contains("propValue"), "JSON should contain property value");
+        assertTrue(json.contains("myHeader"), "JSON should contain header name");
+        assertTrue(json.contains("headerValue"), "JSON should contain header value");
+
+        // verify in asJSon map
+        Map<String, Object> map = entry.asJSon();
+        assertNotNull(map.get("exchangeVariables"), "JSON map should contain exchangeVariables");
+        assertNotNull(map.get("exchangeProperties"), "JSON map should contain exchangeProperties");
+        assertNotNull(map.get("message"), "JSON map should contain message with headers");
+    }
+
+    @Test
+    public void testErrorRegistryToJson() throws Exception {
+        getMockEndpoint("mock:dead").expectedMessageCount(1);
+        template.sendBody("direct:start", "Hello World");
+        assertMockEndpointsSatisfied();
+
+        BacklogErrorEventMessage entry = context.getErrorRegistry().browse().iterator().next();
+        String json = entry.toJSon(2);
+        assertNotNull(json);
+        assertTrue(json.contains("\"exchangeId\""));
+        assertTrue(json.contains("\"routeId\""));
+        assertTrue(json.contains("\"handled\""));
+        assertTrue(json.contains("\"exception\""));
+        assertTrue(json.contains("\"message\""));
+        assertTrue(json.contains("\"nodeId\""), "JSON should contain nodeId");
+    }
+
+    @Test
+    public void testErrorRegistryAsJson() throws Exception {
+        getMockEndpoint("mock:dead").expectedMessageCount(1);
+        template.sendBody("direct:start", "Hello World");
+        assertMockEndpointsSatisfied();
+
+        BacklogErrorEventMessage entry = context.getErrorRegistry().browse().iterator().next();
+        Map<String, Object> json = entry.asJSon();
+        assertNotNull(json);
+        assertEquals("foo", json.get("routeId"));
+        assertEquals(true, json.get("handled"));
+        assertNotNull(json.get("exchangeId"));
+        assertNotNull(json.get("exception"));
+        assertNotNull(json.get("message"));
+        assertNotNull(json.get("nodeId"), "JSON map should contain nodeId");
+        assertEquals("direct://start", json.get("fromEndpointUri"));
+        assertTrue((long) json.get("routeUptime") >= 0);
+        assertTrue((long) json.get("elapsed") >= 0);
+    }
+
+    @Test
+    public void testMessageHistoryStepSaysTheBodyWasNull() throws Exception {
+        getMockEndpoint("mock:dead").expectedMessageCount(1);
+        context.getMessageSizeStrategy().setEnabled(true);
+
+        template.sendBody("direct:nullbody", "Hello World");
+        assertMockEndpointsSatisfied();
+
+        BacklogErrorEventMessage entry = context.getErrorRegistry().browse().iterator().next();
+        String[] steps = entry.getMessageHistory();
+        assertNotNull(steps);
+        // the throwException step was reached with a null body (set by the step before)
+        String last = steps[steps.length - 1];
+        assertTrue(last.contains("bodyType=null"), last);
+        assertTrue(!last.contains("bodySize="), "no body, no size: " + last);
     }
 
     @Override
@@ -228,6 +333,10 @@ public class ErrorRegistryTest extends ContextTestSupport {
                 from("direct:start2").routeId("bar")
                         .throwException(new IllegalArgumentException("Forced error 2"));
 
+                from("direct:nullbody").routeId("nullbody")
+                        .setBody().constant(null)
+                        .throwException(new IllegalArgumentException("Forced error on a null body"));
+
                 from("direct:unhandled").routeId("unhandled")
                         .errorHandler(noErrorHandler())
                         .throwException(new IllegalArgumentException("Unhandled error"));
@@ -237,6 +346,25 @@ public class ErrorRegistryTest extends ContextTestSupport {
 
                 from("direct:fail").routeId("failRoute")
                         .throwException(new IllegalArgumentException("Endpoint error"));
+
+                from("direct:withData").routeId("dataRoute")
+                        .setVariable("myVar", constant("varValue"))
+                        .setProperty("myProp", constant("propValue"))
+                        .setHeader("myHeader", constant("headerValue"))
+                        .throwException(new IllegalArgumentException("Data error"));
+
+                from("direct:handledWithSteps").routeId("handledWithSteps")
+                        .onException(IllegalArgumentException.class).handled(true).to("mock:handlerStep").end()
+                        .to("mock:before")
+                        .throwException(new IllegalArgumentException("Handled with steps")).id("throwOrigin");
+
+                from("direct:doCatchWithSteps").routeId("doCatchWithSteps")
+                        .doTry()
+                            .to("mock:before")
+                            .throwException(new IllegalArgumentException("Handled in doCatch")).id("throwInTry")
+                        .doCatch(IllegalArgumentException.class)
+                            .to("mock:catchStep")
+                        .end();
             }
         };
     }

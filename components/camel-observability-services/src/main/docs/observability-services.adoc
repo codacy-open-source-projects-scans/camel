@@ -28,7 +28,9 @@ Camel Observability services unifies all the different types of observability, a
 
 === Installation
 
-All you need to do is to add the `camel-observability-services` dependency:
+==== Camel Main / Camel JBang
+
+Add the `camel-observability-services` dependency:
 
 ```xml
 <!-- https://mvnrepository.com/artifact/org.apache.camel/camel-observability-services -->
@@ -52,6 +54,26 @@ There's no need to add any further configuration.
 Each component will be configured using each own default setting,
 except the endpoint which will be exposed in `/observe/<service>` by default.
 
+==== Spring Boot
+
+Add the `camel-observability-services-starter` dependency:
+
+```xml
+<dependency>
+    <groupId>org.apache.camel.springboot</groupId>
+    <artifactId>camel-observability-services-starter</artifactId>
+</dependency>
+```
+
+The starter provides the same observability features but adapted to the Spring Boot runtime:
+
+* camel-health (via Spring Boot Actuator health indicators)
+* camel-management
+* camel-micrometer-starter + micrometer-registry-prometheus (via Spring Boot Actuator instead of camel-micrometer-prometheus)
+* camel-opentelemetry2-starter
+
+In Spring Boot, the metrics scrape endpoint is provided by Spring Boot Actuator and the Prometheus registry, not by `camel-micrometer-prometheus` which is designed for Camel Main's embedded management server. The starter's default configuration remaps the Actuator endpoints to the same `/observe/` paths, so the exposed endpoints remain the same.
+
 === Endpoints
 
 The presence of this dependency will expose the following endpoints:
@@ -74,7 +96,7 @@ NOTE: the management port is available since version 4.12.0. In previous version
 
 If you need to customize each of the different components provided within this service, then, you can specify in the `application.properties` each of the configuration as it would be done normally when you provide the individual component.
 
-WARNING: The customization of the configuration for this component is not available for Spring Boot runtime due to a https://github.com/spring-projects/spring-boot/issues/24688[known limitation]. You can use this component in Spring Boot runtime with the default settings only. If you need to provide any customization, you'll need to configure each component separately.
+NOTE: The customization of the configuration is available for the Spring Boot runtime since version 4.22.0: the starter contributes its defaults as the lowest precedence property source, so any user-provided configuration overrides them following the standard Spring Boot precedence rules. In earlier versions the starter packaged its defaults in `classpath:/config/application.properties`, which took precedence over the application's own `application.properties` due to a https://github.com/spring-projects/spring-boot/issues/24688[known limitation], so the defaults could only be overridden via higher precedence sources such as environment variables or system properties.
 
 == Default logging metrics on shutdown
 

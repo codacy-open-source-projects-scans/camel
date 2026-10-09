@@ -16,13 +16,12 @@
  */
 package org.apache.camel.component.azure.storage.blob;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.Message;
-import org.apache.camel.StreamCache;
+import org.apache.camel.support.PayloadHelper;
 import org.apache.camel.util.ObjectHelper;
 
 public final class BlobUtils {
@@ -34,34 +33,15 @@ public final class BlobUtils {
         return ObjectHelper.isEmpty(exchange) ? null : exchange.getIn();
     }
 
+    /**
+     * Gets the length of the input stream, without reading it.
+     *
+     * @return     the length, or <tt>-1</tt> if the length cannot be determined without reading the stream
+     * @deprecated use {@link PayloadHelper#getLength(Object)}
+     */
+    @Deprecated(since = "4.23.0")
     public static long getInputStreamLength(InputStream is) throws IOException {
-        if (is instanceof StreamCache) {
-            long len = ((StreamCache) is).length();
-            if (len > 0) {
-                return len;
-            }
-        }
-
-        if (!is.markSupported()) {
-            // azure cannot use -1
-            return 0;
-        }
-        if (is instanceof ByteArrayInputStream) {
-            return is.available();
-        }
-        long size = 0;
-        try {
-            is.mark(1024);
-            int i = is.available();
-            while (i > 0) {
-                long skip = is.skip(i);
-                size += skip;
-                i = is.available();
-            }
-        } finally {
-            is.reset();
-        }
-        return size;
+        return PayloadHelper.getLength(is);
     }
 
     public static String getContainerName(final BlobConfiguration configuration, final Exchange exchange) {

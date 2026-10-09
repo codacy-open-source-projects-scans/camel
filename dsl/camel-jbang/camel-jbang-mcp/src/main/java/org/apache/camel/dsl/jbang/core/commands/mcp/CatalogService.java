@@ -26,7 +26,11 @@ import io.quarkiverse.mcp.server.ToolCallException;
 import org.apache.camel.catalog.CamelCatalog;
 import org.apache.camel.catalog.DefaultCamelCatalog;
 import org.apache.camel.dsl.jbang.core.common.CatalogLoader;
+import org.apache.camel.dsl.jbang.core.common.QuarkusHelper;
 import org.apache.camel.dsl.jbang.core.common.RuntimeType;
+import org.apache.camel.tooling.maven.MavenDownloader;
+import org.apache.camel.tooling.maven.MavenDownloaderImpl;
+import org.apache.camel.tooling.maven.MavenGav;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
@@ -47,6 +51,8 @@ public class CatalogService {
 
     private final CamelCatalog defaultCatalog;
     private final ConcurrentMap<CatalogKey, CamelCatalog> cache = new ConcurrentHashMap<>();
+    private volatile MavenDownloader downloader;
+    private final Object downloaderLock = new Object();
 
     public CatalogService() {
         this.defaultCatalog = new DefaultCamelCatalog(true);
@@ -73,8 +79,21 @@ public class CatalogService {
     public CamelCatalog loadCatalog(String runtime, String camelVersion, String platformBom) throws Exception {
         RuntimeType runtimeType = resolveRuntime(runtime);
 
-        boolean hasVersion = camelVersion != null && !camelVersion.isBlank();
+        // "main", "latest", "current" or "default" (what an assistant writes when it means the version in use) is
+        // the default catalog, not a version to download
+        boolean hasVersion = camelVersion != null && !camelVersion.isBlank() && !camelVersion.isEmpty()
+                && Character.isDigit(camelVersion.trim().charAt(0));
+        if (hasVersion && sameAsDefault(camelVersion)) {
+            // the version in use (4.23.0 for a 4.23.0-SNAPSHOT build): nothing to download
+            hasVersion = false;
+        }
         boolean hasBom = platformBom != null && !platformBom.isBlank();
+        if (hasBom && runtimeType == RuntimeType.main && !isCamelGav(platformBom)) {
+            // with the main runtime only a Camel artifact (org.apache.camel:camel-bom:<version>) selects a version: a
+            // Spring Boot or Quarkus platform BOM, or a value that is not a GAV ("none", "n/a"), does not apply to main
+            // and is ignored rather than failing the call; the answer reports the catalog version it used
+            hasBom = false;
+        }
 
         // No version-specific parameters and main runtime -> default catalog
         if (!hasVersion && !hasBom && runtimeType == RuntimeType.main) {
@@ -86,10 +105,26 @@ public class CatalogService {
         String normalizedBom = hasBom ? platformBom : null;
 
         // For non-main runtimes without explicit version, use the runtime's default version
+        MavenGav platformBomGav = null;
         if (!hasVersion && !hasBom) {
             if (runtimeType == RuntimeType.quarkus) {
-                normalizedVersion = RuntimeType.QUARKUS_VERSION;
+                platformBomGav
+                        = QuarkusHelper.findQuarkusPlatformBom(
+                                camelVersion,
+                                downloader()::resolveArtifact,
+                                true,
+                                RuntimeType.QUARKUS_EXTENSION_REGISTRY_BASE_URL,
+                                false).quarkusCamelBom();
+                normalizedVersion = platformBomGav.getVersion();
             }
+        }
+        if (platformBomGav == null && hasBom) {
+            String[] parts = platformBom.split(":");
+            if (parts.length != 3) {
+                throw new ToolCallException(
+                        "platformBom must be in GAV format (groupId:artifactId:version), got: " + platformBom, null);
+            }
+            platformBomGav = MavenGav.fromCoordinates(parts[0], parts[1], parts[2], "pom", null);
         }
 
         CatalogKey key = new CatalogKey(runtimeType.name(), normalizedVersion, normalizedBom);
@@ -99,9 +134,36 @@ public class CatalogService {
             return cached;
         }
 
-        CamelCatalog loaded = doLoadCatalog(runtimeType, camelVersion, platformBom);
+        CamelCatalog loaded;
+        try {
+            loaded = doLoadCatalog(runtimeType, camelVersion, platformBomGav);
+        } catch (Exception e) {
+            if (runtimeType == RuntimeType.main && hasVersion && !hasBom) {
+                // a version that cannot be downloaded (not released, no network): answer from the default catalog
+                // rather than fail the tool call
+                return defaultCatalog;
+            }
+            throw e;
+        }
         cache.putIfAbsent(key, loaded);
         return cache.get(key);
+    }
+
+    /** Whether the value is an org.apache.camel groupId:artifactId:version GAV. */
+    static boolean isCamelGav(String gav) {
+        String[] parts = gav.trim().split(":");
+        return parts.length == 3 && "org.apache.camel".equals(parts[0].trim()) && !parts[1].isBlank() && !parts[2].isBlank();
+    }
+
+    /** Whether the version is the default catalog's, with or without a -SNAPSHOT qualifier. */
+    boolean sameAsDefault(String camelVersion) {
+        String mine = defaultCatalog.getCatalogVersion();
+        if (mine == null) {
+            return false;
+        }
+        String v = camelVersion.trim();
+        return v.equals(mine) || v.equals(mine.replace("-SNAPSHOT", ""))
+                || mine.equals(v.replace("-SNAPSHOT", ""));
     }
 
     /**
@@ -124,28 +186,20 @@ public class CatalogService {
     }
 
     private CamelCatalog doLoadCatalog(
-            RuntimeType runtimeType, String camelVersion, String platformBom)
+            RuntimeType runtimeType, String camelVersion, MavenGav platformBom)
             throws Exception {
 
         String repos = catalogRepos.orElse(null);
 
         // If platformBom is provided (GAV format), parse and use it
-        if (platformBom != null && !platformBom.isBlank()) {
-            String[] parts = platformBom.split(":");
-            if (parts.length != 3) {
-                throw new ToolCallException(
-                        "platformBom must be in GAV format (groupId:artifactId:version), got: " + platformBom, null);
-            }
-            String groupId = parts[0];
-            String artifactId = parts[1];
-            String version = parts[2];
+        if (platformBom != null) {
 
             if (runtimeType == RuntimeType.quarkus) {
-                return CatalogLoader.loadQuarkusCatalog(repos, version, groupId, artifactId, true);
+                return CatalogLoader.loadQuarkusCatalog(platformBom, downloader()::resolveArtifact);
             } else if (runtimeType == RuntimeType.springBoot) {
-                return CatalogLoader.loadSpringBootCatalog(repos, version, groupId, true);
+                return CatalogLoader.loadSpringBootCatalog(repos, platformBom.getVersion(), platformBom.getGroupId(), true);
             } else {
-                return CatalogLoader.loadCatalog(repos, version, groupId, true);
+                return CatalogLoader.loadCatalog(repos, platformBom.getVersion(), platformBom.getGroupId(), true);
             }
         }
 
@@ -154,7 +208,7 @@ public class CatalogService {
             if (runtimeType == RuntimeType.springBoot) {
                 return CatalogLoader.loadSpringBootCatalog(repos, camelVersion, true);
             } else if (runtimeType == RuntimeType.quarkus) {
-                return CatalogLoader.loadQuarkusCatalog(repos, camelVersion, null, true);
+                return CatalogLoader.loadQuarkusCatalog(platformBom, downloader()::resolveArtifact);
             } else {
                 return CatalogLoader.loadCatalog(repos, camelVersion, true);
             }
@@ -164,10 +218,27 @@ public class CatalogService {
         if (runtimeType == RuntimeType.springBoot) {
             return CatalogLoader.loadSpringBootCatalog(repos, null, true);
         } else if (runtimeType == RuntimeType.quarkus) {
-            return CatalogLoader.loadQuarkusCatalog(repos, RuntimeType.QUARKUS_VERSION, null, true);
+            return CatalogLoader.loadQuarkusCatalog(platformBom, downloader()::resolveArtifact);
         }
 
         return defaultCatalog;
+    }
+
+    MavenDownloader downloader() {
+        MavenDownloader d;
+        if ((d = downloader) == null) {
+            synchronized (downloaderLock) {
+                if ((d = downloader) == null) {
+                    d = new MavenDownloaderImpl();
+                    if (catalogRepos.isPresent()) {
+                        d.setRepos(catalogRepos.get());
+                    }
+                    d.build();
+                    downloader = d;
+                }
+            }
+        }
+        return d;
     }
 
     private record CatalogKey(String runtime, String camelVersion, String platformBom) {

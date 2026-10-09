@@ -1,0 +1,530 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.camel.component.ai.tool;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.camel.Exchange;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.component.mock.MockEndpoint;
+import org.apache.camel.support.DefaultConsumer;
+import org.apache.camel.support.DefaultExchange;
+import org.apache.camel.test.junit6.CamelTestSupport;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+public class AiToolExecutorTest extends CamelTestSupport {
+
+    @Override
+    protected RouteBuilder createRouteBuilder() {
+        return new RouteBuilder() {
+            public void configure() {
+                from("ai-tool:greetUser"
+                     + "?tags=test"
+                     + "&description=Greet a user by name"
+                     + "&parameter.name=string"
+                     + "&parameter.name.description=The user name"
+                     + "&parameter.name.required=true"
+                     + "&parameter.age=integer"
+                     + "&parameter.age.description=The user age")
+                        .setBody(simple("Hello ${header.name}, age ${header.age}"));
+
+                from("ai-tool:noParams"
+                     + "?tags=test"
+                     + "&description=A tool with no parameters")
+                        .setBody(constant("no-param result"));
+
+                // declares the Camel-prefixed names so they survive the undeclared-argument filter
+                // and actually reach the Camel-prefix rejection this tool is used to test
+                from("ai-tool:prefixTool"
+                     + "?tags=test"
+                     + "&description=A tool declaring Camel-prefixed parameters"
+                     + "&parameter.CamelOverrideEndpoint=string"
+                     + "&parameter.camelFoo=string"
+                     + "&parameter.safeParam=string")
+                        .setBody(constant("prefix result"));
+
+                from("ai-tool:nullBodyTool"
+                     + "?tags=test"
+                     + "&description=A tool that returns null body")
+                        .setBody(constant((Object) null));
+
+                from("ai-tool:failingTool"
+                     + "?tags=test"
+                     + "&description=A tool that always fails")
+                        .throwException(new RuntimeException("Simulated failure"));
+
+                from("ai-tool:dlqTool"
+                     + "?tags=test"
+                     + "&description=A tool whose error handler restores the original message")
+                        .errorHandler(deadLetterChannel("mock:dlq").useOriginalMessage())
+                        .throwException(new RuntimeException("boom"));
+
+                from("ai-tool:exchangeExceptionTool"
+                     + "?tags=test"
+                     + "&description=A tool that sets exception on exchange")
+                        .process(exchange -> exchange.setException(
+                                new RuntimeException("Exchange-level failure")));
+
+                from("ai-tool:createOrder"
+                     + "?tags=test"
+                     + "&description=Create an order"
+                     + "&argSchema=classpath:arg-schemas/create-order.json")
+                        .process(exchange -> {
+                            Map<?, ?> customer = exchange.getMessage().getHeader("customer", Map.class);
+                            List<?> items = exchange.getMessage().getHeader("items", List.class);
+                            exchange.getMessage().setBody("order:" + customer.get("id") + ":" + items.size());
+                        });
+
+                from("ai-tool:getWeather"
+                     + "?tags=test"
+                     + "&description=Get weather"
+                     + "&outputSchema=classpath:output-schemas/weather-result.json")
+                        .setBody(constant("{\"temperature\":21.5,\"unit\":\"celsius\"}"));
+
+                from("ai-tool:getWeatherMap"
+                     + "?tags=test"
+                     + "&description=Get weather as map"
+                     + "&outputParameter.temperature=number"
+                     + "&outputParameter.unit=string")
+                        .process(exchange -> exchange.getMessage().setBody(
+                                Map.of("temperature", 18, "unit", "celsius")));
+
+                from("ai-tool:badStructuredOutput"
+                     + "?tags=test"
+                     + "&description=Returns invalid JSON"
+                     + "&outputSchema=classpath:output-schemas/weather-result.json")
+                        .setBody(constant("not-json"));
+
+                from("ai-tool:nullStructuredOutput"
+                     + "?tags=test"
+                     + "&description=Returns null body with output schema"
+                     + "&outputSchema=classpath:output-schemas/weather-result.json")
+                        .setBody(constant((Object) null));
+            }
+        };
+    }
+
+    @Test
+    public void testExecuteWithDeclaredArguments() {
+        AiToolSpec spec = findSpec("greetUser");
+        Exchange exchange = new DefaultExchange(context);
+
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("name", "Alice");
+        arguments.put("age", 30);
+
+        AiToolResult result = AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        assertThat(((AiToolResult.Success) result).value())
+                .isEqualTo("Hello Alice, age 30");
+    }
+
+    @Test
+    public void testExecuteIgnoresUndeclaredArguments() {
+        AiToolSpec spec = findSpec("greetUser");
+        Exchange exchange = new DefaultExchange(context);
+
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("name", "Bob");
+        arguments.put("age", 25);
+        arguments.put("extraParam", "should-be-ignored");
+
+        AiToolResult result = AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        assertThat(((AiToolResult.Success) result).value())
+                .as("Undeclared arguments should not affect the result")
+                .isEqualTo("Hello Bob, age 25");
+        assertThat(exchange.getMessage().getHeader("extraParam"))
+                .as("Undeclared argument must not be set as header")
+                .isNull();
+    }
+
+    @Test
+    public void testExecuteWithNullArguments() {
+        AiToolSpec spec = findSpec("noParams");
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, null, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        assertThat(((AiToolResult.Success) result).value())
+                .isEqualTo("no-param result");
+    }
+
+    @Test
+    public void testExecuteIgnoresUndeclaredArgumentsForToolWithoutParameters() {
+        AiToolSpec spec = findSpec("noParams");
+        Exchange exchange = new DefaultExchange(context);
+
+        // a tool declaring no parameters accepts none, so every supplied argument is undeclared
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("injected", "should-be-ignored");
+        arguments.put("anotherOne", 42);
+
+        AiToolResult result = AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        assertThat(((AiToolResult.Success) result).value())
+                .isEqualTo("no-param result");
+        assertThat(exchange.getMessage().getHeader("injected"))
+                .as("Undeclared argument must not be set as header on a tool with no parameters")
+                .isNull();
+        assertThat(exchange.getMessage().getHeader("anotherOne"))
+                .as("Undeclared argument must not be set as header on a tool with no parameters")
+                .isNull();
+    }
+
+    @Test
+    public void testExecuteWithEmptyArguments() {
+        AiToolSpec spec = findSpec("noParams");
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, Map.of(), exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        assertThat(((AiToolResult.Success) result).value())
+                .isEqualTo("no-param result");
+    }
+
+    @Test
+    public void testExecuteReturnsExecutionErrorOnRouteFailure() {
+        AiToolSpec spec = findSpec("failingTool");
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, null, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.ExecutionError.class);
+        AiToolResult.ExecutionError error = (AiToolResult.ExecutionError) result;
+        assertThat(error.message()).contains("failingTool").contains("Simulated failure");
+        assertThat(error.cause()).isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    public void testExecuteReturnsExecutionErrorOnExchangeException() {
+        AiToolSpec spec = findSpec("exchangeExceptionTool");
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, null, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.ExecutionError.class);
+        AiToolResult.ExecutionError error = (AiToolResult.ExecutionError) result;
+        assertThat(error.message()).contains("exchangeExceptionTool").contains("Exchange-level failure");
+        assertThat(error.cause()).isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    public void testExecuteReturnsArgumentErrorForMissingRequired() {
+        AiToolSpec spec = findSpec("greetUser");
+        Exchange exchange = new DefaultExchange(context);
+
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("age", 30);
+
+        AiToolResult result = AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.ArgumentError.class);
+        AiToolResult.ArgumentError error = (AiToolResult.ArgumentError) result;
+        assertThat(error.message()).contains("Missing required argument 'name'");
+        assertThat(error.cause()).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    public void testExecuteReturnsExecutionErrorForNullConsumer() {
+        AiToolSpec spec = new AiToolSpec("ghostTool", "A tool with no consumer", Map.of(), null, Map.of(), null, null, null);
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, null, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.ExecutionError.class);
+        AiToolResult.ExecutionError error = (AiToolResult.ExecutionError) result;
+        assertThat(error.message()).contains("No consumer available for tool 'ghostTool'");
+        assertThat(error.cause()).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    public void testExecuteReturnsExecutionErrorForNullProcessor() {
+        AiToolEndpoint endpoint = context.getEndpoint(
+                "ai-tool:nullProc?tags=test&description=test", AiToolEndpoint.class);
+        DefaultConsumer consumerWithNullProcessor = new DefaultConsumer(endpoint, null);
+
+        AiToolSpec spec = new AiToolSpec(
+                "nullProc", "test", Map.of(), null, Map.of(), null, null, consumerWithNullProcessor);
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, null, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.ExecutionError.class);
+        AiToolResult.ExecutionError error = (AiToolResult.ExecutionError) result;
+        assertThat(error.message()).contains("No route processor available for tool 'nullProc'");
+        assertThat(error.cause()).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    public void testExecuteReturnsNoResultForNullBody() {
+        AiToolSpec spec = findSpec("nullBodyTool");
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, null, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        assertThat(((AiToolResult.Success) result).value())
+                .as("Null body should produce 'No result' sentinel")
+                .isEqualTo("No result");
+    }
+
+    @Test
+    public void testArgumentsAccessibleViaHeaders() {
+        AiToolSpec spec = findSpec("greetUser");
+        Exchange exchange = new DefaultExchange(context);
+
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("name", "Diana");
+        arguments.put("age", 28);
+
+        AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(exchange.getMessage().getHeader("name", String.class))
+                .as("Argument should be set as exchange header")
+                .isEqualTo("Diana");
+        assertThat(exchange.getMessage().getHeader("age", Integer.class))
+                .as("Integer argument should be set as exchange header")
+                .isEqualTo(28);
+    }
+
+    @Test
+    public void testCamelPrefixedArgumentsRejectedFromHeaders() {
+        // prefixTool declares these names, so they reach the Camel-prefix check rather than being
+        // dropped earlier as undeclared -- otherwise this test would pass even without that check
+        AiToolSpec spec = findSpec("prefixTool");
+        Exchange exchange = new DefaultExchange(context);
+
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("CamelOverrideEndpoint", "http://evil.com");
+        arguments.put("camelFoo", "bar");
+        arguments.put("org.apache.camel.hack", "value");
+        arguments.put("safeParam", "ok");
+
+        AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(exchange.getMessage().getHeader("CamelOverrideEndpoint"))
+                .as("Camel-prefixed argument must not be set as header")
+                .isNull();
+        assertThat(exchange.getMessage().getHeader("camelFoo"))
+                .as("camel-prefixed argument must not be set as header")
+                .isNull();
+        // a dotted name cannot be declared through the endpoint URI (the key is split on the first
+        // dot), so this one is dropped as an undeclared argument rather than by the prefix check
+        assertThat(exchange.getMessage().getHeader("org.apache.camel.hack"))
+                .as("org.apache.camel. prefixed argument must not be set as header")
+                .isNull();
+        assertThat(exchange.getMessage().getHeader("safeParam", String.class))
+                .as("Declared non-Camel argument should be set as header")
+                .isEqualTo("ok");
+    }
+
+    @Test
+    void testExecuteWithRawArgSchemaNestedArguments() {
+        AiToolSpec spec = findSpec("createOrder");
+        Exchange exchange = new DefaultExchange(context);
+
+        Map<String, Object> customer = Map.of("id", "cust-1", "email", "a@example.com");
+        List<Map<String, Object>> items = List.of(Map.of("sku", "ABC", "qty", 2));
+
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("customer", customer);
+        arguments.put("items", items);
+
+        AiToolResult result = AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        assertThat(((AiToolResult.Success) result).value()).isEqualTo("order:cust-1:1");
+        assertThat(exchange.getMessage().getHeader("customer", Map.class)).isEqualTo(customer);
+        assertThat(exchange.getMessage().getHeader("items", List.class)).isEqualTo(items);
+    }
+
+    @Test
+    void testExecuteIgnoresUndeclaredArgumentsForRawArgSchema() {
+        AiToolSpec spec = findSpec("createOrder");
+        Exchange exchange = new DefaultExchange(context);
+
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("customer", Map.of("id", "cust-1"));
+        arguments.put("items", List.of(Map.of("sku", "ABC", "qty", 1)));
+        arguments.put("promoCode", "SAVE10");
+
+        AiToolResult result = AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        assertThat(exchange.getMessage().getHeader("promoCode")).isNull();
+    }
+
+    @Test
+    void testExecuteReturnsArgumentErrorForMissingRequiredRawSchemaArgument() {
+        AiToolSpec spec = findSpec("createOrder");
+        Exchange exchange = new DefaultExchange(context);
+
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("customer", Map.of("id", "cust-1"));
+
+        AiToolResult result = AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.ArgumentError.class);
+        assertThat(((AiToolResult.ArgumentError) result).message()).contains("Missing required argument 'items'");
+    }
+
+    @Test
+    void testExecuteReturnsArgumentErrorWhenRequiredNameIsUndeclared() {
+        String schema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "city": { "type": "string" }
+                  },
+                  "required": ["country"]
+                }
+                """;
+        AiToolSpec spec = new AiToolSpec(
+                "badRequired", "test", Map.of(), schema, Map.of(), null, null,
+                findSpec("greetUser").getConsumer());
+        Exchange exchange = new DefaultExchange(context);
+
+        Map<String, Object> arguments = Map.of("country", "Paris");
+
+        AiToolResult result = AiToolExecutor.execute(spec, arguments, exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.ArgumentError.class);
+        assertThat(((AiToolResult.ArgumentError) result).message()).contains("Missing required argument 'country'");
+    }
+
+    @Test
+    public void testExecuteReturnsStructuredContentFromJsonString() {
+        AiToolSpec spec = findSpec("getWeather");
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, Map.of(), exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        AiToolResult.Success success = (AiToolResult.Success) result;
+        assertThat(success.value()).contains("\"temperature\":21.5");
+        assertThat(success.structuredContent()).isNotNull();
+    }
+
+    @Test
+    public void testExecuteReturnsStructuredContentFromMapBody() {
+        AiToolSpec spec = findSpec("getWeatherMap");
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, Map.of(), exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        AiToolResult.Success success = (AiToolResult.Success) result;
+        assertThat(success.structuredContent()).isInstanceOf(Map.class);
+        assertThat(success.value()).contains("\"temperature\":18");
+    }
+
+    @Test
+    public void testExecuteReturnsExecutionErrorForInvalidStructuredOutput() {
+        AiToolSpec spec = findSpec("badStructuredOutput");
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, Map.of(), exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.ExecutionError.class);
+        assertThat(((AiToolResult.ExecutionError) result).message()).contains("valid JSON");
+    }
+
+    @Test
+    public void testExecuteReturnsExecutionErrorForNullBodyWithOutputSchema() {
+        AiToolSpec spec = findSpec("nullStructuredOutput");
+        Exchange exchange = new DefaultExchange(context);
+
+        AiToolResult result = AiToolExecutor.execute(spec, Map.of(), exchange);
+
+        assertThat(result).isInstanceOf(AiToolResult.ExecutionError.class);
+        assertThat(((AiToolResult.ExecutionError) result).message()).contains("must not be null");
+    }
+
+    @Test
+    void createToolExchangeCopiesCallerContextButGivesACleanMessage() {
+        // CAMEL-24832: the tool exchange carries the caller's context - an authenticated subject kept as an exchange
+        // property, and variables - so a tool route can be guarded on it; but the message is clean, so the route gets
+        // only its own arguments, not the caller's body or inbound headers, and changes do not leak back.
+        Exchange calling = new DefaultExchange(context);
+        calling.setProperty("CamelAuthenticatedSubject", "alice");
+        calling.setVariable("tenant", "acme");
+        calling.getIn().setHeader("origHeader", "h1");
+        calling.getIn().setBody("original-body");
+
+        Exchange toolExchange = AiToolExecutor.createToolExchange(calling);
+
+        // the caller's context reaches the tool route
+        assertThat(toolExchange.getProperty("CamelAuthenticatedSubject")).isEqualTo("alice");
+        assertThat(toolExchange.getVariable("tenant")).isEqualTo("acme");
+
+        // the tool exchange has its own id, not the caller's
+        assertThat(toolExchange.getExchangeId()).isNotEqualTo(calling.getExchangeId());
+
+        // but the message is clean: no caller body, no caller inbound headers
+        assertThat(toolExchange.getMessage().getBody()).isNull();
+        assertThat(toolExchange.getMessage().getHeader("origHeader")).isNull();
+
+        // and changes on the tool exchange do not leak back into the caller
+        toolExchange.setProperty("CamelAuthenticatedSubject", "mallory");
+        toolExchange.getMessage().setBody("tool-body");
+        assertThat(calling.getProperty("CamelAuthenticatedSubject")).isEqualTo("alice");
+        assertThat(calling.getIn().getBody()).isEqualTo("original-body");
+    }
+
+    @Test
+    void createToolExchangeGivesTheToolRouteItsOwnUnitOfWork() throws Exception {
+        // CAMEL-24832: the tool exchange runs in its OWN unit of work, not the caller's. Otherwise an error handler's
+        // useOriginalMessage() would restore the caller's body (the user prompt) into the tool result, undoing the
+        // clean message, and the tool route's own completion/original-message handling would not apply.
+        AiToolSpec spec = findSpec("dlqTool");
+
+        Exchange calling = new DefaultExchange(context);
+        calling.getIn().setBody("caller-prompt");
+        calling.getIn().setHeader("origHeader", "h1");
+
+        MockEndpoint dlq = getMockEndpoint("mock:dlq");
+        dlq.expectedMessageCount(1);
+
+        AiToolResult result = AiToolExecutor.execute(spec, Map.of(), AiToolExecutor.createToolExchange(calling));
+
+        dlq.assertIsSatisfied();
+        // the dead-letter message is the tool exchange's own (clean) original, NOT the caller's prompt or headers
+        Exchange dead = dlq.getExchanges().get(0);
+        assertThat(dead.getMessage().getBody()).isNull();
+        assertThat(dead.getMessage().getHeader("origHeader")).isNull();
+        // the error handler handled the exception, so the tool returns its own clean body, not the caller's prompt
+        assertThat(result).isInstanceOf(AiToolResult.Success.class);
+        assertThat(((AiToolResult.Success) result).value()).isEqualTo("No result");
+    }
+
+    private AiToolSpec findSpec(String toolName) {
+        return AiToolRegistry.getOrCreate(context).getToolsByTag("test").stream()
+                .filter(s -> toolName.equals(s.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Tool not found: " + toolName));
+    }
+}

@@ -16,22 +16,29 @@
  */
 package org.apache.camel.language.js;
 
-import org.apache.camel.Exchange;
-import org.apache.camel.support.ExpressionSupport;
-import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.Source;
-import org.graalvm.polyglot.Value;
+import java.util.Map;
 
-import static org.graalvm.polyglot.Source.newBuilder;
+import org.apache.camel.Exchange;
+import org.apache.camel.Message;
+import org.apache.camel.support.ExpressionSupport;
+import org.apache.camel.support.LanguageHelper;
+import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.Value;
 
 public class JavaScriptExpression extends ExpressionSupport {
 
     private final String expressionString;
     private final Class<?> type;
+    private volatile JavaScriptLanguage language;
 
     public JavaScriptExpression(String expressionString, Class<?> type) {
+        this(expressionString, type, null);
+    }
+
+    JavaScriptExpression(String expressionString, Class<?> type, JavaScriptLanguage language) {
         this.expressionString = expressionString;
         this.type = type;
+        this.language = language;
     }
 
     public static JavaScriptExpression js(String expression) {
@@ -46,26 +53,53 @@ public class JavaScriptExpression extends ExpressionSupport {
     @SuppressWarnings("unchecked")
     @Override
     public <T> T evaluate(Exchange exchange, Class<T> type) {
-        try (Context cx = JavaScriptHelper.newContext()) {
+        JavaScriptLanguage lang = language(exchange);
+        try (Context cx = lang.newContext()) {
             Value b = cx.getBindings("js");
 
+            Message message = exchange.getMessage();
+            Map<String, Object> headers = message.getHeaders();
+            Map<String, Object> properties = exchange.getAllProperties();
+            Map<String, Object> variables = exchange.getVariables();
+            // the names ExchangeHelper.populateVariableMap gives Groovy, except in (a reserved word) and the deprecated
+            // out and response
             b.putMember("exchange", exchange);
-            b.putMember("context", exchange.getContext());
+            b.putMember("camelContext", exchange.getContext());
             b.putMember("exchangeId", exchange.getExchangeId());
-            b.putMember("message", exchange.getMessage());
-            b.putMember("headers", exchange.getMessage().getHeaders());
-            b.putMember("properties", exchange.getAllProperties());
-            b.putMember("body", exchange.getMessage().getBody());
+            b.putMember("message", message);
+            b.putMember("request", message);
+            b.putMember("body", message.getBody());
+            b.putMember("header", headers);
+            b.putMember("headers", headers);
+            b.putMember("exchangeProperty", properties);
+            b.putMember("exchangeProperties", properties);
+            b.putMember("variable", variables);
+            b.putMember("variables", variables);
+            b.putMember("exception", LanguageHelper.exception(exchange));
+            // deprecated names of camelContext and exchangeProperties
+            b.putMember("context", exchange.getContext());
+            b.putMember("properties", properties);
 
-            Source source = newBuilder("js", expressionString, "Unnamed")
-                    .mimeType("application/javascript+module").buildLiteral();
-            Value o = cx.eval(source);
-            Object answer = o != null ? o.as(Object.class) : null;
+            Value o = cx.eval(lang.source(expressionString));
+            Object answer = JavaScriptLanguage.materialize(o);
             if (type == Object.class) {
                 return (T) answer;
             }
             return exchange.getContext().getTypeConverter().convertTo(type, exchange, answer);
         }
+    }
+
+    /**
+     * The language owning the shared engine. Expressions created through the language already have it; expressions
+     * created directly (for example via {@link #js(String)}) resolve it from the exchange on first use.
+     */
+    private JavaScriptLanguage language(Exchange exchange) {
+        JavaScriptLanguage lang = language;
+        if (lang == null) {
+            lang = (JavaScriptLanguage) exchange.getContext().resolveLanguage("js");
+            language = lang;
+        }
+        return lang;
     }
 
     public Class<?> getType() {

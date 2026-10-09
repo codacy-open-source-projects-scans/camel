@@ -29,9 +29,17 @@ public class MockExpectation {
     private final String expectedInput;
     private final ToolExecutionSequence toolSequence;
     private String expectedResponse;
+    private String reasoningContent;
     private String toolContentResponse;
+    private String responsesOutput;
     private BiFunction<HttpExchange, String, String> customResponseFunction;
     private Consumer<String> requestAssertion;
+    private Integer usagePromptTokens;
+    private Integer usageCompletionTokens;
+    private int errorStatusCode;
+    private String errorType;
+    private String errorMessage;
+    private Long retryAfterSeconds;
 
     public MockExpectation(String expectedInput) {
         this.expectedInput = expectedInput;
@@ -45,6 +53,10 @@ public class MockExpectation {
 
     public String getExpectedResponse() {
         return expectedResponse;
+    }
+
+    public String getReasoningContent() {
+        return reasoningContent;
     }
 
     public String getToolContentResponse() {
@@ -76,8 +88,63 @@ public class MockExpectation {
         this.requestAssertion = requestAssertion;
     }
 
+    public void setReasoningContent(String reasoningContent) {
+        this.reasoningContent = reasoningContent;
+    }
+
     public void setToolContentResponse(String toolContentResponse) {
         this.toolContentResponse = toolContentResponse;
+    }
+
+    public void setUsage(int promptTokens, int completionTokens) {
+        this.usagePromptTokens = promptTokens;
+        this.usageCompletionTokens = completionTokens;
+    }
+
+    public Integer getUsagePromptTokens() {
+        return usagePromptTokens;
+    }
+
+    public Integer getUsageCompletionTokens() {
+        return usageCompletionTokens;
+    }
+
+    public String getResponsesOutput() {
+        return responsesOutput;
+    }
+
+    public void setResponsesOutput(String responsesOutput) {
+        this.responsesOutput = responsesOutput;
+    }
+
+    public void setError(int statusCode, String type, String message) {
+        this.errorStatusCode = statusCode;
+        this.errorType = type;
+        this.errorMessage = message;
+    }
+
+    public boolean hasError() {
+        return errorStatusCode > 0;
+    }
+
+    public int getErrorStatusCode() {
+        return errorStatusCode;
+    }
+
+    public String getErrorType() {
+        return errorType;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public Long getRetryAfterSeconds() {
+        return retryAfterSeconds;
+    }
+
+    public void setRetryAfterSeconds(long retryAfterSeconds) {
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 
     // Tool sequence delegation methods

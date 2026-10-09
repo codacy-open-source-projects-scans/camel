@@ -24,7 +24,11 @@ import org.apache.camel.tooling.model.DataFormatModel;
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "dataformat",
-                     description = "List data formats from the Camel Catalog", sortOptions = false, showDefaultValues = true)
+                     description = "List data formats from the Camel Catalog", sortOptions = false, showDefaultValues = true,
+                     footer = {
+                             "%nExamples:",
+                             "  camel catalog dataformat",
+                             "  camel catalog dataformat --filter=json" })
 public class CatalogDataFormat extends CatalogBaseCommand {
 
     public CatalogDataFormat(CamelJBangMain main) {
@@ -51,6 +55,11 @@ public class CatalogDataFormat extends CatalogBaseCommand {
             }
         }
         return rows;
+    }
+
+    @Override
+    List<String> suggestNames(String term) {
+        return catalog.suggestDataFormatNames(term, 5);
     }
 
 }

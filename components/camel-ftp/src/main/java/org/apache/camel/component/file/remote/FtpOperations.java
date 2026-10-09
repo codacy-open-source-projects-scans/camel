@@ -25,6 +25,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.time.Duration;
 import java.util.Iterator;
+import java.util.concurrent.ScheduledExecutorService;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
@@ -32,6 +33,7 @@ import org.apache.camel.component.file.FileComponent;
 import org.apache.camel.component.file.GenericFile;
 import org.apache.camel.component.file.GenericFileEndpoint;
 import org.apache.camel.component.file.GenericFileExist;
+import org.apache.camel.component.file.GenericFileHelper;
 import org.apache.camel.component.file.GenericFileOperationFailedException;
 import org.apache.camel.support.ObjectHelper;
 import org.apache.camel.support.task.BlockingTask;
@@ -130,33 +132,43 @@ public class FtpOperations implements RemoteFileOperations<FTPFile> {
                     client.getConnectTimeout());
         }
 
-        BlockingTask task = Tasks.foregroundTask()
-                .withBudget(Budgets.iterationBudget()
-                        .withMaxIterations(Budgets.atLeastOnce(endpoint.getMaximumReconnectAttempts()))
-                        .withInterval(Duration.ofMillis(endpoint.getReconnectDelay()))
-                        .build())
-                .build();
+        ScheduledExecutorService ses = endpoint.getCamelContext().getExecutorServiceManager()
+                .newSingleThreadScheduledExecutor(this, "FtpReconnect");
+        try {
+            BlockingTask task = Tasks.backgroundTask()
+                    .withBudget(Budgets.iterationTimeBudget()
+                            .withMaxIterations(Budgets.atLeastOnce(endpoint.getMaximumReconnectAttempts()))
+                            .withUnlimitedDuration()
+                            .withInterval(Duration.ofMillis(endpoint.getReconnectDelay()))
+                            .build())
+                    .withScheduledExecutor(ses)
+                    .withName("FtpReconnect")
+                    .build();
 
-        TaskPayload payload = new TaskPayload(configuration);
+            TaskPayload payload = new TaskPayload(configuration);
 
-        if (!task.run(endpoint.getCamelContext(), this::tryConnect, payload)) {
-            if (exchange != null) {
-                exchange.getIn().setHeader(FtpConstants.FTP_REPLY_CODE, client.getReplyCode());
-                exchange.getIn().setHeader(FtpConstants.FTP_REPLY_STRING, client.getReplyString());
-            }
+            if (!task.run(endpoint.getCamelContext(), this::tryConnect, payload)) {
+                if (exchange != null) {
+                    exchange.getIn().setHeader(FtpConstants.FTP_REPLY_CODE, client.getReplyCode());
+                    exchange.getIn().setHeader(FtpConstants.FTP_REPLY_STRING, client.getReplyString());
+                }
 
-            if (payload.exception != null) {
-                if (payload.exception instanceof GenericFileOperationFailedException genericFileOperationFailedException) {
-                    throw genericFileOperationFailedException;
+                if (payload.exception != null) {
+                    if (payload.exception instanceof GenericFileOperationFailedException genericFileOperationFailedException) {
+                        throw genericFileOperationFailedException;
+                    } else {
+                        throw new GenericFileOperationFailedException(
+                                client.getReplyCode(), client.getReplyString(), payload.exception.getMessage(),
+                                payload.exception);
+                    }
                 } else {
                     throw new GenericFileOperationFailedException(
-                            client.getReplyCode(), client.getReplyString(), payload.exception.getMessage(), payload.exception);
+                            client.getReplyCode(), client.getReplyString(),
+                            "Server refused connection");
                 }
-            } else {
-                throw new GenericFileOperationFailedException(
-                        client.getReplyCode(), client.getReplyString(),
-                        "Server refused connection");
             }
+        } finally {
+            endpoint.getCamelContext().getExecutorServiceManager().shutdown(ses);
         }
 
         // we are now connected
@@ -441,7 +453,11 @@ public class FtpOperations implements RemoteFileOperations<FTPFile> {
         if (is != null) {
             try {
                 IOHelper.close(is);
-                client.completePendingCommand();
+                boolean ok = client.completePendingCommand();
+                if (!ok) {
+                    throw new GenericFileOperationFailedException(
+                            client.getReplyCode(), client.getReplyString());
+                }
             } catch (IOException e) {
                 throw new GenericFileOperationFailedException(e.getMessage(), e);
             }
@@ -481,9 +497,11 @@ public class FtpOperations implements RemoteFileOperations<FTPFile> {
             log.trace("Client retrieveFile: {}", remoteName);
             if (endpoint.getConfiguration().isStreamDownload()) {
                 InputStream is = client.retrieveFileStream(remoteName);
-                target.setBody(is);
-                exchange.getIn().setHeader(FtpConstants.REMOTE_FILE_INPUT_STREAM, is);
-                result = true;
+                if (is != null) {
+                    target.setBody(is);
+                    exchange.getIn().setHeader(FtpConstants.REMOTE_FILE_INPUT_STREAM, is);
+                }
+                result = is != null;
             } else {
                 // read the entire file into memory in the byte array
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -525,8 +543,15 @@ public class FtpOperations implements RemoteFileOperations<FTPFile> {
                     "Exchange should have the " + FileComponent.FILE_EXCHANGE_FILE + " set");
             String relativeName = target.getRelativeFilePath();
 
+            File localWorkDir = local;
             temp = new File(local, relativeName + ".inprogress");
             local = new File(local, relativeName);
+
+            // ensure the local work file stays within the local work directory (CAMEL-23765)
+            if (endpoint.isJailStartingDirectory()) {
+                GenericFileHelper.jailToLocalWorkDirectory(temp, localWorkDir);
+                GenericFileHelper.jailToLocalWorkDirectory(local, localWorkDir);
+            }
 
             // create directory to local work file
             boolean result = local.mkdirs();
@@ -758,7 +783,7 @@ public class FtpOperations implements RemoteFileOperations<FTPFile> {
                 if (charset != null) {
                     // charset configured so we must convert to the desired
                     // charset so we can write with encoding
-                    is = new ByteArrayInputStream(exchange.getIn().getMandatoryBody(String.class).getBytes(charset));
+                    is = GenericFileHelper.toInputStream(exchange, charset);
                     log.trace("Using InputStream {} with charset {}.", is, charset);
                 } else {
                     is = exchange.getIn().getMandatoryBody(InputStream.class);

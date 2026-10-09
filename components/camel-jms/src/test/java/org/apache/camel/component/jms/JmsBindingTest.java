@@ -25,11 +25,14 @@ import java.util.Date;
 import java.util.HashMap;
 
 import jakarta.jms.JMSException;
+import jakarta.jms.Message;
+import jakarta.jms.ObjectMessage;
 
 import com.example.external.NotAllowedPayload;
 import org.apache.activemq.artemis.jms.client.ActiveMQTextMessage;
 import org.apache.camel.Exchange;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.support.DefaultExchangeHolder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,8 +45,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -160,5 +166,39 @@ public class JmsBindingTest {
                 .thenReturn("com.example.external.*;java.**;javax.**;org.apache.camel.**;!*");
         JmsBinding bindingWithCustomFilter = new JmsBinding(mockJmsEndpoint);
         assertDoesNotThrow(() -> bindingWithCustomFilter.checkDeserializedClass(new NotAllowedPayload()));
+    }
+
+    @Test
+    public void testObjectMessageDisabledByDefault() {
+        // default mockJmsConfiguration.isObjectMessageEnabled() returns false
+        ObjectMessage message = mock(ObjectMessage.class);
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> jmsBindingUnderTest.extractBodyFromJms(null, message));
+        assertNotNull(ex.getMessage());
+        assertEquals(true, ex.getMessage().contains("objectMessageEnabled=true"));
+    }
+
+    @Test
+    public void testObjectMessageReceivingAllowedWhenEnabled() throws JMSException {
+        when(mockJmsConfiguration.isObjectMessageEnabled()).thenReturn(true);
+        ObjectMessage message = mock(ObjectMessage.class);
+        when(message.getObject()).thenReturn(new HashMap<>());
+        // when enabled, extraction proceeds (returns the deserialized payload)
+        assertDoesNotThrow(() -> jmsBindingUnderTest.extractBodyFromJms(null, message));
+    }
+
+    @Test
+    public void testStandardJmsHeaderInAnyCase() throws Exception {
+        Message message = mock(Message.class);
+        try (DefaultCamelContext camelContext = new DefaultCamelContext()) {
+            Exchange exchange = new DefaultExchange(camelContext);
+            jmsBindingUnderTest.appendJmsProperty(message, exchange, "jmscorrelationid", "123");
+            jmsBindingUnderTest.appendJmsProperty(message, exchange, "JMSTYPE", "myType");
+            jmsBindingUnderTest.appendJmsProperty(message, exchange, "jmsPriority", 7);
+        }
+        verify(message).setJMSCorrelationID("123");
+        verify(message).setJMSType("myType");
+        verify(message).setJMSPriority(7);
+        verify(message, never()).setStringProperty(anyString(), anyString());
     }
 }

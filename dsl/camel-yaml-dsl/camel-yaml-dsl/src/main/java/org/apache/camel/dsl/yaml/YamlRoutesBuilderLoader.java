@@ -36,6 +36,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.builder.RouteConfigurationBuilder;
 import org.apache.camel.dsl.yaml.common.YamlDeserializationContext;
 import org.apache.camel.dsl.yaml.common.YamlDeserializerSupport;
+import org.apache.camel.dsl.yaml.common.exception.YamlDeserializationException;
 import org.apache.camel.dsl.yaml.deserializers.OutputAwareFromDefinition;
 import org.apache.camel.model.InterceptDefinition;
 import org.apache.camel.model.InterceptFromDefinition;
@@ -94,6 +95,8 @@ import static org.apache.camel.dsl.yaml.common.YamlDeserializerSupport.setDeseri
 public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
 
     public static final String EXTENSION = "yaml";
+    // Note: the "pipe.yaml" extension (Camel K Pipe / kind: Pipe) is deprecated and will be removed in a future release;
+    // use a plain Camel route instead.
     public static final String[] SUPPORTED_EXTENSION = { EXTENSION, "camel.yaml", "pipe.yaml" };
 
     private static final Logger LOG = LoggerFactory.getLogger(YamlRoutesBuilderLoader.class);
@@ -124,6 +127,16 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
     }
 
     protected RouteBuilder builder(final YamlDeserializationContext ctx, final Node root) {
+        // All resources have prepared their beans before declarations are validated and routes constructed.
+        setDeserializationContext(root, ctx);
+        try {
+            ctx.preParse(root);
+        } catch (YamlDeserializationException e) {
+            // Keep the precise node location already supplied by the deserializer.
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeCamelException("Error pre-parsing resource: " + ctx.getResource().getLocation(), e);
+        }
 
         // we need to keep track of already configured items as the yaml-dsl returns a
         // RouteConfigurationBuilder that is capable of both route and route
@@ -160,7 +173,13 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
                             }
                         }
                     } else {
-                        doConfigure(target);
+                        boolean accepted = doConfigure(target);
+                        if (!accepted) {
+                            String loc = ctx.getResource() != null ? ctx.getResource().getLocation() : "";
+                            LOG.warn(
+                                    "Unsupported top-level YAML node in resource: {}. Ensure the YAML file uses a sequence (list) of route definitions.",
+                                    loc);
+                        }
                     }
                 }
 
@@ -171,11 +190,14 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
                 if (resource != null) {
                     preparseDone.remove(resource.getLocation());
                 }
-                beansDeserializer.clearCache();
+                if (preparseDone.isEmpty()) {
+                    beansDeserializer.clearCache();
+                }
             }
 
             private boolean doConfigure(Object item) throws Exception {
                 if (item instanceof OutputAwareFromDefinition) {
+                    ctx.warnCompactNotationOnce(LOG);
                     RouteDefinition route = new RouteDefinition();
                     route.setInput(((OutputAwareFromDefinition) item).getDelegate());
                     route.setOutputs(((OutputAwareFromDefinition) item).getOutputs());
@@ -323,7 +345,13 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
                             }
                         }
                     } else {
-                        doConfiguration(target);
+                        boolean accepted = doConfiguration(target);
+                        if (!accepted) {
+                            String loc = ctx.getResource() != null ? ctx.getResource().getLocation() : "";
+                            LOG.warn(
+                                    "Unsupported top-level YAML node in resource: {}. Ensure the YAML file uses a sequence (list) of route definitions.",
+                                    loc);
+                        }
                     }
                 }
             }
@@ -350,6 +378,13 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
             boolean pipe = anyTupleMatches(mn.getValue(), "apiVersion", v -> v.startsWith(PIPE_VERSION)) &&
                     anyTupleMatches(mn.getValue(), "kind", "Pipe");
             if (pipe) {
+                if (!preParse) {
+                    String loc = ctx.getResource() != null ? ctx.getResource().getLocation() : "";
+                    LOG.warn(
+                            "Loading Pipe (kind: Pipe) resources with the YAML DSL is deprecated and will be removed in a future release. "
+                             + "Use a plain Camel route instead: {}",
+                            loc);
+                }
                 target = preConfigurePipe(root, ctx, target, preParse);
             }
         }
@@ -385,7 +420,11 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
 
     /**
      * Pipe file
+     *
+     * @deprecated Pipe support in the YAML DSL is deprecated and will be removed in a future release; use a plain Camel
+     *             route instead.
      */
+    @Deprecated
     private Object preConfigurePipe(Node root, YamlDeserializationContext ctx, Object target, boolean preParse) {
         // when in pre-parse phase then we only want to gather /metadata/annotations
 
@@ -505,7 +544,7 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
 
                 // is there any error handler?
                 MappingNode errorHandler = asMappingNode(nodeAt(root, "/spec/errorHandler"));
-                if (errorHandler != null) {
+                if (errorHandler != null && !errorHandler.getValue().isEmpty()) {
                     // there are 5 different error handlers, which one is it
                     NodeTuple nt = errorHandler.getValue().get(0);
                     String ehName = asText(nt.getKeyNode());
@@ -515,6 +554,10 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
                         // a sink is a dead letter queue
                         DeadLetterChannelDefinition dlcd = new DeadLetterChannelDefinition();
                         MappingNode endpoint = asMappingNode(nodeAt(nt.getValueNode(), "/endpoint"));
+                        if (endpoint == null) {
+                            throw new IllegalArgumentException(
+                                    "Pipe errorHandler sink must have an endpoint defined");
+                        }
                         String dlq = extractCamelEndpointUri(endpoint);
                         dlcd.setDeadLetterUri(dlq);
                         ehf = dlcd;
@@ -589,6 +632,12 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
             uri = extractTupleValue(mn.getValue(), "name");
         } else {
             uri = extractTupleValue(node.getValue(), "uri");
+            if (uri == null && mn != null) {
+                String kind = extractTupleValue(mn.getValue(), "kind");
+                String apiVersion = extractTupleValue(mn.getValue(), "apiVersion");
+                throw new IllegalArgumentException(
+                        "Unsupported Pipe ref kind: " + kind + " (apiVersion: " + apiVersion + ")");
+            }
         }
 
         // properties
@@ -602,7 +651,8 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
         }
 
         if (params != null && !params.isEmpty()) {
-            String query = URISupport.createQueryString(params);
+            // kamelet uses useRawUri so parameters should not be encoded
+            String query = URISupport.createQueryString(params, !kamelet);
             // CAMEL-23284: restore property placeholders that were URL-encoded
             query = query.replace("%7B%7B", "{{").replace("%7D%7D", "}}");
             uri = uri + "?" + query;
@@ -651,7 +701,13 @@ public class YamlRoutesBuilderLoader extends YamlRoutesBuilderLoaderSupport {
                 composer.getSingleNode()
                         .map(node -> preParseNode(ctx, node));
             } catch (Exception e) {
-                throw new RuntimeCamelException("Error pre-parsing resource: " + ctx.getResource().getLocation(), e);
+                String hint = "";
+                if (e.getMessage() != null && e.getMessage().contains("single document")) {
+                    // a --- separator followed by more text, often an explanation appended to the route file
+                    hint = ": the file has more than one YAML document (a --- separator); a Camel YAML file is one"
+                           + " document, remove the --- and everything after it";
+                }
+                throw new RuntimeCamelException("Error pre-parsing resource: " + ctx.getResource().getLocation() + hint, e);
             } finally {
                 ctx.close();
             }

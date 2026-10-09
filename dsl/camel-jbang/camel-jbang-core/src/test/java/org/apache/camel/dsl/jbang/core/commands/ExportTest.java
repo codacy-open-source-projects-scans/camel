@@ -21,18 +21,24 @@ import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.Scanner;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.camel.dsl.jbang.core.common.CamelJBangConstants;
 import org.apache.camel.dsl.jbang.core.common.HawtioVersion;
 import org.apache.camel.dsl.jbang.core.common.RuntimeType;
+import org.apache.camel.util.FileUtil;
 import org.apache.camel.util.IOHelper;
+import org.apache.camel.util.StringHelper;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Model;
+import org.apache.maven.model.Repository;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -52,6 +58,12 @@ class ExportTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(ExportTest.class);
 
+    // Use a released Camel version for Spring Boot tests because the Spring Boot catalog provider
+    // (camel-catalog-provider-springboot) comes from the separate camel-spring-boot project.
+    // Its SNAPSHOT may not be deployed to Apache Snapshots, causing flaky CI failures.
+    // Released versions are always available on Maven Central.
+    private static final String RELEASED_CAMEL_VERSION = "4.13.0";
+
     private File workingDir;
 
     @BeforeEach
@@ -63,7 +75,7 @@ class ExportTest {
     @AfterEach
     public void end() throws IOException {
         // force removing, since deleteOnExit is not removing.
-        org.apache.camel.util.FileUtil.removeDir(workingDir);
+        FileUtil.removeDir(workingDir);
     }
 
     private static Stream<Arguments> runtimeProvider() {
@@ -92,6 +104,49 @@ class ExportTest {
         Assertions.assertEquals("1.0.0", model.getVersion());
         // Reproducible build
         Assertions.assertNotNull(model.getProperties().getProperty("project.build.outputTimestamp"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldExportResourceDirs(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportResourceDirs {}", rt);
+        // --resource-dir only accepts relative paths
+        Path resources = Files.createTempDirectory("camel-export-resource-dirs");
+        try {
+            Path schemas = resources.resolve("schemas");
+            Files.createDirectories(schemas.resolve("common"));
+            Files.writeString(schemas.resolve("api.yaml"), "openapi: 3.0.3");
+            Files.writeString(schemas.resolve("common/types.json"), "{}");
+            String relative = Path.of("").toAbsolutePath().relativize(schemas).toString();
+
+            Export command = createCommand(rt, new String[] { "classpath:route.yaml" },
+                    "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet", "--resource-dir=" + relative);
+            int exit = command.doCall();
+
+            assertThat(exit).isZero();
+            // the last path component is the target directory, the structure below it is preserved
+            Path exported = workingDir.toPath().resolve("src/main/resources/schemas");
+            assertThat(exported.resolve("api.yaml")).hasContent("openapi: 3.0.3");
+            assertThat(exported.resolve("common/types.json")).hasContent("{}");
+        } finally {
+            FileUtil.removeDir(resources.toFile());
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    void shouldExportRouteConfigurationWithStringRedeliveryDelay(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportRouteConfigurationWithStringRedeliveryDelay {}", rt);
+        Export command = createCommand(rt,
+                new String[] { "src/test/resources/route-configuration-redelivery-delay.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet");
+        int exit = command.doCall();
+
+        assertThat(exit).isZero();
+        Model model = readMavenModel();
+        assertThat(model.getGroupId()).isEqualTo("examples");
+        assertThat(model.getArtifactId()).isEqualTo("route");
+        assertThat(model.getVersion()).isEqualTo("1.0.0");
     }
 
     @ParameterizedTest
@@ -138,8 +193,14 @@ class ExportTest {
     public void shouldGenerateProjectWithBuildProperties(RuntimeType rt) throws Exception {
         LOG.info("shouldGenerateProjectWithBuildProperties {}", rt);
         Export command = new Export(new CamelJBangMain());
-        CommandLine.populateCommand(command, "--gav=examples:route:1.0.0", "--dir=" + workingDir,
-                "--runtime=%s".formatted(rt.runtime()), "--build-property=foo=bar", "target/test-classes/route.yaml");
+        List<String> cmdArgs = new ArrayList<>(
+                List.of("--gav=examples:route:1.0.0", "--dir=" + workingDir,
+                        "--runtime=%s".formatted(rt.runtime()), "--build-property=foo=bar"));
+        if (rt == RuntimeType.springBoot) {
+            cmdArgs.add("--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
+        cmdArgs.add("target/test-classes/route.yaml");
+        CommandLine.populateCommand(command, cmdArgs.toArray(String[]::new));
         int exit = command.doCall();
 
         Assertions.assertEquals(0, exit);
@@ -156,11 +217,17 @@ class ExportTest {
     public void testShouldGenerateProjectMultivalue(RuntimeType rt) throws Exception {
         LOG.info("testShouldGenerateProjectMultivalue {}", rt);
         Export command = new Export(new CamelJBangMain());
-        CommandLine.populateCommand(command, "--gav=examples:route:1.0.0", "--dir=" + workingDir,
-                "--runtime=%s".formatted(rt.runtime()), "--dep=foo:bar:1.0,jupiter:rocks:2.0",
-                // it's important for the --build-property to be the last parameter to test a previous
-                // export error when this property had arity=*
-                "--build-property=foo=bar", "--build-property=camel=rocks", "target/test-classes/route.yaml");
+        List<String> cmdArgs = new ArrayList<>(
+                List.of("--gav=examples:route:1.0.0", "--dir=" + workingDir,
+                        "--runtime=%s".formatted(rt.runtime()), "--dep=foo:bar:1.0,jupiter:rocks:2.0"));
+        if (rt == RuntimeType.springBoot) {
+            cmdArgs.add("--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
+        // it's important for the --build-property to be the last parameter to test a previous
+        // export error when this property had arity=*
+        cmdArgs.addAll(List.of("--build-property=foo=bar", "--build-property=camel=rocks",
+                "target/test-classes/route.yaml"));
+        CommandLine.populateCommand(command, cmdArgs.toArray(String[]::new));
         int exit = command.doCall();
 
         Assertions.assertEquals(0, exit);
@@ -180,7 +247,12 @@ class ExportTest {
     private Export createCommand(RuntimeType rt, String[] files, String... args) {
         Export command = new Export(new CamelJBangMain());
         CommandLine.populateCommand(command, "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet",
-                "--runtime=%s".formatted(rt.runtime()));
+                "--runtime=%s".formatted(rt.runtime()),
+                CamelCommandBaseTestSupport.quarkusExtRegistry());
+        // Pin Spring Boot tests to a released version to avoid SNAPSHOT download failures
+        if (rt == RuntimeType.springBoot && !containsCamelVersion(args)) {
+            CommandLine.populateCommand(command, "--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
         if (args != null) {
             CommandLine.populateCommand(command, args);
         }
@@ -188,13 +260,31 @@ class ExportTest {
         return command;
     }
 
+    private static boolean containsCamelVersion(String... args) {
+        if (args == null) {
+            return false;
+        }
+        for (String arg : args) {
+            if (arg != null && arg.startsWith("--camel-version=")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @ParameterizedTest
     @MethodSource("runtimeProvider")
     public void shouldExportWithJpaAndHibernate(RuntimeType rt) throws Exception {
         LOG.info("shouldExportWithJpaAndHibernate {}", rt);
         Export command = new Export(new CamelJBangMain());
-        CommandLine.populateCommand(command, "--gav=examples:route:1.0.0", "--dir=" + workingDir,
-                "--runtime=%s".formatted(rt.runtime()), "--dep=camel:jpa", "target/test-classes/route.yaml");
+        List<String> cmdArgs = new ArrayList<>(
+                List.of("--gav=examples:route:1.0.0", "--dir=" + workingDir,
+                        "--runtime=%s".formatted(rt.runtime()), "--dep=camel:jpa"));
+        if (rt == RuntimeType.springBoot) {
+            cmdArgs.add("--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
+        cmdArgs.add("target/test-classes/route.yaml");
+        CommandLine.populateCommand(command, cmdArgs.toArray(String[]::new));
         int exit = command.doCall();
 
         Assertions.assertEquals(0, exit);
@@ -458,6 +548,61 @@ class ExportTest {
         Assertions.assertTrue(new File(workingDir + "/src/main/docker", "Dockerfile").exists(), "Missing Dockerfile");
         // Readme
         Assertions.assertTrue(new File(workingDir, "readme.md").exists(), "Missing readme.md");
+        // AGENTS.md
+        Assertions.assertTrue(new File(workingDir, "AGENTS.md").exists(), "Missing AGENTS.md");
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldExportCamelWrapper(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportCamelWrapper {}", rt);
+        Export command = createCommand(rt, new String[] { "src/test/resources/route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet", "--camel-wrapper");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Assertions.assertTrue(new File(workingDir, "camel").exists(), "Missing camel wrapper script");
+        Assertions.assertTrue(new File(workingDir, "camel.cmd").exists(), "Missing camel.cmd wrapper script");
+        Assertions.assertTrue(new File(workingDir, ".camel/camel-wrapper.properties").exists(),
+                "Missing .camel/camel-wrapper.properties");
+
+        String properties = Files.readString(workingDir.toPath().resolve(".camel/camel-wrapper.properties"));
+        assertThat(properties).contains("camel.version=");
+        assertThat(properties).contains("distributionUrl=");
+        assertThat(properties).contains("camel-launcher-");
+
+        String camelScript = Files.readString(workingDir.toPath().resolve("camel"));
+        assertThat(camelScript).startsWith("#!/bin/sh");
+        assertThat(camelScript).contains("camel-wrapper.properties");
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldNotExportCamelWrapperByDefault(RuntimeType rt) throws Exception {
+        LOG.info("shouldNotExportCamelWrapperByDefault {}", rt);
+        Export command = createCommand(rt, new String[] { "src/test/resources/route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Assertions.assertFalse(new File(workingDir, "camel").exists(),
+                "Camel wrapper script should not exist by default");
+        Assertions.assertFalse(new File(workingDir, ".camel/camel-wrapper.properties").exists(),
+                "Camel wrapper properties should not exist by default");
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldSkipDockerFiles(RuntimeType rt) throws Exception {
+        LOG.info("shouldSkipDockerFiles {}", rt);
+        Export command = createCommand(rt, new String[] { "src/test/resources/route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet", "--docker=false");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Assertions.assertFalse(new File(workingDir + "/src/main/docker", "Dockerfile").exists(),
+                "Dockerfile should not exist when --docker=false");
+        Assertions.assertTrue(new File(workingDir, "readme.md").exists(), "Missing readme.md");
     }
 
     // Each runtime may have a different logic
@@ -475,6 +620,14 @@ class ExportTest {
                         "should contain camel.main.run-controller property, was " + content);
             }
         }
+    }
+
+    @Test
+    public void shouldExportJBangRuntimeAsCamelMain() throws Exception {
+        Export command = new Export(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--runtime=jbang", "route.yaml");
+
+        assertThat(command.runtime).isEqualTo(RuntimeType.main);
     }
 
     @Test
@@ -518,6 +671,8 @@ class ExportTest {
         Assertions.assertTrue(new File(workingDir + "/src/main/docker", "Dockerfile").exists(), "Missing Dockerfile");
         // Readme
         Assertions.assertTrue(new File(workingDir, "readme.md").exists(), "Missing readme.md");
+        // AGENTS.md
+        Assertions.assertTrue(new File(workingDir, "AGENTS.md").exists(), "Missing AGENTS.md");
     }
 
     @ParameterizedTest
@@ -714,13 +869,258 @@ class ExportTest {
         Assertions.assertTrue(f.exists());
     }
 
+    /** CAMEL-24853: a Groovy script the route references as a resource: stays where the reference resolves. */
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldExportAResourceReferencedGroovyScriptToTheResourcesRoot(RuntimeType rt) throws Exception {
+        Export command = createCommand(rt,
+                new String[] {
+                        "src/test/resources/groovy-resource-demo.camel.yaml", "src/test/resources/shipment-mapping.groovy",
+                        "src/test/resources/demo.groovy" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet");
+        Assertions.assertEquals(0, command.doCall());
+
+        File referenced = workingDir.toPath().resolve("src/main/resources/shipment-mapping.groovy").toFile();
+        Assertions.assertTrue(referenced.isFile(), "the referenced script is at the resources root");
+        Assertions.assertFalse(workingDir.toPath().resolve("src/main/resources/camel-groovy/shipment-mapping.groovy").toFile()
+                .exists(), "and not in camel-groovy, where it would be compiled as a script");
+        File script = workingDir.toPath().resolve("src/main/resources/camel-groovy/demo.groovy").toFile();
+        Assertions.assertTrue(script.isFile(),
+                "a script the routes do not reference as a resource goes to camel-groovy as before");
+    }
+
+    /** CAMEL-24853: the same for a route given as a classpath: resource, read from the classpath for the scan. */
+    @Test
+    public void shouldExportAResourceReferencedGroovyScriptOfAClasspathRoute() throws Exception {
+        Export command = createCommand(RuntimeType.main,
+                new String[] {
+                        "classpath:groovy-resource-demo.camel.yaml", "src/test/resources/shipment-mapping.groovy",
+                        "src/test/resources/demo.groovy" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet");
+        Assertions.assertEquals(0, command.doCall());
+
+        Assertions.assertTrue(workingDir.toPath().resolve("src/main/resources/shipment-mapping.groovy").toFile().isFile(),
+                "the script the classpath: route references is at the resources root");
+        Assertions.assertTrue(workingDir.toPath().resolve("src/main/resources/camel-groovy/demo.groovy").toFile().isFile());
+    }
+
+    @Test
+    public void shouldExportGenAiRouteWithObservability() throws Exception {
+        Export command = new Export(new CamelJBangMain());
+        CommandLine.populateCommand(command,
+                "--gav=examples:genai:1.0.0",
+                "--dir=" + workingDir,
+                "--quiet",
+                "--runtime=main",
+                "--observe=true",
+                "src/test/resources/genai/langchain4j-route.yaml");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+        Assertions.assertTrue(
+                containsDependency(model.getDependencies(), "org.apache.camel", "camel-langchain4j-chat", null));
+        Assertions.assertTrue(
+                containsDependency(model.getDependencies(), "org.apache.camel", "camel-ai-observability", null));
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldExportConsoleForDevProfileOnly(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportConsoleForDevProfileOnly {}", rt);
+        int exit = exportWithConsole(rt);
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+        assertConsoleDependencies(model, rt);
+
+        // an exported project only has the console with the dev profile
+        Properties props = loadExportedProperties("application.properties");
+        Assertions.assertNull(exportedProperty(props, "camel.main.devConsoleEnabled"));
+        Assertions.assertNull(props.getProperty("management.endpoints.web.exposure.include"));
+        Assertions.assertNull(props.getProperty("camel.jbang.console"));
+
+        Properties dev = loadExportedProperties("application-dev.properties");
+        Assertions.assertNull(dev.getProperty("quarkus.camel.console.exposure-mode"));
+        // what the application sees with the dev profile active
+        Properties effective = new Properties();
+        effective.putAll(props);
+        effective.putAll(dev);
+        assertConsoleProperties(effective, rt);
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldExportConsoleInDevProfileExport(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportConsoleInDevProfileExport {}", rt);
+        int exit = exportWithConsole(rt, "--profile=dev");
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+        assertConsoleDependencies(model, rt);
+
+        // the dev profile is flattened into application.properties, and so is the console
+        Properties props = loadExportedProperties("application.properties");
+        assertConsoleProperties(props, rt);
+        Assertions.assertNull(props.getProperty("quarkus.camel.console.exposure-mode"));
+        Assertions.assertNull(props.getProperty("camel.jbang.console"));
+        Assertions.assertFalse(new File(workingDir, "src/main/resources/application-dev.properties").exists());
+    }
+
+    private int exportWithConsole(RuntimeType rt, String... extraArgs) throws Exception {
+        Export command = new Export(new CamelJBangMain());
+        List<String> cmdArgs = new ArrayList<>(
+                List.of("--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet",
+                        "--runtime=%s".formatted(rt.runtime()), "--console"));
+        if (rt == RuntimeType.springBoot) {
+            cmdArgs.add("--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
+        cmdArgs.addAll(List.of(extraArgs));
+        cmdArgs.add("target/test-classes/route.yaml");
+        CommandLine.populateCommand(command, cmdArgs.toArray(String[]::new));
+        return command.doCall();
+    }
+
+    private Properties loadExportedProperties(String name) throws Exception {
+        Properties props = new Properties();
+        File f = new File(workingDir, "src/main/resources/" + name);
+        Assertions.assertTrue(f.isFile(), "Missing " + name);
+        try (FileInputStream fis = new FileInputStream(f)) {
+            props.load(fis);
+        }
+        return props;
+    }
+
+    private void assertConsoleDependencies(Model model, RuntimeType rt) {
+        if (rt == RuntimeType.main) {
+            for (String artifact : List.of("camel-console", "camel-management", "camel-health",
+                    "camel-platform-http-main", "camel-platform-http-jolokia")) {
+                Assertions.assertTrue(containsDependency(model.getDependencies(), "org.apache.camel", artifact, null),
+                        "Missing dependency " + artifact);
+            }
+        } else if (rt == RuntimeType.springBoot) {
+            for (String artifact : List.of("camel-console-starter", "camel-management-starter")) {
+                Assertions.assertTrue(
+                        containsDependency(model.getDependencies(), "org.apache.camel.springboot", artifact, null),
+                        "Missing dependency " + artifact);
+            }
+        } else if (rt == RuntimeType.quarkus) {
+            for (String artifact : List.of("camel-quarkus-console", "camel-quarkus-management")) {
+                Assertions.assertTrue(
+                        containsDependency(model.getDependencies(), "org.apache.camel.quarkus", artifact, null),
+                        "Missing dependency " + artifact);
+            }
+        }
+    }
+
+    private static void assertConsoleProperties(Properties props, RuntimeType rt) {
+        // the developer console is enabled with the same camel-main option on all runtimes
+        Assertions.assertEquals("true", exportedProperty(props, "camel.main.devConsoleEnabled"));
+        if (rt == RuntimeType.main) {
+            for (String key : List.of("camel.management.enabled", "camel.management.devConsoleEnabled",
+                    "camel.management.healthCheckEnabled", "camel.management.infoEnabled",
+                    "camel.management.jolokiaEnabled")) {
+                Assertions.assertEquals("true", exportedProperty(props, key), "Missing property " + key);
+            }
+        } else if (rt == RuntimeType.springBoot) {
+            // the console is the camel actuator endpoint, which must be exposed over the web
+            Assertions.assertEquals("camel", props.getProperty("management.endpoints.web.exposure.include"));
+        }
+    }
+
+    @Test
+    public void shouldExposeConsoleWithObserveOnSpringBoot() throws Exception {
+        int exit = exportWithConsole(RuntimeType.springBoot, "--observe");
+
+        Assertions.assertEquals(0, exit);
+        // the observability defaults must survive the explicit exposure list
+        Properties dev = loadExportedProperties("application-dev.properties");
+        Assertions.assertEquals("health,prometheus,camel", dev.getProperty("management.endpoints.web.exposure.include"));
+    }
+
+    @Test
+    public void shouldExposeConsoleWithHawtioOnSpringBoot() throws Exception {
+        int exit = exportWithConsole(RuntimeType.springBoot, "--hawtio");
+
+        Assertions.assertEquals(0, exit);
+        // hawtio is exposed in application.properties, and the dev profile must keep it when adding the console
+        Properties props = loadExportedProperties("application.properties");
+        Assertions.assertEquals("hawtio,jolokia", props.getProperty("management.endpoints.web.exposure.include"));
+        Properties dev = loadExportedProperties("application-dev.properties");
+        Assertions.assertEquals("hawtio,jolokia,camel", dev.getProperty("management.endpoints.web.exposure.include"));
+    }
+
+    @Test
+    public void shouldNotDuplicateExposedActuatorEndpoints() {
+        Assertions.assertEquals("camel", ExportSpringBoot.exposeActuatorEndpoints(null, "camel"));
+        Assertions.assertEquals("health,camel", ExportSpringBoot.exposeActuatorEndpoints("health, camel", "camel"));
+        Assertions.assertEquals("hawtio,jolokia,camel",
+                ExportSpringBoot.exposeActuatorEndpoints("hawtio,jolokia", "hawtio", "jolokia", "camel"));
+        Assertions.assertEquals("*", ExportSpringBoot.exposeActuatorEndpoints("*", "camel"));
+    }
+
+    @Test
+    public void shouldAppendConsoleToExistingDevProfile() throws Exception {
+        Export command = new Export(new CamelJBangMain());
+        CommandLine.populateCommand(command,
+                "--gav=examples:route:1.0.0",
+                "--dir=" + workingDir,
+                "--quiet",
+                "--runtime=main",
+                "--console",
+                "src/test/resources/devprofile");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Properties dev = loadExportedProperties("application-dev.properties");
+        // the user's own dev profile settings are kept
+        Assertions.assertEquals("true", dev.getProperty("camel.main.tracing"));
+        Assertions.assertEquals("true", exportedProperty(dev, "camel.main.devConsoleEnabled"));
+    }
+
+    @Test
+    public void shouldNotExportConsoleByDefault() throws Exception {
+        Export command = new Export(new CamelJBangMain());
+        CommandLine.populateCommand(command,
+                "--gav=examples:route:1.0.0",
+                "--dir=" + workingDir,
+                "--quiet",
+                "--runtime=main",
+                "target/test-classes/route.yaml");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+        Assertions.assertFalse(containsDependency(model.getDependencies(), "org.apache.camel", "camel-console", null));
+
+        Properties props = new Properties();
+        try (FileInputStream fis = new FileInputStream(new File(workingDir, "src/main/resources/application.properties"))) {
+            props.load(fis);
+        }
+        Assertions.assertNull(exportedProperty(props, "camel.management.devConsoleEnabled"));
+    }
+
+    /**
+     * The exported application.properties uses dash-style keys, so look up both styles.
+     */
+    private static String exportedProperty(Properties props, String key) {
+        String v = props.getProperty(key);
+        return v != null ? v : props.getProperty(StringHelper.camelCaseToDash(key));
+    }
+
     @ParameterizedTest
     @MethodSource("runtimeProvider")
     public void shouldExportObserve(RuntimeType rt) throws Exception {
         LOG.info("shouldExportObserve {}", rt);
         Export command = new Export(new CamelJBangMain());
-        CommandLine.populateCommand(command, "--gav=examples:route:1.0.0", "--dir=" + workingDir,
-                "--runtime=%s".formatted(rt.runtime()), "--observe=true", "target/test-classes/route.yaml");
+        List<String> cmdArgs = new ArrayList<>(
+                List.of("--gav=examples:route:1.0.0", "--dir=" + workingDir,
+                        "--runtime=%s".formatted(rt.runtime()), "--observe=true"));
+        if (rt == RuntimeType.springBoot) {
+            cmdArgs.add("--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
+        cmdArgs.add("target/test-classes/route.yaml");
+        CommandLine.populateCommand(command, cmdArgs.toArray(String[]::new));
         int exit = command.doCall();
 
         Assertions.assertEquals(0, exit);
@@ -748,8 +1148,14 @@ class ExportTest {
     public void shouldExportFromDir(RuntimeType rt) throws Exception {
         LOG.info("shouldExportFromDir {}", rt);
         Export command = new Export(new CamelJBangMain());
-        CommandLine.populateCommand(command, "--gav=examples:route:1.0.0", "--dir=" + workingDir,
-                "--runtime=%s".formatted(rt.runtime()), "src/test/resources/myapp");
+        List<String> cmdArgs = new ArrayList<>(
+                List.of("--gav=examples:route:1.0.0", "--dir=" + workingDir,
+                        "--runtime=%s".formatted(rt.runtime())));
+        if (rt == RuntimeType.springBoot) {
+            cmdArgs.add("--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
+        cmdArgs.add("src/test/resources/myapp");
+        CommandLine.populateCommand(command, cmdArgs.toArray(String[]::new));
         int exit = command.doCall();
 
         Assertions.assertEquals(0, exit);
@@ -866,8 +1272,14 @@ class ExportTest {
     public void shouldExportHawtio(RuntimeType rt) throws Exception {
         LOG.info("shouldExportHawtio {}", rt);
         Export command = new Export(new CamelJBangMain());
-        CommandLine.populateCommand(command, "--gav=examples:route:1.0.0", "--dir=" + workingDir,
-                "--runtime=%s".formatted(rt.runtime()), "--hawtio=true", "target/test-classes/route.yaml");
+        List<String> cmdArgs = new ArrayList<>(
+                List.of("--gav=examples:route:1.0.0", "--dir=" + workingDir,
+                        "--runtime=%s".formatted(rt.runtime()), "--hawtio=true"));
+        if (rt == RuntimeType.springBoot) {
+            cmdArgs.add("--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
+        cmdArgs.add("target/test-classes/route.yaml");
+        CommandLine.populateCommand(command, cmdArgs.toArray(String[]::new));
         int exit = command.doCall();
 
         Assertions.assertEquals(0, exit);
@@ -884,7 +1296,7 @@ class ExportTest {
                             null));
             Assertions.assertTrue(
                     containsDependency(model.getDependencies(), "io.hawt",
-                            "hawtio-springboot", HawtioVersion.HAWTIO_VERSION));
+                            "hawtio-springboot4", HawtioVersion.HAWTIO_VERSION));
             // Application properties
             File appProperties = new File(workingDir + "/src/main/resources", "application.properties");
             String content = IOHelper.loadText(new FileInputStream(appProperties));
@@ -906,6 +1318,303 @@ class ExportTest {
             Assertions.assertTrue(content.contains("quarkus.hawtio.authenticationEnabled=false"),
                     "should contain quarkus.hawtio.authenticationEnabled property, was " + content);
         }
+    }
+
+    @Test
+    public void shouldExportHawtioWithSpringBoot3() throws Exception {
+        LOG.info("shouldExportHawtioWithSpringBoot3");
+        Export command = new Export(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--gav=examples:route:1.0.0", "--dir=" + workingDir,
+                "--runtime=spring-boot", "--camel-version=" + RELEASED_CAMEL_VERSION,
+                "--spring-boot-version=3.5.14", "--hawtio=true", "target/test-classes/route.yaml");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+        Assertions.assertTrue(containsDependency(model.getDependencies(), "io.hawt",
+                "hawtio-springboot", HawtioVersion.HAWTIO_VERSION));
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldExportWithParentPom(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportWithParentPom {}", rt);
+        Export command = new Export(new CamelJBangMain());
+        List<String> cmdArgs = new ArrayList<>(
+                List.of("--gav=examples:route:1.0.0", "--dir=" + workingDir,
+                        "--runtime=%s".formatted(rt.runtime()),
+                        "--parent-pom=com.ourorg:camel-parent:1.0"));
+        if (rt == RuntimeType.springBoot) {
+            cmdArgs.add("--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
+        cmdArgs.add("target/test-classes/route.yaml");
+        CommandLine.populateCommand(command, cmdArgs.toArray(String[]::new));
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+        Assertions.assertEquals("examples", model.getGroupId());
+        Assertions.assertEquals("route", model.getArtifactId());
+        Assertions.assertEquals("1.0.0", model.getVersion());
+
+        // verify parent POM is set
+        Assertions.assertNotNull(model.getParent(), "Parent POM should be set");
+        Assertions.assertEquals("com.ourorg", model.getParent().getGroupId());
+        Assertions.assertEquals("camel-parent", model.getParent().getArtifactId());
+        Assertions.assertEquals("1.0", model.getParent().getVersion());
+
+        if (rt == RuntimeType.springBoot) {
+            // Spring Boot BOM should still be in dependencyManagement
+            assertThat(model.getDependencyManagement().getDependencies())
+                    .as("Spring Boot BOM must be in dependencyManagement when using custom parent")
+                    .anySatisfy(dep -> {
+                        assertThat(dep.getGroupId()).isEqualTo("org.springframework.boot");
+                        assertThat(dep.getArtifactId()).isEqualTo("spring-boot-dependencies");
+                    });
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldExportWithoutParentPom(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportWithoutParentPom {}", rt);
+        Export command = createCommand(rt, new String[] { "classpath:route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+
+        if (rt == RuntimeType.springBoot) {
+            // default Spring Boot parent should be used
+            Assertions.assertNotNull(model.getParent(), "Spring Boot parent should be set by default");
+            Assertions.assertEquals("org.springframework.boot", model.getParent().getGroupId());
+            Assertions.assertEquals("spring-boot-starter-parent", model.getParent().getArtifactId());
+        } else {
+            // Quarkus and Main should have no parent by default
+            Assertions.assertNull(model.getParent(), "No parent POM should be set by default for " + rt);
+        }
+    }
+
+    @Test
+    void shouldNotDuplicateMetricsDependency() throws Exception {
+        File profile = new File(".", "application.properties");
+        try {
+            Files.writeString(profile.toPath(), "camel.management.metricsEnabled=true\n");
+
+            Export command = new Export(new CamelJBangMain());
+            CommandLine.populateCommand(command,
+                    "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet",
+                    "--runtime=camel-main",
+                    "src/test/resources/route.yaml");
+            int exit = command.doCall();
+
+            assertThat(exit).isEqualTo(0);
+            Model model = readMavenModel();
+
+            long count = model.getDependencies().stream()
+                    .filter(d -> "camel-micrometer-prometheus".equals(d.getArtifactId()))
+                    .count();
+            assertThat(count)
+                    .as("camel-micrometer-prometheus should appear exactly once")
+                    .isEqualTo(1);
+        } finally {
+            FileUtil.deleteFile(profile);
+        }
+    }
+
+    @Test
+    void shouldOverrideAutoDetectedDriverVersion() throws Exception {
+        LOG.info("shouldOverrideAutoDetectedDriverVersion");
+        // the bean uses driverClassName org.postgresql.Driver which Camel auto-detects and adds
+        // org.postgresql:postgresql with the version from the camel-dependencies BOM. An explicit
+        // --dep for the same groupId:artifactId must override that auto-detected version.
+        Export command = new Export(new CamelJBangMain());
+        CommandLine.populateCommand(command,
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet",
+                "--runtime=camel-main",
+                "--dep=org.postgresql:postgresql:42.7.99",
+                "src/test/resources/k8s-secret-bean.yaml");
+        int exit = command.doCall();
+
+        assertThat(exit).isZero();
+        Model model = readMavenModel();
+
+        List<Dependency> pg = model.getDependencies().stream()
+                .filter(d -> "org.postgresql".equals(d.getGroupId()) && "postgresql".equals(d.getArtifactId()))
+                .toList();
+        assertThat(pg)
+                .as("Explicit --dep version must override the auto-detected postgresql driver version")
+                .singleElement()
+                .satisfies(d -> assertThat(d.getVersion()).isEqualTo("42.7.99"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldExportWithCustomRepos(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportWithCustomRepos {}", rt);
+        Export command = createCommand(rt, new String[] { "src/test/resources/route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet",
+                "--repos=https://my.custom.repo/releases,https://other.repo/snapshots");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+
+        assertThat(model.getRepositories())
+                .as("Expected custom repositories in generated pom.xml")
+                .anySatisfy(repo -> assertThat(repo.getUrl()).isEqualTo("https://my.custom.repo/releases"))
+                .anySatisfy(repo -> assertThat(repo.getUrl()).isEqualTo("https://other.repo/snapshots"));
+
+        assertThat(model.getPluginRepositories())
+                .as("Expected custom plugin repositories in generated pom.xml")
+                .anySatisfy(repo -> assertThat(repo.getUrl()).isEqualTo("https://my.custom.repo/releases"))
+                .anySatisfy(repo -> assertThat(repo.getUrl()).isEqualTo("https://other.repo/snapshots"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldContainJibProfile(RuntimeType rt) throws Exception {
+        Export command = new Export(new CamelJBangMain());
+        List<String> cmdArgs = new ArrayList<>(
+                List.of("--gav=examples:route:1.0.0", "--dir=" + workingDir,
+                        "--runtime=%s".formatted(rt.runtime())));
+        if (rt == RuntimeType.springBoot) {
+            cmdArgs.add("--camel-version=" + RELEASED_CAMEL_VERSION);
+        }
+        cmdArgs.add("src/test/resources/route.yaml");
+        CommandLine.populateCommand(command, cmdArgs.toArray(String[]::new));
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+
+        File f = new File(workingDir, "pom.xml");
+        String content = IOHelper.loadText(new FileInputStream(f));
+        Assertions.assertTrue(content.contains("<id>jib</id>"),
+                "Jib profile not exported!");
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    @SetSystemProperty(key = "camel.extra.repos", value = "atlassian=https://packages.atlassian.com/maven-external/")
+    public void shouldExportWithExtraReposSystemProperty(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportWithExtraReposSystemProperty {}", rt);
+        Export command = createCommand(rt, new String[] { "src/test/resources/route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+
+        assertThat(model.getRepositories())
+                .as("Expected extra repos from camel.extra.repos in generated pom.xml")
+                .anySatisfy(repo -> {
+                    assertThat(repo.getId()).isEqualTo("atlassian");
+                    assertThat(repo.getUrl()).isEqualTo("https://packages.atlassian.com/maven-external/");
+                });
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    @SetSystemProperty(key = "camel.extra.repos",
+                       value = "repo1=https://repo1.example.com/maven2,repo2=https://repo2.example.com/releases")
+    public void shouldExportWithMultipleExtraRepos(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportWithMultipleExtraRepos {}", rt);
+        Export command = createCommand(rt, new String[] { "src/test/resources/route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+
+        assertThat(model.getRepositories())
+                .as("Expected both extra repos in generated pom.xml")
+                .anySatisfy(repo -> {
+                    assertThat(repo.getId()).isEqualTo("repo1");
+                    assertThat(repo.getUrl()).isEqualTo("https://repo1.example.com/maven2");
+                })
+                .anySatisfy(repo -> {
+                    assertThat(repo.getId()).isEqualTo("repo2");
+                    assertThat(repo.getUrl()).isEqualTo("https://repo2.example.com/releases");
+                });
+    }
+
+    @Test
+    public void shouldBuildRepositoryListWithIdUrlFormat() {
+        var repos = ExportBaseCommand.buildRepositoryList(
+                "atlassian=https://packages.atlassian.com/maven-external/,https://other.repo/releases");
+
+        assertThat(repos).hasSize(2);
+        assertThat(repos.get(0))
+                .containsEntry("id", "atlassian")
+                .containsEntry("url", "https://packages.atlassian.com/maven-external/");
+        assertThat(repos.get(1))
+                .containsEntry("id", "custom1")
+                .containsEntry("url", "https://other.repo/releases");
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    @SetSystemProperty(key = "camel.jbang.repos", value = "https://packages.atlassian.com/maven-external/")
+    public void shouldExportWithReposFromSystemProperty(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportWithReposFromSystemProperty {}", rt);
+        Export command = createCommand(rt, new String[] { "src/test/resources/route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+
+        assertThat(model.getRepositories())
+                .as("Expected camel.jbang.repos from system property in generated pom.xml")
+                .anySatisfy(repo -> assertThat(repo.getUrl()).isEqualTo("https://packages.atlassian.com/maven-external/"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    public void shouldExportWithReposCliHavingUniqueIds(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportWithReposCliHavingUniqueIds {}", rt);
+        Export command = createCommand(rt, new String[] { "src/test/resources/route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet",
+                "--repos=atlassian=https://packages.atlassian.com/maven-external/,https://repository.apache.org/snapshots/");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+
+        List<String> repoIds = model.getRepositories().stream()
+                .map(Repository::getId)
+                .collect(Collectors.toList());
+        assertThat(repoIds)
+                .as("Repository ids must be unique in generated pom.xml")
+                .doesNotHaveDuplicates();
+
+        assertThat(model.getRepositories())
+                .anySatisfy(repo -> {
+                    assertThat(repo.getId()).isEqualTo("atlassian");
+                    assertThat(repo.getUrl()).isEqualTo("https://packages.atlassian.com/maven-external/");
+                });
+    }
+
+    @ParameterizedTest
+    @MethodSource("runtimeProvider")
+    @SetSystemProperty(key = "camel.default.extra.repos.default.value",
+                       value = "atlassian=https://packages.atlassian.com/maven-external/")
+    public void shouldExportWithExtraReposDefaultValueFallback(RuntimeType rt) throws Exception {
+        LOG.info("shouldExportWithExtraReposDefaultValueFallback {}", rt);
+        Export command = createCommand(rt, new String[] { "src/test/resources/route.yaml" },
+                "--gav=examples:route:1.0.0", "--dir=" + workingDir, "--quiet");
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        Model model = readMavenModel();
+
+        assertThat(model.getRepositories())
+                .as("Expected extra repos from camel.default.extra.repos.default.value fallback in generated pom.xml")
+                .anySatisfy(repo -> {
+                    assertThat(repo.getId()).isEqualTo("atlassian");
+                    assertThat(repo.getUrl()).isEqualTo("https://packages.atlassian.com/maven-external/");
+                });
     }
 
 }

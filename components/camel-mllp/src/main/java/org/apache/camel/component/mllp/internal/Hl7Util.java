@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import org.apache.camel.component.mllp.MllpAcknowledgementGenerationException;
 import org.apache.camel.component.mllp.MllpProtocolConstants;
@@ -32,6 +33,11 @@ import org.slf4j.LoggerFactory;
 public final class Hl7Util {
     public static final String NULL_REPLACEMENT_VALUE = "<null>";
     public static final String EMPTY_REPLACEMENT_VALUE = "<>";
+    /**
+     * Substituted for message content when {@code logPhi} is disabled. The conversion methods are reached from log
+     * statements and from exception messages, so honouring the flag here covers both.
+     */
+    public static final String PHI_SUPPRESSED_REPLACEMENT_VALUE = "<PHI suppressed>";
 
     public static final Map<Character, String> CHARACTER_REPLACEMENTS;
 
@@ -89,6 +95,31 @@ public final class Hl7Util {
 
     public int getLogPhiMaxBytes() {
         return logPhiMaxBytes;
+    }
+
+    public boolean isLogPhi() {
+        return logPhi;
+    }
+
+    /**
+     * Message content for a log statement: the content itself when {@code logPhi} is enabled, a placeholder otherwise.
+     * <p>
+     * Deliberately separate from {@link #convertToPrintFriendlyString(byte[])}, which is not a logging helper - it also
+     * extracts the MSH-9 field when an acknowledgement is generated, so redacting inside it corrupts the
+     * acknowledgement rather than the log.
+     */
+    public String convertToLoggableString(byte[] phiBytes) {
+        if (!logPhi) {
+            return PHI_SUPPRESSED_REPLACEMENT_VALUE;
+        }
+        return convertToPrintFriendlyString(phiBytes);
+    }
+
+    public String convertToLoggableString(byte[] phiBytes, int startPosition, int endPosition) {
+        if (!logPhi) {
+            return PHI_SUPPRESSED_REPLACEMENT_VALUE;
+        }
+        return convertToPrintFriendlyString(phiBytes, startPosition, endPosition);
     }
 
     public String generateInvalidPayloadExceptionMessage(final byte[] hl7Bytes) {
@@ -274,9 +305,9 @@ public final class Hl7Util {
         if (-1 == msh92start) {
             LOG.warn("Didn't find component separator for MSH-9.2 - sending ACK in MSH-9");
         } else {
-            final String msh9Content = convertToPrintFriendlyString(hl7MessageBytes, fieldSeparatorIndexes.get(7) + 1,
-                    fieldSeparatorIndexes.get(8));
-            final int[] componentIndexesInMsh9 = caretPositionsIn(msh9Content);
+            // the component separators of MSH-9, from the one that starts MSH-9.2 (MSH-2 may define another one than '^')
+            final int[] componentIndexesInMsh9
+                    = componentSeparatorIndexes(hl7MessageBytes, msh92start, fieldSeparatorIndexes.get(8), componentSeparator);
             final int componentDiff = componentIndexesInMsh9[componentIndexesInMsh9.length - 1] - componentIndexesInMsh9[0];
 
             if (componentIndexesInMsh9.length == 2) { //MSH-9.3 is an optional field since 2.3.1, required since 2.5; this is a non-breaking change by just checking the number of the components in the field MSH-9
@@ -455,9 +486,9 @@ public final class Hl7Util {
         return String.valueOf(c);
     }
 
-    private int[] caretPositionsIn(String data) {
-        return java.util.stream.IntStream.range(0, data.length())
-                .filter(i -> data.charAt(i) == '^')
+    private static int[] componentSeparatorIndexes(byte[] hl7MessageBytes, int start, int end, byte componentSeparator) {
+        return IntStream.range(start, end)
+                .filter(i -> hl7MessageBytes[i] == componentSeparator)
                 .toArray();
     }
 

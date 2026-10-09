@@ -70,59 +70,14 @@ public class ModelParser extends BaseParser {
         super(reader, namespace);
     }
 
-    protected AggregateDefinition doParseAggregateDefinition() throws IOException, XmlPullParserException {
-        return doParse(new AggregateDefinition(), (def, key, val) -> switch (key) {
-                case "aggregateController": def.setAggregateController(val); yield true;
-                case "aggregationRepository": def.setAggregationRepository(val); yield true;
-                case "aggregationStrategy": def.setAggregationStrategy(val); yield true;
-                case "aggregationStrategyMethodAllowNull": def.setAggregationStrategyMethodAllowNull(val); yield true;
-                case "aggregationStrategyMethodName": def.setAggregationStrategyMethodName(val); yield true;
-                case "closeCorrelationKeyOnCompletion": def.setCloseCorrelationKeyOnCompletion(val); yield true;
-                case "completeAllOnStop": def.setCompleteAllOnStop(val); yield true;
-                case "completionFromBatchConsumer": def.setCompletionFromBatchConsumer(val); yield true;
-                case "completionInterval": def.setCompletionInterval(val); yield true;
-                case "completionOnNewCorrelationGroup": def.setCompletionOnNewCorrelationGroup(val); yield true;
-                case "completionSize": def.setCompletionSize(val); yield true;
-                case "completionTimeout": def.setCompletionTimeout(val); yield true;
-                case "completionTimeoutCheckerInterval": def.setCompletionTimeoutCheckerInterval(val); yield true;
-                case "discardOnAggregationFailure": def.setDiscardOnAggregationFailure(val); yield true;
-                case "discardOnCompletionTimeout": def.setDiscardOnCompletionTimeout(val); yield true;
-                case "eagerCheckCompletion": def.setEagerCheckCompletion(val); yield true;
-                case "executorService": def.setExecutorService(val); yield true;
-                case "forceCompletionOnStop": def.setForceCompletionOnStop(val); yield true;
-                case "ignoreInvalidCorrelationKeys": def.setIgnoreInvalidCorrelationKeys(val); yield true;
-                case "optimisticLocking": def.setOptimisticLocking(val); yield true;
-                case "parallelProcessing": def.setParallelProcessing(val); yield true;
-                case "timeoutCheckerExecutorService": def.setTimeoutCheckerExecutorService(val); yield true;
+    protected A2ASubTaskDefinition doParseA2ASubTaskDefinition() throws IOException, XmlPullParserException {
+        return doParse(new A2ASubTaskDefinition(), (def, key, val) -> switch (key) {
+                case "emitAfter": def.setEmitAfter(val); yield true;
+                case "emitBefore": def.setEmitBefore(val); yield true;
+                case "emitOnError": def.setEmitOnError(val); yield true;
+                case "failIfNoTaskContext": def.setFailIfNoTaskContext(val); yield true;
                 default: yield processorDefinitionAttributeHandler().accept(def, key, val);
-            }, (def, key) -> switch (key) {
-                case "completionPredicate": def.setCompletionPredicate(doParseExpressionSubElementDefinition()); yield true;
-                case "completionSizeExpression": def.setCompletionSizeExpression(doParseExpressionSubElementDefinition()); yield true;
-                case "completionTimeoutExpression": def.setCompletionTimeoutExpression(doParseExpressionSubElementDefinition()); yield true;
-                case "correlationExpression": def.setCorrelationExpression(doParseExpressionSubElementDefinition()); yield true;
-                case "optimisticLockRetryPolicy": def.setOptimisticLockRetryPolicyDefinition(doParseOptimisticLockRetryPolicyDefinition()); yield true;
-                default: yield outputDefinitionElementHandler().accept(def, key);
-            }, noValueHandler());
-    }
-    protected ExpressionSubElementDefinition doParseExpressionSubElementDefinition() throws IOException, XmlPullParserException {
-        return doParse(new ExpressionSubElementDefinition(), noAttributeHandler(), (def, key) -> {
-                ExpressionDefinition v = doParseExpressionDefinitionRef(key);
-                if (v != null) {
-                    def.setExpressionType(v);
-                    return true;
-                }
-                return false;
-            }, noValueHandler());
-    }
-    protected OptimisticLockRetryPolicyDefinition doParseOptimisticLockRetryPolicyDefinition() throws IOException, XmlPullParserException {
-        return doParse(new OptimisticLockRetryPolicyDefinition(), (def, key, val) -> switch (key) {
-                case "exponentialBackOff": def.setExponentialBackOff(val); yield true;
-                case "maximumRetries": def.setMaximumRetries(val); yield true;
-                case "maximumRetryDelay": def.setMaximumRetryDelay(val); yield true;
-                case "randomBackOff": def.setRandomBackOff(val); yield true;
-                case "retryDelay": def.setRetryDelay(val); yield true;
-                default: yield false;
-            }, noElementHandler(), noValueHandler());
+            }, outputDefinitionElementHandler(), noValueHandler());
     }
     protected <T extends OutputDefinition> ElementHandler<T> outputDefinitionElementHandler() {
         return (def, key) -> {
@@ -157,6 +112,61 @@ public class ModelParser extends BaseParser {
             case "generatedId": def.setGeneratedId(doParseText()); yield true;
             default: yield false;
         };
+    }
+    protected AggregateDefinition doParseAggregateDefinition() throws IOException, XmlPullParserException {
+        return doParse(new AggregateDefinition(), (def, key, val) -> switch (key) {
+                case "aggregateController": def.setAggregateController(val); yield true;
+                case "aggregationRepository": def.setAggregationRepository(val); yield true;
+                case "aggregationStrategy": def.setAggregationStrategy(val); yield true;
+                case "aggregationStrategyMethodAllowNull": def.setAggregationStrategyMethodAllowNull(val); yield true;
+                case "aggregationStrategyMethodName": def.setAggregationStrategyMethodName(val); yield true;
+                case "closeCorrelationKeyOnCompletion": def.setCloseCorrelationKeyOnCompletion(val); yield true;
+                case "completeAllOnStop": def.setCompleteAllOnStop(val); yield true;
+                case "completionFromBatchConsumer": def.setCompletionFromBatchConsumer(val); yield true;
+                case "completionInterval": def.setCompletionInterval(val); yield true;
+                case "completionOnNewCorrelationGroup": def.setCompletionOnNewCorrelationGroup(val); yield true;
+                case "completionSize": def.setCompletionSize(val); yield true;
+                case "completionTimeout": def.setCompletionTimeout(val); yield true;
+                case "completionTimeoutCheckerInterval": def.setCompletionTimeoutCheckerInterval(val); yield true;
+                case "discardOnAggregationFailure": def.setDiscardOnAggregationFailure(val); yield true;
+                case "discardOnCompletionTimeout": def.setDiscardOnCompletionTimeout(val); yield true;
+                case "eagerCheckCompletion": def.setEagerCheckCompletion(val); yield true;
+                case "executorService": def.setExecutorService(val); yield true;
+                case "forceCompletionOnStop": def.setForceCompletionOnStop(val); yield true;
+                case "ignoreInvalidCorrelationKeys": def.setIgnoreInvalidCorrelationKeys(val); yield true;
+                case "optimisticLocking": def.setOptimisticLocking(val); yield true;
+                case "optimisticLockingSyncRetry": def.setOptimisticLockingSyncRetry(val); yield true;
+                case "parallelProcessing": def.setParallelProcessing(val); yield true;
+                case "timeoutCheckerExecutorService": def.setTimeoutCheckerExecutorService(val); yield true;
+                default: yield processorDefinitionAttributeHandler().accept(def, key, val);
+            }, (def, key) -> switch (key) {
+                case "completionPredicate": def.setCompletionPredicate(doParseExpressionSubElementDefinition()); yield true;
+                case "completionSizeExpression": def.setCompletionSizeExpression(doParseExpressionSubElementDefinition()); yield true;
+                case "completionTimeoutExpression": def.setCompletionTimeoutExpression(doParseExpressionSubElementDefinition()); yield true;
+                case "correlationExpression": def.setCorrelationExpression(doParseExpressionSubElementDefinition()); yield true;
+                case "optimisticLockRetryPolicy": def.setOptimisticLockRetryPolicyDefinition(doParseOptimisticLockRetryPolicyDefinition()); yield true;
+                default: yield outputDefinitionElementHandler().accept(def, key);
+            }, noValueHandler());
+    }
+    protected ExpressionSubElementDefinition doParseExpressionSubElementDefinition() throws IOException, XmlPullParserException {
+        return doParse(new ExpressionSubElementDefinition(), noAttributeHandler(), (def, key) -> {
+                ExpressionDefinition v = doParseExpressionDefinitionRef(key);
+                if (v != null) {
+                    def.setExpressionType(v);
+                    return true;
+                }
+                return false;
+            }, noValueHandler());
+    }
+    protected OptimisticLockRetryPolicyDefinition doParseOptimisticLockRetryPolicyDefinition() throws IOException, XmlPullParserException {
+        return doParse(new OptimisticLockRetryPolicyDefinition(), (def, key, val) -> switch (key) {
+                case "exponentialBackOff": def.setExponentialBackOff(val); yield true;
+                case "maximumRetries": def.setMaximumRetries(val); yield true;
+                case "maximumRetryDelay": def.setMaximumRetryDelay(val); yield true;
+                case "randomBackOff": def.setRandomBackOff(val); yield true;
+                case "retryDelay": def.setRetryDelay(val); yield true;
+                default: yield false;
+            }, noElementHandler(), noValueHandler());
     }
     protected BeanDefinition doParseBeanDefinition() throws IOException, XmlPullParserException {
         return doParse(new BeanDefinition(), (def, key, val) -> switch (key) {
@@ -198,6 +208,45 @@ public class ModelParser extends BaseParser {
                 case "property": doAdd(doParseBeanPropertyDefinition(), def.getProperties(), def::setProperties); yield true;
                 default: yield false;
             }, noValueHandler());
+    }
+    protected CacheDefinition doParseCacheDefinition() throws IOException, XmlPullParserException {
+        return doParse(new CacheDefinition(), (def, key, val) -> switch (key) {
+                case "cacheNull": def.setCacheNull(val); yield true;
+                case "keyValueRepository": def.setKeyValueRepository(val); yield true;
+                case "ttl": def.setTtl(val); yield true;
+                default: yield processorDefinitionAttributeHandler().accept(def, key, val);
+            }, outputExpressionNodeElementHandler(), noValueHandler());
+    }
+    protected <T extends OutputExpressionNode> ElementHandler<T> outputExpressionNodeElementHandler() {
+        return (def, key) -> {
+            ProcessorDefinition v = doParseProcessorDefinitionRef(key);
+            if (v != null) {
+                doAdd(v, def.getOutputs(), def::setOutputs);
+                return true;
+            }
+            return expressionNodeElementHandler().accept(def, key);
+        };
+    }
+    protected <T extends ExpressionNode> ElementHandler<T> expressionNodeElementHandler() {
+        return (def, key) -> {
+            ExpressionDefinition v = doParseExpressionDefinitionRef(key);
+            if (v != null) {
+                def.setExpression(v);
+                return true;
+            }
+            return optionalIdentifiedDefinitionElementHandler().accept(def, key);
+        };
+    }
+    protected <T extends ExpressionDefinition> AttributeHandler<T> expressionDefinitionAttributeHandler() {
+        return (def, key, val) -> switch (key) {
+            case "id": def.setId(val); yield true;
+            case "resolveResource": def.setResolveResource(val); yield true;
+            case "trim": def.setTrim(val); yield true;
+            default: yield false;
+        };
+    }
+    protected ExpressionDefinition doParseExpressionDefinition() throws IOException, XmlPullParserException {
+        return doParse(new ExpressionDefinition(), expressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
     }
     protected CatchDefinition doParseCatchDefinition() throws IOException, XmlPullParserException {
         return doParse(new CatchDefinition(), processorDefinitionAttributeHandler(), (def, key) -> switch (key) {
@@ -248,7 +297,7 @@ public class ModelParser extends BaseParser {
     protected CircuitBreakerDefinition doParseCircuitBreakerDefinition() throws IOException, XmlPullParserException {
         return doParse(new CircuitBreakerDefinition(), (def, key, val) -> switch (key) {
                 case "configuration": def.setConfiguration(val); yield true;
-                case "inheritErrorHandler": def.setInheritErrorHandler(Boolean.valueOf(val)); yield true;
+                case "inheritErrorHandler": def.setInheritErrorHandler(val); yield true;
                 default: yield processorDefinitionAttributeHandler().accept(def, key, val);
             }, (def, key) -> switch (key) {
                 case "faultToleranceConfiguration": def.setFaultToleranceConfiguration(doParseFaultToleranceConfigurationDefinition()); yield true;
@@ -341,28 +390,9 @@ public class ModelParser extends BaseParser {
                 default: yield processorDefinitionAttributeHandler().accept(def, key, val);
             }, expressionNodeElementHandler(), noValueHandler());
     }
-    protected <T extends ExpressionNode> ElementHandler<T> expressionNodeElementHandler() {
-        return (def, key) -> {
-            ExpressionDefinition v = doParseExpressionDefinitionRef(key);
-            if (v != null) {
-                def.setExpression(v);
-                return true;
-            }
-            return optionalIdentifiedDefinitionElementHandler().accept(def, key);
-        };
-    }
-    protected <T extends ExpressionDefinition> AttributeHandler<T> expressionDefinitionAttributeHandler() {
-        return (def, key, val) -> switch (key) {
-            case "id": def.setId(val); yield true;
-            case "trim": def.setTrim(val); yield true;
-            default: yield false;
-        };
-    }
-    protected ExpressionDefinition doParseExpressionDefinition() throws IOException, XmlPullParserException {
-        return doParse(new ExpressionDefinition(), expressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
-    }
     protected DynamicRouterDefinition doParseDynamicRouterDefinition() throws IOException, XmlPullParserException {
         return doParse(new DynamicRouterDefinition(), (def, key, val) -> switch (key) {
+                case "allowedSchemes": def.setAllowedSchemes(val); yield true;
                 case "cacheSize": def.setCacheSize(val); yield true;
                 case "ignoreInvalidEndpoints": def.setIgnoreInvalidEndpoints(val); yield true;
                 case "uriDelimiter": def.setUriDelimiter(val); yield true;
@@ -376,6 +406,7 @@ public class ModelParser extends BaseParser {
                 case "aggregationStrategyMethodAllowNull": def.setAggregationStrategyMethodAllowNull(val); yield true;
                 case "aggregationStrategyMethodName": def.setAggregationStrategyMethodName(val); yield true;
                 case "allowOptimisedComponents": def.setAllowOptimisedComponents(val); yield true;
+                case "allowedSchemes": def.setAllowedSchemes(val); yield true;
                 case "autoStartComponents": def.setAutoStartComponents(val); yield true;
                 case "cacheSize": def.setCacheSize(val); yield true;
                 case "ignoreInvalidEndpoint": def.setIgnoreInvalidEndpoint(val); yield true;
@@ -408,7 +439,6 @@ public class ModelParser extends BaseParser {
             case "threadOffloadExecutorService": def.setThreadOffloadExecutorService(val); yield true;
             case "timeoutDuration": def.setTimeoutDuration(val); yield true;
             case "timeoutEnabled": def.setTimeoutEnabled(val); yield true;
-            case "timeoutPoolSize": def.setTimeoutPoolSize(val); yield true;
             case "typedGuard": def.setTypedGuard(val); yield true;
             default: yield identifiedTypeAttributeHandler().accept(def, key, val);
         };
@@ -421,16 +451,6 @@ public class ModelParser extends BaseParser {
                 case "statusPropertyName": def.setStatusPropertyName(val); yield true;
                 default: yield processorDefinitionAttributeHandler().accept(def, key, val);
             }, outputExpressionNodeElementHandler(), noValueHandler());
-    }
-    protected <T extends OutputExpressionNode> ElementHandler<T> outputExpressionNodeElementHandler() {
-        return (def, key) -> {
-            ProcessorDefinition v = doParseProcessorDefinitionRef(key);
-            if (v != null) {
-                doAdd(v, def.getOutputs(), def::setOutputs);
-                return true;
-            }
-            return expressionNodeElementHandler().accept(def, key);
-        };
     }
     protected FinallyDefinition doParseFinallyDefinition() throws IOException, XmlPullParserException {
         return doParse(new FinallyDefinition(), processorDefinitionAttributeHandler(), outputDefinitionElementHandler(), noValueHandler());
@@ -538,6 +558,7 @@ public class ModelParser extends BaseParser {
     }
     protected MarshalDefinition doParseMarshalDefinition() throws IOException, XmlPullParserException {
         return doParse(new MarshalDefinition(), (def, key, val) -> switch (key) {
+                case "allowNullBody": def.setAllowNullBody(val); yield true;
                 case "variableReceive": def.setVariableReceive(val); yield true;
                 case "variableSend": def.setVariableSend(val); yield true;
                 default: yield processorDefinitionAttributeHandler().accept(def, key, val);
@@ -674,6 +695,7 @@ public class ModelParser extends BaseParser {
                 case "aggregationStrategyMethodAllowNull": def.setAggregationStrategyMethodAllowNull(val); yield true;
                 case "aggregationStrategyMethodName": def.setAggregationStrategyMethodName(val); yield true;
                 case "allowOptimisedComponents": def.setAllowOptimisedComponents(val); yield true;
+                case "allowedSchemes": def.setAllowedSchemes(val); yield true;
                 case "autoStartComponents": def.setAutoStartComponents(val); yield true;
                 case "cacheSize": def.setCacheSize(val); yield true;
                 case "ignoreInvalidEndpoint": def.setIgnoreInvalidEndpoint(val); yield true;
@@ -719,6 +741,7 @@ public class ModelParser extends BaseParser {
                 case "aggregationStrategy": def.setAggregationStrategy(val); yield true;
                 case "aggregationStrategyMethodAllowNull": def.setAggregationStrategyMethodAllowNull(val); yield true;
                 case "aggregationStrategyMethodName": def.setAggregationStrategyMethodName(val); yield true;
+                case "allowedSchemes": def.setAllowedSchemes(val); yield true;
                 case "cacheSize": def.setCacheSize(val); yield true;
                 case "delimiter": def.setDelimiter(val); yield true;
                 case "executorService": def.setExecutorService(val); yield true;
@@ -784,17 +807,21 @@ public class ModelParser extends BaseParser {
     }
     protected <T extends Resilience4jConfigurationCommon> AttributeHandler<T> resilience4jConfigurationCommonAttributeHandler() {
         return (def, key, val) -> switch (key) {
+            case "asynchronous": def.setAsynchronous(val); yield true;
             case "automaticTransitionFromOpenToHalfOpenEnabled": def.setAutomaticTransitionFromOpenToHalfOpenEnabled(val); yield true;
             case "bulkheadEnabled": def.setBulkheadEnabled(val); yield true;
+            case "bulkheadFairCallHandlingEnabled": def.setBulkheadFairCallHandlingEnabled(val); yield true;
             case "bulkheadMaxConcurrentCalls": def.setBulkheadMaxConcurrentCalls(val); yield true;
             case "bulkheadMaxWaitDuration": def.setBulkheadMaxWaitDuration(val); yield true;
             case "circuitBreaker": def.setCircuitBreaker(val); yield true;
             case "config": def.setConfig(val); yield true;
             case "failureRateThreshold": def.setFailureRateThreshold(val); yield true;
+            case "maxWaitDurationInHalfOpenState": def.setMaxWaitDurationInHalfOpenState(val); yield true;
             case "micrometerEnabled": def.setMicrometerEnabled(val); yield true;
             case "minimumNumberOfCalls": def.setMinimumNumberOfCalls(val); yield true;
             case "permittedNumberOfCallsInHalfOpenState": def.setPermittedNumberOfCallsInHalfOpenState(val); yield true;
             case "slidingWindowSize": def.setSlidingWindowSize(val); yield true;
+            case "slidingWindowSynchronizationStrategy": def.setSlidingWindowSynchronizationStrategy(val); yield true;
             case "slidingWindowType": def.setSlidingWindowType(val); yield true;
             case "slowCallDurationThreshold": def.setSlowCallDurationThreshold(val); yield true;
             case "slowCallRateThreshold": def.setSlowCallRateThreshold(val); yield true;
@@ -921,11 +948,8 @@ public class ModelParser extends BaseParser {
                 case "errorHandler": def.setErrorHandler(doParseErrorHandlerDefinition()); yield true;
                 case "from": def.setInput(doParseFromDefinition()); yield true;
                 case "inputType": def.setInputType(doParseInputTypeDefinition()); yield true;
-                case "kamelet": def.setKamelet(Boolean.valueOf(doParseText())); yield true;
                 case "outputType": def.setOutputType(doParseOutputTypeDefinition()); yield true;
-                case "rest": def.setRest(Boolean.valueOf(doParseText())); yield true;
                 case "routeProperty": doAdd(doParsePropertyDefinition(), def.getRouteProperties(), def::setRouteProperties); yield true;
-                case "template": def.setTemplate(Boolean.valueOf(doParseText())); yield true;
                 default: yield outputDefinitionElementHandler().accept(def, key);
             }, noValueHandler());
     }
@@ -992,7 +1016,7 @@ public class ModelParser extends BaseParser {
                 case "defaultValue": def.setDefaultValue(val); yield true;
                 case "description": def.setDescription(val); yield true;
                 case "name": def.setName(val); yield true;
-                case "required": def.setRequired(Boolean.valueOf(val)); yield true;
+                case "required": def.setRequired(val); yield true;
                 default: yield false;
             }, noElementHandler(), noValueHandler());
     }
@@ -1052,6 +1076,7 @@ public class ModelParser extends BaseParser {
     }
     protected RoutingSlipDefinition doParseRoutingSlipDefinition() throws IOException, XmlPullParserException {
         return doParse(new RoutingSlipDefinition(), (def, key, val) -> switch (key) {
+                case "allowedSchemes": def.setAllowedSchemes(val); yield true;
                 case "cacheSize": def.setCacheSize(val); yield true;
                 case "ignoreInvalidEndpoints": def.setIgnoreInvalidEndpoints(val); yield true;
                 case "uriDelimiter": def.setUriDelimiter(val); yield true;
@@ -1133,15 +1158,21 @@ public class ModelParser extends BaseParser {
                 case "aggregationStrategyMethodAllowNull": def.setAggregationStrategyMethodAllowNull(val); yield true;
                 case "aggregationStrategyMethodName": def.setAggregationStrategyMethodName(val); yield true;
                 case "delimiter": def.setDelimiter(val); yield true;
+                case "errorThreshold": def.setErrorThreshold(val); yield true;
                 case "executorService": def.setExecutorService(val); yield true;
+                case "group": def.setGroup(val); yield true;
+                case "maxFailedRecords": def.setMaxFailedRecords(val); yield true;
                 case "onPrepare": def.setOnPrepare(val); yield true;
                 case "parallelAggregate": def.setParallelAggregate(val); yield true;
                 case "parallelProcessing": def.setParallelProcessing(val); yield true;
+                case "resumeStrategy": def.setResumeStrategy(val); yield true;
                 case "shareUnitOfWork": def.setShareUnitOfWork(val); yield true;
                 case "stopOnException": def.setStopOnException(val); yield true;
                 case "streaming": def.setStreaming(val); yield true;
                 case "synchronous": def.setSynchronous(val); yield true;
                 case "timeout": def.setTimeout(val); yield true;
+                case "watermarkExpression": def.setWatermarkExpression(val); yield true;
+                case "watermarkKey": def.setWatermarkKey(val); yield true;
                 default: yield processorDefinitionAttributeHandler().accept(def, key, val);
             }, outputExpressionNodeElementHandler(), noValueHandler());
     }
@@ -1150,6 +1181,27 @@ public class ModelParser extends BaseParser {
     }
     protected StopDefinition doParseStopDefinition() throws IOException, XmlPullParserException {
         return doParse(new StopDefinition(), processorDefinitionAttributeHandler(), optionalIdentifiedDefinitionElementHandler(), noValueHandler());
+    }
+    protected SwitchCaseDefinition doParseSwitchCaseDefinition() throws IOException, XmlPullParserException {
+        return doParse(new SwitchCaseDefinition(), (def, key, val) -> switch (key) {
+                case "uri": def.setUri(sanitizeUri(val)); yield true;
+                case "value": def.setValue(val); yield true;
+                default: yield optionalIdentifiedDefinitionAttributeHandler().accept(def, key, val);
+            }, optionalIdentifiedDefinitionElementHandler(), noValueHandler());
+    }
+    protected SwitchDefinition doParseSwitchDefinition() throws IOException, XmlPullParserException {
+        return doParse(new SwitchDefinition(), processorDefinitionAttributeHandler(), (def, key) -> switch (key) {
+                case "case": doAdd(doParseSwitchCaseDefinition(), def.getCases(), def::setCases); yield true;
+                case "otherwise": def.setOtherwise(doParseSwitchOtherwiseDefinition()); yield true;
+                case "selector": def.setSelector(doParseExpressionSubElementDefinition()); yield true;
+                default: yield optionalIdentifiedDefinitionElementHandler().accept(def, key);
+            }, noValueHandler());
+    }
+    protected SwitchOtherwiseDefinition doParseSwitchOtherwiseDefinition() throws IOException, XmlPullParserException {
+        return doParse(new SwitchOtherwiseDefinition(), (def, key, val) -> switch (key) {
+                case "uri": def.setUri(sanitizeUri(val)); yield true;
+                default: yield false;
+            }, noElementHandler(), noValueHandler());
     }
     protected TemplatedRouteDefinition doParseTemplatedRouteDefinition() throws IOException, XmlPullParserException {
         return doParse(new TemplatedRouteDefinition(), (def, key, val) -> switch (key) {
@@ -1265,6 +1317,7 @@ public class ModelParser extends BaseParser {
     protected <T extends ToDynamicDefinition> AttributeHandler<T> toDynamicDefinitionAttributeHandler() {
         return (def, key, val) -> switch (key) {
             case "allowOptimisedComponents": def.setAllowOptimisedComponents(val); yield true;
+            case "allowedSchemes": def.setAllowedSchemes(val); yield true;
             case "autoStartComponents": def.setAutoStartComponents(val); yield true;
             case "cacheSize": def.setCacheSize(val); yield true;
             case "ignoreInvalidEndpoint": def.setIgnoreInvalidEndpoint(val); yield true;
@@ -1560,6 +1613,7 @@ public class ModelParser extends BaseParser {
                 case "moduleRefs": def.setModuleRefs(val); yield true;
                 case "objectMapper": def.setObjectMapper(val); yield true;
                 case "schemaResolver": def.setSchemaResolver(val); yield true;
+                case "serializablePackages": def.setSerializablePackages(val); yield true;
                 case "timezone": def.setTimezone(val); yield true;
                 case "unmarshalType": def.setUnmarshalTypeName(val); yield true;
                 case "useDefaultObjectMapper": def.setUseDefaultObjectMapper(val); yield true;
@@ -1793,6 +1847,7 @@ public class ModelParser extends BaseParser {
     protected HL7DataFormat doParseHL7DataFormat() throws IOException, XmlPullParserException {
         return doParse(new HL7DataFormat(), (def, key, val) -> switch (key) {
                 case "parser": def.setParser(val); yield true;
+                case "targetFormat": def.setTargetFormat(val); yield true;
                 case "validate": def.setValidate(val); yield true;
                 default: yield identifiedTypeAttributeHandler().accept(def, key, val);
             }, noElementHandler(), noValueHandler());
@@ -1933,6 +1988,7 @@ public class ModelParser extends BaseParser {
                 case "keyUserid": def.setKeyUserid(val); yield true;
                 case "password": def.setPassword(val); yield true;
                 case "provider": def.setProvider(val); yield true;
+                case "requireIntegrityProtection": def.setRequireIntegrityProtection(val); yield true;
                 case "signatureKeyFileName": def.setSignatureKeyFileName(val); yield true;
                 case "signatureKeyRing": def.setSignatureKeyRing(val); yield true;
                 case "signatureKeyUserid": def.setSignatureKeyUserid(val); yield true;
@@ -1943,7 +1999,6 @@ public class ModelParser extends BaseParser {
     }
     protected PQCDataFormat doParsePQCDataFormat() throws IOException, XmlPullParserException {
         return doParse(new PQCDataFormat(), (def, key, val) -> switch (key) {
-                case "bufferSize": def.setBufferSize(val); yield true;
                 case "keyEncapsulationAlgorithm": def.setKeyEncapsulationAlgorithm(val); yield true;
                 case "keyGenerator": def.setKeyGenerator(val); yield true;
                 case "keyPair": def.setKeyPair(val); yield true;
@@ -1992,6 +2047,7 @@ public class ModelParser extends BaseParser {
     }
     protected SmooksDataFormat doParseSmooksDataFormat() throws IOException, XmlPullParserException {
         return doParse(new SmooksDataFormat(), (def, key, val) -> switch (key) {
+                case "allowExternalEntities": def.setAllowExternalEntities(val); yield true;
                 case "smooksConfig": def.setSmooksConfig(val); yield true;
                 default: yield identifiedTypeAttributeHandler().accept(def, key, val);
             }, noElementHandler(), noValueHandler());
@@ -2040,6 +2096,22 @@ public class ModelParser extends BaseParser {
                 case "contentTypeFormat": def.setContentTypeFormat(val); yield true;
                 case "contentTypeHeader": def.setContentTypeHeader(val); yield true;
                 case "instanceClass": def.setInstanceClass(val); yield true;
+                default: yield identifiedTypeAttributeHandler().accept(def, key, val);
+            }, noElementHandler(), noValueHandler());
+    }
+    protected ToonDataFormat doParseToonDataFormat() throws IOException, XmlPullParserException {
+        return doParse(new ToonDataFormat(), (def, key, val) -> switch (key) {
+                case "contentTypeHeader": def.setContentTypeHeader(val); yield true;
+                case "delimiter": def.setDelimiter(val); yield true;
+                case "indent": def.setIndent(val); yield true;
+                case "lengthMarker": def.setLengthMarker(val); yield true;
+                case "strict": def.setStrict(val); yield true;
+                default: yield identifiedTypeAttributeHandler().accept(def, key, val);
+            }, noElementHandler(), noValueHandler());
+    }
+    protected UblDataFormat doParseUblDataFormat() throws IOException, XmlPullParserException {
+        return doParse(new UblDataFormat(), (def, key, val) -> switch (key) {
+                case "prettyPrint": def.setPrettyPrint(val); yield true;
                 default: yield identifiedTypeAttributeHandler().accept(def, key, val);
             }, noElementHandler(), noValueHandler());
     }
@@ -2200,21 +2272,14 @@ public class ModelParser extends BaseParser {
     protected SpringTransactionErrorHandlerDefinition doParseSpringTransactionErrorHandlerDefinition() throws IOException, XmlPullParserException {
         return doParse(new SpringTransactionErrorHandlerDefinition(), transactionErrorHandlerDefinitionAttributeHandler(), defaultErrorHandlerDefinitionElementHandler(), noValueHandler());
     }
-    protected CSimpleExpression doParseCSimpleExpression() throws IOException, XmlPullParserException {
-        return doParse(new CSimpleExpression(), (def, key, val) -> switch (key) {
-                case "pretty": def.setPretty(val); yield true;
-                case "trimResult": def.setTrimResult(val); yield true;
-                default: yield typedExpressionDefinitionAttributeHandler().accept(def, key, val);
-            }, noElementHandler(), expressionDefinitionValueHandler());
+    protected ConstantExpression doParseConstantExpression() throws IOException, XmlPullParserException {
+        return doParse(new ConstantExpression(), typedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
     }
     protected <T extends TypedExpressionDefinition> AttributeHandler<T> typedExpressionDefinitionAttributeHandler() {
         return (def, key, val) -> switch (key) {
             case "resultType": def.setResultTypeName(val); yield true;
             default: yield expressionDefinitionAttributeHandler().accept(def, key, val);
         };
-    }
-    protected ConstantExpression doParseConstantExpression() throws IOException, XmlPullParserException {
-        return doParse(new ConstantExpression(), typedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
     }
     protected DatasonnetExpression doParseDatasonnetExpression() throws IOException, XmlPullParserException {
         return doParse(new DatasonnetExpression(), (def, key, val) -> switch (key) {
@@ -2241,6 +2306,9 @@ public class ModelParser extends BaseParser {
     protected Hl7TerserExpression doParseHl7TerserExpression() throws IOException, XmlPullParserException {
         return doParse(new Hl7TerserExpression(), singleInputTypedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
     }
+    protected JactlExpression doParseJactlExpression() throws IOException, XmlPullParserException {
+        return doParse(new JactlExpression(), typedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
+    }
     protected JavaExpression doParseJavaExpression() throws IOException, XmlPullParserException {
         return doParse(new JavaExpression(), (def, key, val) -> switch (key) {
                 case "preCompile": def.setPreCompile(val); yield true;
@@ -2250,13 +2318,6 @@ public class ModelParser extends BaseParser {
     }
     protected JavaScriptExpression doParseJavaScriptExpression() throws IOException, XmlPullParserException {
         return doParse(new JavaScriptExpression(), typedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
-    }
-    protected JoorExpression doParseJoorExpression() throws IOException, XmlPullParserException {
-        return doParse(new JoorExpression(), (def, key, val) -> switch (key) {
-                case "preCompile": def.setPreCompile(val); yield true;
-                case "singleQuotes": def.setSingleQuotes(val); yield true;
-                default: yield typedExpressionDefinitionAttributeHandler().accept(def, key, val);
-            }, noElementHandler(), expressionDefinitionValueHandler());
     }
     protected JqExpression doParseJqExpression() throws IOException, XmlPullParserException {
         return doParse(new JqExpression(), singleInputTypedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
@@ -2294,8 +2355,14 @@ public class ModelParser extends BaseParser {
     protected OgnlExpression doParseOgnlExpression() throws IOException, XmlPullParserException {
         return doParse(new OgnlExpression(), typedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
     }
+    protected Python3Expression doParsePython3Expression() throws IOException, XmlPullParserException {
+        return doParse(new Python3Expression(), typedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
+    }
     protected PythonExpression doParsePythonExpression() throws IOException, XmlPullParserException {
         return doParse(new PythonExpression(), typedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
+    }
+    protected QuickjsExpression doParseQuickjsExpression() throws IOException, XmlPullParserException {
+        return doParse(new QuickjsExpression(), typedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
     }
     protected RefExpression doParseRefExpression() throws IOException, XmlPullParserException {
         return doParse(new RefExpression(), typedExpressionDefinitionAttributeHandler(), noElementHandler(), expressionDefinitionValueHandler());
@@ -2338,8 +2405,14 @@ public class ModelParser extends BaseParser {
         return doParse(new XMLTokenizerExpression(), (def, key, val) -> switch (key) {
                 case "group": def.setGroup(val); yield true;
                 case "mode": def.setMode(val); yield true;
-                default: yield singleInputTypedExpressionDefinitionAttributeHandler().accept(def, key, val);
+                default: yield namespaceAwareExpressionAttributeHandler().accept(def, key, val);
             }, namespaceAwareExpressionElementHandler(), expressionDefinitionValueHandler());
+    }
+    protected <T extends NamespaceAwareExpression> AttributeHandler<T> namespaceAwareExpressionAttributeHandler() {
+        return (def, key, val) -> switch (key) {
+            case "namespacesRef": def.setNamespacesRef(val); yield true;
+            default: yield singleInputTypedExpressionDefinitionAttributeHandler().accept(def, key, val);
+        };
     }
     protected <T extends NamespaceAwareExpression> ElementHandler<T> namespaceAwareExpressionElementHandler() {
         return (def, key) -> switch (key) {
@@ -2357,13 +2430,13 @@ public class ModelParser extends BaseParser {
                 case "resultQName": def.setResultQName(val); yield true;
                 case "saxon": def.setSaxon(val); yield true;
                 case "threadSafety": def.setThreadSafety(val); yield true;
-                default: yield singleInputTypedExpressionDefinitionAttributeHandler().accept(def, key, val);
+                default: yield namespaceAwareExpressionAttributeHandler().accept(def, key, val);
             }, namespaceAwareExpressionElementHandler(), expressionDefinitionValueHandler());
     }
     protected XQueryExpression doParseXQueryExpression() throws IOException, XmlPullParserException {
         return doParse(new XQueryExpression(), (def, key, val) -> switch (key) {
                 case "configurationRef": def.setConfigurationRef(val); yield true;
-                default: yield singleInputTypedExpressionDefinitionAttributeHandler().accept(def, key, val);
+                default: yield namespaceAwareExpressionAttributeHandler().accept(def, key, val);
             }, namespaceAwareExpressionElementHandler(), expressionDefinitionValueHandler());
     }
     protected CustomLoadBalancerDefinition doParseCustomLoadBalancerDefinition() throws IOException, XmlPullParserException {
@@ -2374,7 +2447,7 @@ public class ModelParser extends BaseParser {
     }
     protected FailoverLoadBalancerDefinition doParseFailoverLoadBalancerDefinition() throws IOException, XmlPullParserException {
         return doParse(new FailoverLoadBalancerDefinition(), (def, key, val) -> switch (key) {
-                case "inheritErrorHandler": def.setInheritErrorHandler(Boolean.valueOf(val)); yield true;
+                case "inheritErrorHandler": def.setInheritErrorHandler(val); yield true;
                 case "maximumFailoverAttempts": def.setMaximumFailoverAttempts(val); yield true;
                 case "roundRobin": def.setRoundRobin(val); yield true;
                 case "sticky": def.setSticky(val); yield true;
@@ -2474,7 +2547,7 @@ public class ModelParser extends BaseParser {
                 case "defaultValue": def.setDefaultValue(val); yield true;
                 case "description": def.setDescription(val); yield true;
                 case "name": def.setName(val); yield true;
-                case "required": def.setRequired(Boolean.valueOf(val)); yield true;
+                case "required": def.setRequired(val); yield true;
                 case "type": def.setType(RestParamType.valueOf(val)); yield true;
                 default: yield false;
             }, (def, key) -> switch (key) {
@@ -2539,6 +2612,7 @@ public class ModelParser extends BaseParser {
                 case "mockIncludePattern": def.setMockIncludePattern(val); yield true;
                 case "routeId": def.setRouteId(val); yield true;
                 case "specification": def.setSpecification(val); yield true;
+                case "unmatchedRequestHandling": def.setUnmatchedRequestHandling(val); yield true;
                 default: yield optionalIdentifiedDefinitionAttributeHandler().accept(def, key, val);
             }, optionalIdentifiedDefinitionElementHandler(), noValueHandler());
     }
@@ -2726,8 +2800,10 @@ public class ModelParser extends BaseParser {
     }
     protected ProcessorDefinition doParseProcessorDefinitionRef(String key) throws IOException, XmlPullParserException {
         switch (key) {
+            case "a2aSubTask": return doParseA2ASubTaskDefinition();
             case "aggregate": return doParseAggregateDefinition();
             case "bean": return doParseBeanDefinition();
+            case "cache": return doParseCacheDefinition();
             case "doCatch": return doParseCatchDefinition();
             case "choice": return doParseChoiceDefinition();
             case "circuitBreaker": return doParseCircuitBreakerDefinition();
@@ -2783,6 +2859,7 @@ public class ModelParser extends BaseParser {
             case "split": return doParseSplitDefinition();
             case "step": return doParseStepDefinition();
             case "stop": return doParseStopDefinition();
+            case "switch": return doParseSwitchDefinition();
             case "threads": return doParseThreadsDefinition();
             case "throttle": return doParseThrottleDefinition();
             case "throwException": return doParseThrowExceptionDefinition();
@@ -2796,6 +2873,39 @@ public class ModelParser extends BaseParser {
             case "unmarshal": return doParseUnmarshalDefinition();
             case "validate": return doParseValidateDefinition();
             case "wireTap": return doParseWireTapDefinition();
+            default: return null;
+        }
+    }
+    protected ExpressionDefinition doParseExpressionDefinitionRef(String key) throws IOException, XmlPullParserException {
+        switch (key) {
+            case "expressionDefinition": return doParseExpressionDefinition();
+            case "constant": return doParseConstantExpression();
+            case "datasonnet": return doParseDatasonnetExpression();
+            case "exchangeProperty": return doParseExchangePropertyExpression();
+            case "groovy": return doParseGroovyExpression();
+            case "header": return doParseHeaderExpression();
+            case "hl7terser": return doParseHl7TerserExpression();
+            case "jactl": return doParseJactlExpression();
+            case "java": return doParseJavaExpression();
+            case "js": return doParseJavaScriptExpression();
+            case "jq": return doParseJqExpression();
+            case "jsonpath": return doParseJsonPathExpression();
+            case "language": return doParseLanguageExpression();
+            case "method": return doParseMethodCallExpression();
+            case "mvel": return doParseMvelExpression();
+            case "ognl": return doParseOgnlExpression();
+            case "python3": return doParsePython3Expression();
+            case "python": return doParsePythonExpression();
+            case "quickjs": return doParseQuickjsExpression();
+            case "ref": return doParseRefExpression();
+            case "simple": return doParseSimpleExpression();
+            case "spel": return doParseSpELExpression();
+            case "tokenize": return doParseTokenizerExpression();
+            case "variable": return doParseVariableExpression();
+            case "wasm": return doParseWasmExpression();
+            case "xtokenize": return doParseXMLTokenizerExpression();
+            case "xpath": return doParseXPathExpression();
+            case "xquery": return doParseXQueryExpression();
             default: return null;
         }
     }
@@ -2842,6 +2952,8 @@ public class ModelParser extends BaseParser {
             case "syslog": return doParseSyslogDataFormat();
             case "tarFile": return doParseTarFileDataFormat();
             case "thrift": return doParseThriftDataFormat();
+            case "toon": return doParseToonDataFormat();
+            case "ubl": return doParseUblDataFormat();
             case "univocityCsv": return doParseUniVocityCsvDataFormat();
             case "univocityFixed": return doParseUniVocityFixedDataFormat();
             case "univocityTsv": return doParseUniVocityTsvDataFormat();
@@ -2849,38 +2961,6 @@ public class ModelParser extends BaseParser {
             case "yaml": return doParseYAMLDataFormat();
             case "zipDeflater": return doParseZipDeflaterDataFormat();
             case "zipFile": return doParseZipFileDataFormat();
-            default: return null;
-        }
-    }
-    protected ExpressionDefinition doParseExpressionDefinitionRef(String key) throws IOException, XmlPullParserException {
-        switch (key) {
-            case "expressionDefinition": return doParseExpressionDefinition();
-            case "csimple": return doParseCSimpleExpression();
-            case "constant": return doParseConstantExpression();
-            case "datasonnet": return doParseDatasonnetExpression();
-            case "exchangeProperty": return doParseExchangePropertyExpression();
-            case "groovy": return doParseGroovyExpression();
-            case "header": return doParseHeaderExpression();
-            case "hl7terser": return doParseHl7TerserExpression();
-            case "java": return doParseJavaExpression();
-            case "js": return doParseJavaScriptExpression();
-            case "joor": return doParseJoorExpression();
-            case "jq": return doParseJqExpression();
-            case "jsonpath": return doParseJsonPathExpression();
-            case "language": return doParseLanguageExpression();
-            case "method": return doParseMethodCallExpression();
-            case "mvel": return doParseMvelExpression();
-            case "ognl": return doParseOgnlExpression();
-            case "python": return doParsePythonExpression();
-            case "ref": return doParseRefExpression();
-            case "simple": return doParseSimpleExpression();
-            case "spel": return doParseSpELExpression();
-            case "tokenize": return doParseTokenizerExpression();
-            case "variable": return doParseVariableExpression();
-            case "wasm": return doParseWasmExpression();
-            case "xtokenize": return doParseXMLTokenizerExpression();
-            case "xpath": return doParseXPathExpression();
-            case "xquery": return doParseXQueryExpression();
             default: return null;
         }
     }

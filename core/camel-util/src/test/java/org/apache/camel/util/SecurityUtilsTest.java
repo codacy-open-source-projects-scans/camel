@@ -39,6 +39,30 @@ class SecurityUtilsTest {
         // verify known entries
         assertNotNull(options.get("trustallcertificates"));
         assertEquals("insecure:ssl", options.get("trustallcertificates").category());
+
+        // acceptAnySpiffeId lives on a bean (SpiffeSSLContextParameters) rather than on a component option, so it
+        // only reaches this map through EXTRA_SECURITY_OPTIONS in UpdateSensitizeHelper; guard that it is not lost
+        assertNotNull(options.get("acceptanyspiffeid"),
+                "acceptAnySpiffeId must stay registered so camel.main.profile=prod can flag it");
+        assertEquals("insecure:ssl", options.get("acceptanyspiffeid").category());
+        assertEquals("true", options.get("acceptanyspiffeid").insecureValue());
+    }
+
+    @Test
+    void testHostnameVerificationOptionsAreRegistered() {
+        // every option that turns off TLS hostname verification must reach this map, otherwise
+        // camel.main.profile=prod cannot refuse it (CAMEL-25409)
+        assertTrue(SecurityUtils.isInsecureValue("camel.component.mongodb.tlsAllowInvalidHostnames", true));
+        assertFalse(SecurityUtils.isInsecureValue("camel.component.mongodb.tlsAllowInvalidHostnames", false));
+        assertTrue(SecurityUtils.isInsecureValue(
+                "camel.component.debezium-mongodb.mongodbSslInvalidHostnameAllowed", true));
+        assertFalse(SecurityUtils.isInsecureValue(
+                "camel.component.debezium-mongodb.mongodbSslInvalidHostnameAllowed", false));
+        // hostnameVerification is the inverse: it is the off value that is insecure
+        assertTrue(SecurityUtils.isInsecureValue("camel.component.netty-http.hostnameVerification", false));
+        assertFalse(SecurityUtils.isInsecureValue("camel.component.netty-http.hostnameVerification", true));
+        assertTrue(SecurityUtils.isInsecureValue("camel.component.splunk-hec.skipTlsVerify", true));
+        assertFalse(SecurityUtils.isInsecureValue("camel.component.splunk-hec.skipTlsVerify", false));
     }
 
     @Test
@@ -71,8 +95,8 @@ class SecurityUtilsTest {
 
     @Test
     void testGetSecurityOption() {
-        // full property key — should extract last segment
-        SecurityUtils.SecurityOption opt = SecurityUtils.getSecurityOption("camel.component.http.trustAllCertificates");
+        // full property key of a component that has this security option
+        SecurityUtils.SecurityOption opt = SecurityUtils.getSecurityOption("camel.component.aws2-s3.trustAllCertificates");
         assertNotNull(opt);
         assertEquals("insecure:ssl", opt.category());
         assertEquals("true", opt.insecureValue());
@@ -103,6 +127,12 @@ class SecurityUtilsTest {
         // hostnameVerification=false is insecure (inverted semantics)
         assertTrue(SecurityUtils.isInsecureValue("camel.ssl.hostnameVerification", "false"));
         assertFalse(SecurityUtils.isInsecureValue("camel.ssl.hostnameVerification", "true"));
+
+        // sslEndpointAlgorithm=none/false/empty disables hostname verification
+        assertTrue(SecurityUtils.isInsecureValue("camel.component.kafka.sslEndpointAlgorithm", "none"));
+        assertTrue(SecurityUtils.isInsecureValue("camel.component.kafka.sslEndpointAlgorithm", "false"));
+        assertTrue(SecurityUtils.isInsecureValue("camel.component.kafka.sslEndpointAlgorithm", ""));
+        assertFalse(SecurityUtils.isInsecureValue("camel.component.kafka.sslEndpointAlgorithm", "https"));
 
         // unknown option is never insecure
         assertFalse(SecurityUtils.isInsecureValue("camel.component.http.port", "8080"));
@@ -211,5 +241,97 @@ class SecurityUtilsTest {
                 Set.of());
 
         assertEquals(0, violations.size());
+    }
+
+    @Test
+    void testComponentOptionMatchesOnlyItsOwnSecurityOption() {
+        // ssl is a security option of camel-hivemq only, and tls of camel-pinecone only
+        assertTrue(SecurityUtils.isInsecureValue("camel.component.hivemq.ssl", "false"));
+        assertTrue(SecurityUtils.isInsecureValue("camel.component.pinecone.tls", "false"));
+
+        // other components with an option of the same name are not flagged
+        assertNull(SecurityUtils.getSecurityOption("camel.component.netty.ssl"));
+        assertNull(SecurityUtils.getSecurityOption("camel.component.netty-http.ssl"));
+        assertNull(SecurityUtils.getSecurityOption("camel.component.clickhouse.ssl"));
+        assertNull(SecurityUtils.getSecurityOption("camel.component.oaipmh.ssl"));
+        assertNull(SecurityUtils.getSecurityOption("camel.component.kafka.tls"));
+        assertFalse(SecurityUtils.isInsecureValue("camel.component.netty.ssl", "false"));
+    }
+
+    @Test
+    void testComponentNameMatching() {
+        // the component name in the key may use dashes and any case
+        assertNotNull(SecurityUtils.getSecurityOption("camel.component.atmosphere-websocket.allowJavaSerializedObject"));
+        assertNotNull(SecurityUtils.getSecurityOption("camel.component.HiveMQ.ssl"));
+        assertNotNull(SecurityUtils.getSecurityOption("camel.component.hivemq.configuration.ssl"));
+        // an alternative scheme of the component matches as well
+        assertNotNull(SecurityUtils.getSecurityOption("camel.component.llm.sslEndpointAlgorithm"));
+        assertNotNull(SecurityUtils.getSecurityOption("camel.component.openai.sslEndpointAlgorithm"));
+    }
+
+    @Test
+    void testDataFormatOptionMatchesOnlyItsOwnSecurityOption() {
+        assertNotNull(SecurityUtils.getSecurityOption("camel.dataformat.avro.serializablePackages"));
+        assertNull(SecurityUtils.getSecurityOption("camel.dataformat.jackson.serializablePackages"));
+    }
+
+    @Test
+    void testKeysWithoutComponentMatchByName() {
+        // keys that do not identify a component, data format or language match by the option name
+        assertNotNull(SecurityUtils.getSecurityOption("ssl"));
+        assertNotNull(SecurityUtils.getSecurityOption("camel.ssl.trustAllCertificates"));
+        assertNotNull(SecurityUtils.getSecurityOption("camel.beans.myClient.trustAllCertificates"));
+        // camel-main options have no owning component
+        assertNotNull(SecurityUtils.getSecurityOption("camel.main.devConsoleEnabled"));
+    }
+
+    @Test
+    void testLanguageOptionMatchesOnlyItsOwnLanguage() {
+        // nested is declared only by the simple and file languages
+        assertTrue(SecurityUtils.isInsecureValue("camel.language.simple.nested", "true"));
+        assertTrue(SecurityUtils.isInsecureValue("camel.language.file.nested", "true"));
+        assertNull(SecurityUtils.getSecurityOption("camel.language.xpath.nested"));
+        // the bare option name, as the security scanner checks an expression in a route, still matches
+        assertTrue(SecurityUtils.isInsecureValue("nested", "true"));
+        // any other configuration key that merely ends with the same name is not the language option
+        assertNull(SecurityUtils.getSecurityOption("camel.beans.foo.nested"));
+        assertNull(SecurityUtils.getSecurityOption("camel.main.nested"));
+        assertNull(SecurityUtils.getSecurityOption("camel.kamelet.myKamelet.nested"));
+        // component options keep matching such keys by name, as camel.beans.* can configure a component bean
+        assertNotNull(SecurityUtils.getSecurityOption("camel.beans.myClient.trustAllCertificates"));
+    }
+
+    @Test
+    void testDetectViolationsIgnoresBeanPropertyNamedLikeALanguageOption() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("camel.beans.foo.nested", "true");
+        properties.put("camel.language.simple.nested", "true");
+
+        List<SecurityViolation> violations = SecurityUtils.detectViolations(
+                properties,
+                (k, v) -> false,
+                category -> "fail",
+                Set.of());
+
+        assertEquals(1, violations.size());
+        assertEquals("camel.language.simple.nested", violations.get(0).propertyKey());
+        assertEquals(SecurityUtils.INSECURE_DEV, violations.get(0).category());
+    }
+
+    @Test
+    void testDetectViolationsOnlyForTheOwningComponent() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("camel.component.netty.ssl", "false");
+        properties.put("camel.component.kafka.tls", "false");
+        properties.put("camel.component.hivemq.ssl", "false");
+
+        List<SecurityViolation> violations = SecurityUtils.detectViolations(
+                properties,
+                (k, v) -> false,
+                category -> "fail",
+                Set.of());
+
+        assertEquals(1, violations.size());
+        assertEquals("camel.component.hivemq.ssl", violations.get(0).propertyKey());
     }
 }

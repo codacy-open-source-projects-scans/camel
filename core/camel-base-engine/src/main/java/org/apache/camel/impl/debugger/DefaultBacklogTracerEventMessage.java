@@ -54,9 +54,11 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
     private final int toNodeLevel;
     private final String exchangeId;
     private final String correlationExchangeId;
+    private final String breadcrumbId;
     private final String threadName;
     private String endpointUri;
     private boolean remoteEndpoint;
+    private boolean stubEndpoint;
     private String endpointServiceUrl;
     private String endpointServiceProtocol;
     private Map<String, String> endpointServiceMetadata;
@@ -77,7 +79,7 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
                                             String toNodeParentId,
                                             String toNodeParentWhenId, String toNodeParentWhenLabel,
                                             String toNodeShortName, String toNodeLabel, int toNodeLevel, String exchangeId,
-                                            String correlationExchangeId,
+                                            String correlationExchangeId, String breadcrumbId,
                                             boolean rest, boolean template, JsonObject data) {
         this.camelContext = camelContext;
         this.watch = new StopWatch();
@@ -97,6 +99,7 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
         this.toNodeLevel = toNodeLevel;
         this.exchangeId = exchangeId;
         this.correlationExchangeId = correlationExchangeId;
+        this.breadcrumbId = breadcrumbId;
         this.rest = rest;
         this.template = template;
         this.threadName = Thread.currentThread().getName();
@@ -200,6 +203,11 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
     }
 
     @Override
+    public String getBreadcrumbId() {
+        return breadcrumbId;
+    }
+
+    @Override
     public String getProcessingThreadName() {
         return threadName;
     }
@@ -285,6 +293,15 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
         this.remoteEndpoint = remoteEndpoint;
     }
 
+    @Override
+    public boolean isStubEndpoint() {
+        return stubEndpoint;
+    }
+
+    public void setStubEndpoint(boolean stubEndpoint) {
+        this.stubEndpoint = stubEndpoint;
+    }
+
     public void setEndpointUri(String endpointUri) {
         this.endpointUri = endpointUri;
         // dirty flag
@@ -355,33 +372,39 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
         sb.append(prefix).append("  <done>").append(isDone()).append("</done>\n");
         sb.append(prefix).append("  <failed>").append(isFailed()).append("</failed>\n");
         if (getLocation() != null) {
-            sb.append(prefix).append("  <location>").append(getLocation()).append("</location>\n");
+            sb.append(prefix).append("  <location>").append(StringHelper.xmlEncode(getLocation())).append("</location>\n");
         }
         // route id is optional and we then use an empty value for no route id
-        sb.append(prefix).append("  <routeId>").append(routeId != null ? routeId : "").append("</routeId>\n");
-        sb.append(prefix).append("  <fromRouteId>").append(fromRouteId != null ? fromRouteId : "").append("</fromRouteId>\n");
+        sb.append(prefix).append("  <routeId>").append(routeId != null ? StringHelper.xmlEncode(routeId) : "")
+                .append("</routeId>\n");
+        sb.append(prefix).append("  <fromRouteId>").append(fromRouteId != null ? StringHelper.xmlEncode(fromRouteId) : "")
+                .append("</fromRouteId>\n");
         if (endpointUri != null) {
-            sb.append(prefix).append("  <endpointUri>").append(endpointUri).append("</endpointUri>\n");
+            sb.append(prefix).append("  <endpointUri>").append(StringHelper.xmlEncode(endpointUri)).append("</endpointUri>\n");
             sb.append(prefix).append("  <remoteEndpoint>").append(remoteEndpoint).append("</remoteEndpoint>\n");
+            sb.append(prefix).append("  <stubEndpoint>").append(stubEndpoint).append("</stubEndpoint>\n");
         }
         if (toNode != null) {
-            sb.append(prefix).append("  <toNode>").append(toNode).append("</toNode>\n");
+            sb.append(prefix).append("  <toNode>").append(StringHelper.xmlEncode(toNode)).append("</toNode>\n");
         } else {
             // if first message the use routeId as toNode
-            sb.append(prefix).append("  <toNode>").append(routeId).append("</toNode>\n");
+            sb.append(prefix).append("  <toNode>").append(routeId != null ? StringHelper.xmlEncode(routeId) : "")
+                    .append("</toNode>\n");
         }
         sb.append(prefix).append("  <exchangeId>").append(exchangeId).append("</exchangeId>\n");
         if (endpointServiceUrl != null) {
             sb.append(prefix).append("  <endpointService>\n");
-            sb.append(prefix).append("    <serviceUrl>").append(endpointServiceUrl).append("</serviceUrl>\n");
+            sb.append(prefix).append("    <serviceUrl>").append(StringHelper.xmlEncode(endpointServiceUrl))
+                    .append("</serviceUrl>\n");
             if (endpointServiceProtocol != null) {
-                sb.append(prefix).append("    <serviceProtocol>").append(endpointServiceProtocol)
+                sb.append(prefix).append("    <serviceProtocol>").append(StringHelper.xmlEncode(endpointServiceProtocol))
                         .append("</serviceProtocol>\n");
             }
             if (endpointServiceMetadata != null) {
                 sb.append(prefix).append("    <serviceMetadata>\n");
                 endpointServiceMetadata.forEach((k, v) -> {
-                    sb.append(prefix).append("      <").append(k).append(">").append(v).append("</").append(k).append(">\n");
+                    sb.append(prefix).append("      <").append(k).append(">").append(StringHelper.xmlEncode(v)).append("</")
+                            .append(k).append(">\n");
                 });
                 sb.append(prefix).append("    </serviceMetadata>\n");
             }
@@ -417,7 +440,7 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
             for (var entry : arr) {
                 JsonObject jo = (JsonObject) entry;
                 sb.append(prefix);
-                sb.append("    <exchangeVariable key=\"").append(jo.getString("key")).append("\"");
+                sb.append("    <exchangeVariable key=\"").append(StringHelper.xmlEncode(jo.getString("key"))).append("\"");
                 String type = jo.getString("type");
                 if (type != null) {
                     sb.append(" type=\"").append(type).append("\"");
@@ -446,7 +469,7 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
             for (var entry : arr) {
                 JsonObject jo = (JsonObject) entry;
                 sb.append(prefix);
-                sb.append("    <exchangeProperty key=\"").append(jo.getString("key")).append("\"");
+                sb.append("    <exchangeProperty key=\"").append(StringHelper.xmlEncode(jo.getString("key"))).append("\"");
                 String type = jo.getString("type");
                 if (type != null) {
                     sb.append(" type=\"").append(type).append("\"");
@@ -475,7 +498,7 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
             for (var entry : arr) {
                 JsonObject jo = (JsonObject) entry;
                 sb.append(prefix);
-                sb.append("    <header key=\"").append(jo.getString("key")).append("\"");
+                sb.append("    <header key=\"").append(StringHelper.xmlEncode(jo.getString("key"))).append("\"");
                 String type = jo.getString("type");
                 if (type != null) {
                     sb.append(" type=\"").append(type).append("\"");
@@ -501,7 +524,8 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
             sb.append(prefix);
             sb.append("  <body");
             String type = jo.getString("type");
-            if (type != null) {
+            // the JSON dump says "null" for a null body; the XML dump has no type attribute then
+            if (type != null && !"null".equals(type)) {
                 sb.append(" type=\"").append(type).append("\"");
             }
             Long size = jo.getLong("size");
@@ -555,6 +579,7 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
         if (endpointUri != null) {
             jo.put("endpointUri", endpointUri);
             jo.put("remoteEndpoint", remoteEndpoint);
+            jo.put("stubEndpoint", stubEndpoint);
         }
         if (routeId != null) {
             jo.put("routeId", routeId);
@@ -578,7 +603,7 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
             jo.put("nodeShortName", toNodeShortName);
         }
         if (toNodeLabel != null) {
-            jo.put("nodeLabel", Jsoner.escape(toNodeLabel));
+            jo.put("nodeLabel", toNodeLabel);
         }
         jo.put("nodeLevel", toNodeLevel);
         if (exchangeId != null) {
@@ -586,6 +611,9 @@ public final class DefaultBacklogTracerEventMessage implements BacklogTracerEven
         }
         if (correlationExchangeId != null) {
             jo.put("correlationExchangeId", correlationExchangeId);
+        }
+        if (breadcrumbId != null) {
+            jo.put("breadcrumbId", breadcrumbId);
         }
         if (timestamp > 0) {
             jo.put("timestamp", timestamp);

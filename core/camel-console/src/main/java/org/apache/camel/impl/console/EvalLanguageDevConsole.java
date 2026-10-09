@@ -21,39 +21,42 @@ import java.util.Map;
 import org.apache.camel.Exchange;
 import org.apache.camel.Expression;
 import org.apache.camel.Predicate;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.support.MessageHelper;
 import org.apache.camel.support.console.AbstractDevConsole;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 
-@DevConsole(name = "eval-language", displayName = "Evaluate Language", description = "Evaluate Language and display result")
+@DevConsole(name = "eval-language", displayName = "Evaluate Language", description = "Evaluate Language and display result",
+            readOnly = false)
 public class EvalLanguageDevConsole extends AbstractDevConsole {
 
-    /**
-     * The language to use
-     */
+    public record Response(
+            @Metadata(description = "The evaluation status, success or failed (only present when a template was given)") String status,
+            @Metadata(description = "The evaluation result (only present on success)") String result,
+            @Metadata(description = "The exception, as an opaque JSON object (only present on failure)") Map<String, Object> exception) {
+    }
+
+    @Metadata(label = "query", description = "The language to use", javaType = "java.lang.String", defaultValue = "simple")
     public static final String LANGUAGE = "language";
 
-    /**
-     * Template to use for executing simple language function
-     */
+    @Metadata(label = "query", description = "Template to use for executing simple language function",
+              javaType = "java.lang.String")
     public static final String TEMPLATE = "template";
 
-    /**
-     * Whether to execute as predicate (use expression by default)
-     */
+    @Metadata(label = "query", description = "Whether to execute as predicate (use expression by default)",
+              javaType = "java.lang.Boolean", defaultValue = "false")
     public static final String PREDICATE = "predicate";
 
-    /**
-     * Optional message body
-     */
+    @Metadata(label = "query", description = "Optional message body", javaType = "java.lang.String")
     public static final String BODY = "body";
 
-    /**
-     * Optional message headers
-     */
+    @Metadata(label = "query", description = "Optional message headers", javaType = "java.lang.String")
     public static final String HEADERS = "headers";
+
+    @Metadata(label = "query", description = "Optional exchange variables", javaType = "java.lang.String")
+    public static final String VARIABLES = "variables";
 
     public EvalLanguageDevConsole() {
         super("camel", "eval-language", "Evaluate Language", "Evaluate Language and display result");
@@ -63,8 +66,11 @@ public class EvalLanguageDevConsole extends AbstractDevConsole {
     protected String doCallText(Map<String, Object> options) {
         StringBuilder sb = new StringBuilder();
 
-        String language = (String) options.getOrDefault(LANGUAGE, "simple");
-        String template = (String) options.get(TEMPLATE);
+        String language = optionString(options, LANGUAGE);
+        if (language == null) {
+            language = "simple";
+        }
+        String template = optionString(options, TEMPLATE);
         if (template != null) {
             Exchange dummy = new DefaultExchange(getCamelContext());
             dummy.getMessage().setBody(options.get(BODY));
@@ -72,9 +78,14 @@ public class EvalLanguageDevConsole extends AbstractDevConsole {
             if (headers instanceof Map map) {
                 dummy.getMessage().setHeaders(map);
             }
+            var variables = options.get(VARIABLES);
+            if (variables instanceof Map map2) {
+                map2.forEach((k, v) -> dummy.setVariable(k.toString(), v));
+            }
 
             String out;
-            boolean predicate = options.getOrDefault(PREDICATE, "false").equals("true");
+            boolean predicate = optionBoolean(options, PREDICATE, false);
+            template = resolvePlaceholders(template);
             if (predicate) {
                 Predicate pre = getCamelContext().resolveLanguage(language).createPredicate(template);
                 out = pre.matches(dummy) ? "true" : "false";
@@ -89,12 +100,29 @@ public class EvalLanguageDevConsole extends AbstractDevConsole {
         return sb.toString();
     }
 
-    @Override
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        JsonObject root = new JsonObject();
+    /**
+     * Resolves property placeholders in the template first, as the route loaders do before a language parses the text,
+     * so that {{myPeriod}} or ${body} > {{myThreshold}} evaluate as they would in a route (CAMEL-24698).
+     */
+    private String resolvePlaceholders(String template) {
+        if (template != null && template.contains("{{")) {
+            return getCamelContext().resolvePropertyPlaceholders(template);
+        }
+        return template;
+    }
 
-        String language = (String) options.getOrDefault(LANGUAGE, "simple");
-        String template = (String) options.get(TEMPLATE);
+    @Override
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        String language = optionString(options, LANGUAGE);
+        if (language == null) {
+            language = "simple";
+        }
+
+        String status = null;
+        String result = null;
+        Map<String, Object> exception = null;
+
+        String template = optionString(options, TEMPLATE);
         if (template != null) {
             Exchange dummy = new DefaultExchange(getCamelContext());
             dummy.getMessage().setBody(options.get(BODY));
@@ -102,11 +130,16 @@ public class EvalLanguageDevConsole extends AbstractDevConsole {
             if (headers instanceof Map map) {
                 dummy.getMessage().setHeaders(map);
             }
+            var variables = options.get(VARIABLES);
+            if (variables instanceof Map map2) {
+                map2.forEach((k, v) -> dummy.setVariable(k.toString(), v));
+            }
 
             Exception cause = null;
             String out = null;
             try {
-                boolean predicate = options.getOrDefault(PREDICATE, "false").equals("true");
+                boolean predicate = optionBoolean(options, PREDICATE, false);
+                template = resolvePlaceholders(template);
                 if (predicate) {
                     Predicate pre = getCamelContext().resolveLanguage(language).createPredicate(template);
                     out = pre.matches(dummy) ? "true" : "false";
@@ -119,15 +152,15 @@ public class EvalLanguageDevConsole extends AbstractDevConsole {
             }
 
             if (cause != null) {
-                root.put("status", "failed");
-                root.put("exception",
-                        MessageHelper.dumpExceptionAsJSonObject(cause).getMap("exception"));
+                status = "failed";
+                exception = MessageHelper.dumpExceptionAsJSonObject(cause).getMap("exception");
             } else {
-                root.put("status", "success");
-                root.put("result", out);
+                status = "success";
+                result = out;
             }
         }
 
-        return root;
+        Response response = new Response(status, result, exception);
+        return JsonRecordSupport.toJsonObject(response);
     }
 }

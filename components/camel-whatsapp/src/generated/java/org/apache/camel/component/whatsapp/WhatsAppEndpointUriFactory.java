@@ -21,9 +21,10 @@ public class WhatsAppEndpointUriFactory extends org.apache.camel.support.compone
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(9);
+        Set<String> props = new HashSet<>(10);
         props.add("apiVersion");
         props.add("authorizationToken");
         props.add("baseUri");
@@ -31,12 +32,16 @@ public class WhatsAppEndpointUriFactory extends org.apache.camel.support.compone
         props.add("lazyStartProducer");
         props.add("phoneNumberId");
         props.add("webhookPath");
+        props.add("webhookSecret");
         props.add("webhookVerifyToken");
         props.add("whatsappService");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
-        Set<String> secretProps = new HashSet<>(1);
+        Set<String> secretProps = new HashSet<>(3);
         secretProps.add("authorizationToken");
+        secretProps.add("webhookSecret");
+        secretProps.add("webhookVerifyToken");
         SECRET_PROPERTY_NAMES = Collections.unmodifiableSet(secretProps);
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         MULTI_VALUE_PREFIXES = Collections.emptyMap();
     }
 
@@ -50,7 +55,7 @@ public class WhatsAppEndpointUriFactory extends org.apache.camel.support.compone
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "phoneNumberId", null, true, copy);
         uri = buildQueryParameters(uri, copy, encode);
@@ -65,6 +70,11 @@ public class WhatsAppEndpointUriFactory extends org.apache.camel.support.compone
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

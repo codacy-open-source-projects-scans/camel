@@ -36,14 +36,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 public class MailUsingCustomSessionTest extends CamelTestSupport {
-    private static final MailboxUser james = Mailbox.getOrCreateUser("james", "secret");
+    private static final MailboxUser james = Mailbox.getOrCreateUser("MailUsingCustomSessionTest-james", "secret");
 
     @BindToRegistry("myCustomMailSession")
     private Session mailSession = Session.getInstance(new Properties());
 
     @Override
     public void doPostSetup() {
-        Mailbox.clearAll();
+        Mailbox.clearAll(james);
     }
 
     @Test

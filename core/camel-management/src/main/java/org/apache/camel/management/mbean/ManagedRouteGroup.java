@@ -20,25 +20,25 @@ import java.util.Date;
 import java.util.List;
 
 import org.apache.camel.CamelContext;
+import org.apache.camel.Exchange;
 import org.apache.camel.ManagementStatisticsLevel;
 import org.apache.camel.Route;
 import org.apache.camel.ServiceStatus;
-import org.apache.camel.TimerListener;
 import org.apache.camel.api.management.ManagedResource;
 import org.apache.camel.api.management.mbean.ManagedRouteGroupMBean;
 import org.apache.camel.api.management.mbean.RouteError;
 import org.apache.camel.spi.ManagementStrategy;
+import org.apache.camel.spi.UnitOfWork;
 import org.apache.camel.util.TimeUtils;
 
 @ManagedResource(description = "Managed Route Group")
-public class ManagedRouteGroup extends ManagedPerformanceCounter implements TimerListener, ManagedRouteGroupMBean {
+public class ManagedRouteGroup extends ManagedPerformanceCounter implements ManagedRouteGroupMBean {
 
     public static final String VALUE_UNKNOWN = "Unknown";
 
     protected final String group;
     protected final CamelContext context;
     private final LoadTriplet load = new LoadTriplet();
-    private final LoadThroughput thp = new LoadThroughput();
     private final String jmxDomain;
 
     public ManagedRouteGroup(CamelContext context, String group) {
@@ -48,11 +48,20 @@ public class ManagedRouteGroup extends ManagedPerformanceCounter implements Time
     }
 
     @Override
+    public void reset() {
+        super.reset();
+        load.reset();
+    }
+
+    @Override
     public void init(ManagementStrategy strategy) {
         super.init(strategy);
         boolean enabled
                 = context.getManagementStrategy().getManagementAgent().getStatisticsLevel() != ManagementStatisticsLevel.Off;
         setStatisticsEnabled(enabled);
+        if (context.getManagementStrategy().getManagementAgent().getStatisticsLevel().isExtended()) {
+            initExtendedStatistics();
+        }
     }
 
     public CamelContext getContext() {
@@ -153,17 +162,6 @@ public class ManagedRouteGroup extends ManagedPerformanceCounter implements Time
     }
 
     @Override
-    public String getThroughput() {
-        double d = thp.getThroughput();
-        if (Double.isNaN(d)) {
-            // empty string if load statistics is disabled
-            return "";
-        } else {
-            return String.format("%.2f", d);
-        }
-    }
-
-    @Override
     public RouteError getLastError() {
         org.apache.camel.spi.RouteError last = null;
         for (Route route : context.getRoutesByGroup(group)) {
@@ -218,9 +216,35 @@ public class ManagedRouteGroup extends ManagedPerformanceCounter implements Time
     }
 
     @Override
+    public void processExchange(Exchange exchange, String type) {
+        if (isOutermostRouteOfGroup(exchange)) {
+            super.processExchange(exchange, type);
+        }
+    }
+
+    @Override
+    public void completedExchange(Exchange exchange, long time) {
+        if (isOutermostRouteOfGroup(exchange)) {
+            super.completedExchange(exchange, time);
+        }
+    }
+
+    @Override
+    public void failedExchange(Exchange exchange) {
+        if (isOutermostRouteOfGroup(exchange)) {
+            super.failedExchange(exchange);
+        }
+    }
+
+    private boolean isOutermostRouteOfGroup(Exchange exchange) {
+        UnitOfWork uow = exchange.getUnitOfWork();
+        return uow == null || uow.routeStackLevel(r -> group.equals(r.getGroup())) <= 1;
+    }
+
+    @Override
     public void onTimer() {
+        super.onTimer();
         load.update(getInflightExchanges());
-        thp.update(getExchangesTotal());
     }
 
     private Integer getInflightExchanges() {

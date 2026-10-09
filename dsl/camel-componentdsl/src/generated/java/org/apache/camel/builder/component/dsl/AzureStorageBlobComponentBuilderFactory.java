@@ -156,7 +156,7 @@ public interface AzureStorageBlobComponentBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option is a:
-         * &lt;code&gt;org.apache.camel.component.azure.storage.blob.CredentialType&lt;/code&gt; type.
+         * &lt;code&gt;org.apache.camel.component.azure.common.CredentialType&lt;/code&gt; type.
          * 
          * Default: AZURE_IDENTITY
          * Group: common
@@ -164,7 +164,7 @@ public interface AzureStorageBlobComponentBuilderFactory {
          * @param credentialType the value to set
          * @return the dsl builder
          */
-        default AzureStorageBlobComponentBuilder credentialType(org.apache.camel.component.azure.storage.blob.CredentialType credentialType) {
+        default AzureStorageBlobComponentBuilder credentialType(org.apache.camel.component.azure.common.CredentialType credentialType) {
             doSetProperty("credentialType", credentialType);
             return this;
         }
@@ -303,22 +303,6 @@ public interface AzureStorageBlobComponentBuilderFactory {
          */
         default AzureStorageBlobComponentBuilder regex(java.lang.String regex) {
             doSetProperty("regex", regex);
-            return this;
-        }
-    
-        /**
-         * In case of usage of Shared Access Signature we'll need to set a SAS
-         * Token.
-         * 
-         * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
-         * 
-         * Group: common
-         * 
-         * @param sasToken the value to set
-         * @return the dsl builder
-         */
-        default AzureStorageBlobComponentBuilder sasToken(java.lang.String sasToken) {
-            doSetProperty("sasToken", sasToken);
             return this;
         }
     
@@ -961,6 +945,22 @@ public interface AzureStorageBlobComponentBuilderFactory {
         }
     
         /**
+         * In case of usage of Shared Access Signature we'll need to set a SAS
+         * Token.
+         * 
+         * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
+         * 
+         * Group: security
+         * 
+         * @param sasToken the value to set
+         * @return the dsl builder
+         */
+        default AzureStorageBlobComponentBuilder sasToken(java.lang.String sasToken) {
+            doSetProperty("sasToken", sasToken);
+            return this;
+        }
+    
+        /**
          * Source Blob Access Key: for copyblob operation, sadly, we need to
          * have an accessKey for the source blob we want to copy Passing an
          * accessKey as header, it's unsafe so we could set as key.
@@ -1003,7 +1003,7 @@ public interface AzureStorageBlobComponentBuilderFactory {
             case "closeStreamAfterRead": getOrCreateConfiguration((BlobComponent) component).setCloseStreamAfterRead((boolean) value); return true;
             case "configuration": ((BlobComponent) component).setConfiguration((org.apache.camel.component.azure.storage.blob.BlobConfiguration) value); return true;
             case "credentials": getOrCreateConfiguration((BlobComponent) component).setCredentials((com.azure.storage.common.StorageSharedKeyCredential) value); return true;
-            case "credentialType": getOrCreateConfiguration((BlobComponent) component).setCredentialType((org.apache.camel.component.azure.storage.blob.CredentialType) value); return true;
+            case "credentialType": getOrCreateConfiguration((BlobComponent) component).setCredentialType((org.apache.camel.component.azure.common.CredentialType) value); return true;
             case "dataCount": getOrCreateConfiguration((BlobComponent) component).setDataCount((java.lang.Long) value); return true;
             case "fileDir": getOrCreateConfiguration((BlobComponent) component).setFileDir((java.lang.String) value); return true;
             case "leaseBlob": getOrCreateConfiguration((BlobComponent) component).setLeaseBlob((boolean) value); return true;
@@ -1012,7 +1012,6 @@ public interface AzureStorageBlobComponentBuilderFactory {
             case "maxRetryRequests": getOrCreateConfiguration((BlobComponent) component).setMaxRetryRequests((int) value); return true;
             case "prefix": getOrCreateConfiguration((BlobComponent) component).setPrefix((java.lang.String) value); return true;
             case "regex": getOrCreateConfiguration((BlobComponent) component).setRegex((java.lang.String) value); return true;
-            case "sasToken": getOrCreateConfiguration((BlobComponent) component).setSasToken((java.lang.String) value); return true;
             case "serviceClient": getOrCreateConfiguration((BlobComponent) component).setServiceClient((com.azure.storage.blob.BlobServiceClient) value); return true;
             case "snapshotId": getOrCreateConfiguration((BlobComponent) component).setSnapshotId((java.lang.String) value); return true;
             case "timeout": getOrCreateConfiguration((BlobComponent) component).setTimeout((java.time.Duration) value); return true;
@@ -1047,6 +1046,7 @@ public interface AzureStorageBlobComponentBuilderFactory {
             case "azureClientId": getOrCreateConfiguration((BlobComponent) component).setAzureClientId((java.lang.String) value); return true;
             case "azureClientSecret": getOrCreateConfiguration((BlobComponent) component).setAzureClientSecret((java.lang.String) value); return true;
             case "azureTenantId": getOrCreateConfiguration((BlobComponent) component).setAzureTenantId((java.lang.String) value); return true;
+            case "sasToken": getOrCreateConfiguration((BlobComponent) component).setSasToken((java.lang.String) value); return true;
             case "sourceBlobAccessKey": getOrCreateConfiguration((BlobComponent) component).setSourceBlobAccessKey((java.lang.String) value); return true;
             default: return false;
             }

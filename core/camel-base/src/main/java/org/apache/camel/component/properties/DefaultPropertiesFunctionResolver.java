@@ -16,6 +16,7 @@
  */
 package org.apache.camel.component.properties;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -40,7 +41,8 @@ public class DefaultPropertiesFunctionResolver extends ServiceSupport
 
     private CamelContext camelContext;
     private FactoryFinder factoryFinder;
-    private final Map<String, PropertiesFunction> functions = new LinkedHashMap<>();
+    // thread-safe as functions may be resolved at runtime from concurrent threads
+    private final Map<String, PropertiesFunction> functions = Collections.synchronizedMap(new LinkedHashMap<>());
 
     public DefaultPropertiesFunctionResolver() {
     }
@@ -74,9 +76,15 @@ public class DefaultPropertiesFunctionResolver extends ServiceSupport
     public PropertiesFunction resolvePropertiesFunction(String name) {
         PropertiesFunction answer = functions.get(name);
         if (answer == null) {
-            answer = resolve(camelContext, name);
-            if (answer != null) {
-                functions.put(name, answer);
+            // resolve (and start) the function only once
+            synchronized (functions) {
+                answer = functions.get(name);
+                if (answer == null) {
+                    answer = resolve(camelContext, name);
+                    if (answer != null) {
+                        functions.put(name, answer);
+                    }
+                }
             }
         }
         return answer;
@@ -116,7 +124,9 @@ public class DefaultPropertiesFunctionResolver extends ServiceSupport
     }
 
     @Override
-    protected void doInit() throws Exception {
+    protected void doBuild() throws Exception {
+        super.doBuild();
+
         // include out of the box functions
         addPropertiesFunction(new EnvPropertiesFunction());
         addPropertiesFunction(new SysPropertiesFunction());
@@ -125,6 +135,11 @@ public class DefaultPropertiesFunctionResolver extends ServiceSupport
         addPropertiesFunction(new ServicePortPropertiesFunction());
         addPropertiesFunction(new BooleanPropertiesFunction());
 
+        ServiceHelper.buildService(functions.values());
+    }
+
+    @Override
+    protected void doInit() throws Exception {
         functions.values().forEach(f -> CamelContextAware.trySetCamelContext(f, camelContext));
         ServiceHelper.initService(functions.values());
     }

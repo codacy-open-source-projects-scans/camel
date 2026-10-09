@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.apache.camel.CamelContext;
+import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.docling.BatchConversionResult;
 import org.apache.camel.component.docling.BatchProcessingResults;
@@ -29,7 +30,7 @@ import org.apache.camel.component.docling.DoclingComponent;
 import org.apache.camel.component.docling.DoclingConfiguration;
 import org.apache.camel.component.docling.DoclingHeaders;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -39,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 /**
  * Integration test for batch processing operations using test-infra for container management.
  */
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Too much resources on GitHub Actions")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Too much resources on GitHub Actions")
 class BatchProcessingIT extends DoclingITestSupport {
 
     @Test
@@ -232,11 +233,11 @@ class BatchProcessingIT extends DoclingITestSupport {
         getMockEndpoint("mock:individual-result").assertIsSatisfied();
 
         // Verify each exchange contains a BatchConversionResult
-        List<org.apache.camel.Exchange> exchanges = getMockEndpoint("mock:individual-result").getReceivedExchanges();
+        List<Exchange> exchanges = getMockEndpoint("mock:individual-result").getReceivedExchanges();
         assertEquals(3, exchanges.size());
 
         for (int i = 0; i < exchanges.size(); i++) {
-            org.apache.camel.Exchange exchange = exchanges.get(i);
+            Exchange exchange = exchanges.get(i);
             BatchConversionResult result = exchange.getIn().getBody(BatchConversionResult.class);
 
             assertNotNull(result, "Exchange " + i + " should contain a BatchConversionResult");

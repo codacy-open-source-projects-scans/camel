@@ -41,6 +41,7 @@ import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePattern;
 import org.apache.camel.Expression;
 import org.apache.camel.LoggingLevel;
+import org.apache.camel.NamedNode;
 import org.apache.camel.Predicate;
 import org.apache.camel.Processor;
 import org.apache.camel.builder.DataFormatClause;
@@ -81,7 +82,8 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
     @XmlTransient
     private static final AtomicInteger COUNTER = new AtomicInteger();
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean")
+    @Metadata(label = "advanced", javaType = "java.lang.Boolean",
+              description = "Whether to disable this EIP from the route during build time. Once an EIP has been disabled then it cannot be enabled later at runtime.")
     protected String disabled;
     @XmlTransient
     private final Deque<Block> blocks = new LinkedList<>();
@@ -94,7 +96,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
     @XmlTransient
     private final int index;
     @XmlTransient
-    private Boolean inheritErrorHandler; // used for camel-jta
+    private String inheritErrorHandler; // used for camel-jta
 
     protected ProcessorDefinition() {
         // every time we create a definition we should inc the counter
@@ -117,13 +119,6 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
         return clause;
     }
 
-    /**
-     * Gets the unique index number for when this {@link ProcessorDefinition} was created by its constructor.
-     * <p/>
-     * This can be used to know the order in which the definition was created when assembled as a route.
-     *
-     * @return the index number
-     */
     public int getIndex() {
         return index;
     }
@@ -131,46 +126,19 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
     // else to use an optional attribute in JAXB2
     public abstract List<ProcessorDefinition<?>> getOutputs();
 
-    /**
-     * Whether this definition can only be added as top-level directly on the route itself (such as
-     * onException,onCompletion,intercept, etc.)
-     * <p/>
-     * If trying to add a top-level only definition to a nested output would fail in the
-     * {@link #addOutput(ProcessorDefinition)} method.
-     */
+    @Override
+    public List<NamedNode> getChildren() {
+        return new ArrayList<>(getOutputs());
+    }
+
     public boolean isTopLevelOnly() {
         return false;
     }
 
-    /**
-     * Whether this model is abstract or not.
-     * <p/>
-     * An abstract model is something that is used for configuring cross cutting concerns such as error handling,
-     * transaction policies, interceptors etc.
-     * <p/>
-     * Regular definitions is what is part of the route, such as ToDefinition, WireTapDefinition and the likes.
-     * <p/>
-     * Will by default return <tt>false</tt> to indicate regular definition, so all the abstract definitions must
-     * override this method and return <tt>true</tt> instead.
-     * <p/>
-     * This information is used in camel-spring to let Camel work a bit on the model provided by JAXB from the Spring
-     * XML file. This is needed to handle those cross cutting concerns properly. The Java DSL does not have this issue
-     * as it can work this out directly using the fluent builder methods.
-     *
-     * @return <tt>true</tt> for abstract, otherwise <tt>false</tt> for regular.
-     */
     public boolean isAbstract() {
         return false;
     }
 
-    /**
-     * Whether this definition is wrapping the entire output.
-     * <p/>
-     * When a definition is wrapping the entire output, the check to ensure that a route definition is empty should be
-     * done on the wrapped output.
-     *
-     * @return <tt>true</tt> when wrapping the entire output.
-     */
     public boolean isWrappingEntireOutput() {
         return false;
     }
@@ -886,7 +854,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
                     p.note(note);
                 }
             } else {
-                cbr.note(note);
+                cbr.setNote(note);
             }
             return asType();
         }
@@ -1252,6 +1220,10 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
 
         // okay end this and get back to the try
         def = end();
+        if (def instanceof CatchDefinition || def instanceof FinallyDefinition) {
+            // we ended a block inside doCatch or doFinally, so go back to the try that owns it
+            def = def.getParent();
+        }
         return (TryDefinition) def;
     }
 
@@ -1438,6 +1410,37 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
     }
 
     /**
+     * Creates a Cache EIP that caches the result of the nested processing steps.
+     * <p/>
+     * The cache key is computed from the given expression. On cache hit, the cached value is set as the message body
+     * and the nested steps are skipped. On cache miss, the nested steps execute and the result is cached.
+     *
+     * @return the clause to set the cache key expression
+     * @since  4.23
+     */
+    public ExpressionClause<CacheDefinition> cache() {
+        CacheDefinition answer = new CacheDefinition();
+        addOutput(answer);
+        return createAndSetExpression(answer);
+    }
+
+    /**
+     * Creates a Cache EIP that caches the result of the nested processing steps.
+     * <p/>
+     * The cache key is computed from the given expression. On cache hit, the cached value is set as the message body
+     * and the nested steps are skipped. On cache miss, the nested steps execute and the result is cached.
+     *
+     * @param  cacheKeyExpression expression to compute the cache key
+     * @return                    the builder
+     * @since                     4.23
+     */
+    public CacheDefinition cache(Expression cacheKeyExpression) {
+        CacheDefinition answer = new CacheDefinition(cacheKeyExpression);
+        addOutput(answer);
+        return answer;
+    }
+
+    /**
      * Creates a Circuit Breaker EIP.
      * <p/>
      * This requires having an implementation on the classpath such as camel-microprofile-fault-tolerance.
@@ -1446,6 +1449,19 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      */
     public CircuitBreakerDefinition circuitBreaker() {
         CircuitBreakerDefinition answer = new CircuitBreakerDefinition();
+        addOutput(answer);
+        return answer;
+    }
+
+    /**
+     * Creates an A2A Sub Task EIP.
+     * <p/>
+     * This requires having camel-a2a on the classpath.
+     *
+     * @return the builder
+     */
+    public A2ASubTaskDefinition a2aSubTask() {
+        A2ASubTaskDefinition answer = new A2ASubTaskDefinition();
         addOutput(answer);
         return answer;
     }
@@ -1621,6 +1637,31 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
         ChoiceDefinition answer = new ChoiceDefinition();
         addOutput(answer);
         return answer;
+    }
+
+    /**
+     * Routes to a fixed endpoint using a literal selector lookup.
+     *
+     * @param  selector the expression to evaluate once per entry
+     * @return          the switch builder
+     */
+    public SwitchDefinition doSwitch(Expression selector) {
+        SwitchDefinition answer = new SwitchDefinition(selector);
+        addOutput(answer);
+        return answer;
+    }
+
+    /**
+     * Routes to a fixed endpoint using a literal selector lookup.
+     *
+     * @return the selector expression builder
+     */
+    public ExpressionClause<SwitchDefinition> doSwitch() {
+        SwitchDefinition answer = new SwitchDefinition();
+        ExpressionClause<SwitchDefinition> clause = new ExpressionClause<>(answer);
+        answer.setSelector(new ExpressionSubElementDefinition((Expression) clause));
+        addOutput(answer);
+        return clause;
     }
 
     /**
@@ -2089,7 +2130,8 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @return                           the builder
      */
     public ThrottleDefinition throttle(Expression maximumConcurrentRequests, long correlationExpressionKey) {
-        ThrottleDefinition answer = new ThrottleDefinition(maximumConcurrentRequests, maximumConcurrentRequests);
+        ThrottleDefinition answer = new ThrottleDefinition(
+                maximumConcurrentRequests, new ConstantExpression(Long.toString(correlationExpressionKey)));
         addOutput(answer);
         return answer;
     }
@@ -2442,7 +2484,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
             Class<? extends Throwable> exceptionType3) {
         if (this.getRouteConfiguration() != null) {
             // this is part of route configuration
-            return this.getRouteConfiguration().onException(exceptionType1, exceptionType2, exceptionType2);
+            return this.getRouteConfiguration().onException(exceptionType1, exceptionType2, exceptionType3);
         }
         OnExceptionDefinition answer = new OnExceptionDefinition(
                 Arrays.asList(exceptionType1, exceptionType2, exceptionType3));
@@ -2586,11 +2628,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      */
     public Type bean(Object bean) {
         BeanDefinition answer = new BeanDefinition();
-        if (bean instanceof String str) {
-            answer.setRef(str);
-        } else {
-            answer.setBean(bean);
-        }
+        setBeanOrRef(answer, bean);
         addOutput(answer);
         return asType();
     }
@@ -2602,6 +2640,19 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @param  bean the bean to invoke, or a reference to a bean if the type is a String
      * @return      the builder
      */
+    private static void setBeanOrRef(BeanDefinition answer, Object bean) {
+        if (bean instanceof String str) {
+            // type:com.foo.MyBean refers to the class of the bean
+            if (str.startsWith("type:")) {
+                answer.setBeanType(str.substring(5));
+            } else {
+                answer.setRef(str);
+            }
+        } else {
+            answer.setBean(bean);
+        }
+    }
+
     public Type bean(Supplier<Object> bean) {
         return bean(bean.get());
     }
@@ -2617,15 +2668,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      */
     public Type bean(Object bean, String method) {
         BeanDefinition answer = new BeanDefinition();
-        if (bean instanceof String str) {
-            if (str.startsWith("type:")) {
-                answer.setBeanType(str.substring(5));
-            } else {
-                answer.setRef(str);
-            }
-        } else {
-            answer.setBean(bean);
-        }
+        setBeanOrRef(answer, bean);
         answer.setMethod(method);
         addOutput(answer);
         return asType();
@@ -2666,11 +2709,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      */
     public Type bean(Object bean, BeanScope scope) {
         BeanDefinition answer = new BeanDefinition();
-        if (bean instanceof String str) {
-            answer.setRef(str);
-        } else {
-            answer.setBean(bean);
-        }
+        setBeanOrRef(answer, bean);
         answer.setScope(scope);
         addOutput(answer);
         return asType();
@@ -2687,11 +2726,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      */
     public Type bean(Object bean, String method, BeanScope scope) {
         BeanDefinition answer = new BeanDefinition();
-        if (bean instanceof String str) {
-            answer.setRef(str);
-        } else {
-            answer.setBean(bean);
-        }
+        setBeanOrRef(answer, bean);
         answer.setMethod(method);
         answer.setScope(scope);
         addOutput(answer);
@@ -3494,7 +3529,8 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @see                org.apache.camel.processor.Enricher
      */
     public EnrichClause<ProcessorDefinition<Type>> enrichWith(@AsEndpointUri EndpointProducerBuilder resourceUri) {
-        return enrichWith(resourceUri.getRawUri());
+        // same as the other endpoint builder variants (the uri may be dynamic)
+        return enrichWith(resourceUri, false, false);
     }
 
     /**
@@ -4495,17 +4531,14 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
         this.disabled = disabled;
     }
 
-    public Boolean getInheritErrorHandler() {
+    public String getInheritErrorHandler() {
         return inheritErrorHandler;
     }
 
-    public void setInheritErrorHandler(Boolean inheritErrorHandler) {
+    public void setInheritErrorHandler(String inheritErrorHandler) {
         this.inheritErrorHandler = inheritErrorHandler;
     }
 
-    /**
-     * Returns a label to describe this node such as the expression if some kind of expression node
-     */
     @Override
     public String getLabel() {
         return "";

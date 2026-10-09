@@ -27,6 +27,7 @@ import org.apache.camel.Exchange;
 import org.apache.camel.Route;
 import org.apache.camel.api.management.ManagedCamelContext;
 import org.apache.camel.api.management.mbean.ManagedRouteMBean;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.Resource;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.LoggerHelper;
@@ -35,20 +36,36 @@ import org.apache.camel.support.PluginHelper;
 import org.apache.camel.support.console.AbstractDevConsole;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.StringHelper;
+import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 
 @DevConsole(name = "source", description = "Dump route source code")
 public class SourceDevConsole extends AbstractDevConsole {
 
-    /**
-     * Filters the routes matching by route id, route uri, and source location
-     */
+    @Metadata(label = "query", description = "Filters the routes matching by route id, route uri, and source location",
+              javaType = "java.lang.String")
     public static final String FILTER = "filter";
 
-    /**
-     * Limits the number of entries displayed
-     */
+    @Metadata(label = "query", description = "Limits the number of entries displayed",
+              javaType = "java.lang.Integer")
     public static final String LIMIT = "limit";
+
+    public record CodeLine(
+            @Metadata(description = "The line number") int line,
+            @Metadata(description = "The source code line") String code,
+            @Metadata(description = "Whether this is the matched line (only present when true)") Boolean match) {
+    }
+
+    public record SourceEntry(
+            @Metadata(description = "The route ID") String routeId,
+            @Metadata(description = "The route's endpoint URI") String from,
+            @Metadata(description = "The source location (only present when known)") String source,
+            @Metadata(description = "The source code around the route (only present when resolvable)") List<CodeLine> code) {
+    }
+
+    public record Response(@Metadata(description = "The routes") List<SourceEntry> routes) {
+    }
 
     public SourceDevConsole() {
         super("camel", "source", "Source", "Dump route source code");
@@ -102,38 +119,39 @@ public class SourceDevConsole extends AbstractDevConsole {
     }
 
     @Override
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        final JsonObject root = new JsonObject();
-        final List<JsonObject> list = new ArrayList<>();
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        final List<SourceEntry> list = new ArrayList<>();
 
         Function<ManagedRouteMBean, Object> task = mrb -> {
-            JsonObject jo = new JsonObject();
-            list.add(jo);
-
-            jo.put("routeId", mrb.getRouteId());
-            jo.put("from", mrb.getEndpointUri());
-            if (mrb.getSourceLocation() != null) {
-                jo.put("source", mrb.getSourceLocation());
-            }
-
             String loc = mrb.getSourceLocation();
-            List<JsonObject> code = ConsoleHelper.loadSourceAsJson(getCamelContext(), loc);
-            if (code != null) {
-                jo.put("code", code);
-            }
+            JsonArray code = ConsoleHelper.loadSourceAsJson(getCamelContext(), loc);
+            list.add(new SourceEntry(mrb.getRouteId(), mrb.getEndpointUri(), loc, toCodeLines(code)));
             return null;
         };
         doCall(options, task);
-        root.put("routes", list);
-        return root;
+
+        Response response = new Response(list);
+        return JsonRecordSupport.toJsonObject(response);
+    }
+
+    private static List<CodeLine> toCodeLines(JsonArray code) {
+        if (code == null) {
+            return null;
+        }
+        List<CodeLine> lines = new ArrayList<>();
+        for (Object o : code) {
+            JsonObject jo = (JsonObject) o;
+            Boolean match = jo.getBoolean("match");
+            lines.add(new CodeLine(jo.getInteger("line"), jo.getString("code"), match));
+        }
+        return lines;
     }
 
     protected void doCall(Map<String, Object> options, Function<ManagedRouteMBean, Object> task) {
-        String path = (String) options.get(Exchange.HTTP_PATH);
+        String path = optionString(options, Exchange.HTTP_PATH);
         String subPath = path != null ? StringHelper.after(path, "/") : null;
-        String filter = (String) options.get(FILTER);
-        String limit = (String) options.get(LIMIT);
-        final int max = limit == null ? Integer.MAX_VALUE : Integer.parseInt(limit);
+        String filter = optionString(options, FILTER);
+        final int max = optionInt(options, LIMIT, Integer.MAX_VALUE);
 
         ManagedCamelContext mcc = getCamelContext().getCamelContextExtension().getContextPlugin(ManagedCamelContext.class);
         if (mcc != null) {

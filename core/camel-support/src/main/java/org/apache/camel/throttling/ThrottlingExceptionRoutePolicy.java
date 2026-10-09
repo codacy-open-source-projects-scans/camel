@@ -73,13 +73,13 @@ public class ThrottlingExceptionRoutePolicy extends RoutePolicySupport implement
     // configuration
     @Metadata(description = "How many failed messages within the window would trigger the circuit breaker to open",
               defaultValue = "50")
-    private int failureThreshold = 50;
+    private volatile int failureThreshold = 50;
     @Metadata(description = "Sliding window for how long time to go back (in millis) when counting number of failures",
               defaultValue = "60000")
-    private long failureWindow = 60000;
+    private volatile long failureWindow = 60000;
     @Metadata(description = "Interval (in millis) for how often to check whether a currently open circuit breaker may work again",
               defaultValue = "30000")
-    private long halfOpenAfter = 30000;
+    private volatile long halfOpenAfter = 30000;
     @Metadata(description = "Whether to always keep the circuit breaker open (never closes). This is only intended for development and testing purposes.")
     private boolean keepOpen;
     @Metadata(description = "Allows to only throttle based on certain types of exceptions. Multiple exceptions (use FQN class name) can be separated by comma.")
@@ -177,7 +177,9 @@ public class ThrottlingExceptionRoutePolicy extends RoutePolicySupport implement
     public void onStart(Route route) {
         // if keepOpen then start w/ the circuit open
         if (keepOpenBool.get()) {
-            openCircuit(route);
+            // the circuit may still be open from before the route was stopped, and then the started consumer must
+            // be suspended again
+            reopenCircuit(route);
         }
     }
 
@@ -276,7 +278,8 @@ public class ThrottlingExceptionRoutePolicy extends RoutePolicySupport implement
                             closeCircuit(route);
                         } else {
                             LOG.debug("Opening circuit...");
-                            openCircuit(route);
+                            // keep the circuit open, and check again after halfOpenAfter
+                            reopenCircuit(route);
                         }
                     } else {
                         LOG.debug("Half opening circuit...");
@@ -308,6 +311,29 @@ public class ThrottlingExceptionRoutePolicy extends RoutePolicySupport implement
     protected void openCircuit(Route route) {
         try {
             lock.lock();
+            if (state.get() == STATE_OPEN) {
+                return;
+            }
+            suspendOrStopConsumer(route.getConsumer());
+            state.set(STATE_OPEN);
+            openedAt = System.currentTimeMillis();
+            this.addHalfOpenTimer(route);
+            logState();
+        } catch (Exception e) {
+            handleException(e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Opens the circuit, also when it is already open: suspends the consumer and schedules the next half open check.
+     * Unlike {@link #openCircuit(Route)}, which only acts when the circuit is not open yet, this is used to keep an
+     * open circuit open.
+     */
+    protected void reopenCircuit(Route route) {
+        try {
+            lock.lock();
             suspendOrStopConsumer(route.getConsumer());
             state.set(STATE_OPEN);
             openedAt = System.currentTimeMillis();
@@ -321,14 +347,28 @@ public class ThrottlingExceptionRoutePolicy extends RoutePolicySupport implement
     }
 
     protected void addHalfOpenTimer(Route route) {
-        halfOpenTimer = new Timer();
-        halfOpenTimer.schedule(new HalfOpenTask(route), halfOpenAfter);
+        lock.lock();
+        try {
+            Timer previous = halfOpenTimer;
+            Timer timer = new Timer();
+            timer.schedule(new HalfOpenTask(route, timer), halfOpenAfter);
+            halfOpenTimer = timer;
+            if (previous != null) {
+                // only one half open check at a time (each timer has its own thread)
+                previous.cancel();
+            }
+        } finally {
+            lock.unlock();
+        }
     }
 
     protected void halfOpenCircuit(Route route) {
         try {
             lock.lock();
-            resumeOrStartConsumer(route.getConsumer());
+            // do not resume the consumer if the route controller has suspended or stopped the route in the meantime
+            if (isResumeOrStartConsumerAllowed(route)) {
+                resumeOrStartConsumer(route.getConsumer());
+            }
             state.set(STATE_HALF_OPEN);
             logState();
         } catch (Exception e) {
@@ -341,7 +381,12 @@ public class ThrottlingExceptionRoutePolicy extends RoutePolicySupport implement
     protected void closeCircuit(Route route) {
         try {
             lock.lock();
-            resumeOrStartConsumer(route.getConsumer());
+            // only resume the consumer when the circuit is open, as then this policy has suspended the consumer
+            // (when half open the consumer has already been resumed, so if it is suspended now, then by the route
+            // controller), and not if the route controller has suspended or stopped the route in the meantime
+            if (state.get() == STATE_OPEN && isResumeOrStartConsumerAllowed(route)) {
+                resumeOrStartConsumer(route.getConsumer());
+            }
             failures.set(0);
             success.set(0);
             lastFailure = 0;
@@ -387,16 +432,17 @@ public class ThrottlingExceptionRoutePolicy extends RoutePolicySupport implement
 
     class HalfOpenTask extends TimerTask {
         private final Route route;
+        private final Timer timer;
 
-        HalfOpenTask(Route route) {
+        HalfOpenTask(Route route, Timer timer) {
             this.route = route;
+            this.timer = timer;
         }
 
         @Override
         public void run() {
-            if (halfOpenTimer != null) {
-                halfOpenTimer.cancel();
-            }
+            // cancel the timer of this task only, a newer timer may already have been scheduled
+            timer.cancel();
             calculateState(route);
         }
     }
@@ -413,8 +459,27 @@ public class ThrottlingExceptionRoutePolicy extends RoutePolicySupport implement
         return this.keepOpenBool.get();
     }
 
+    /**
+     * Sets whether to keep the circuit breaker always open (never closes). This is only intended for development and
+     * testing purposes.
+     * <p>
+     * When set to {@code true}, the circuit is opened immediately and synchronously (the consumer is suspended before
+     * this method returns). Setting it back to {@code false} is deferred: the half-open timer will attempt to close the
+     * circuit on its next tick (after {@link #getHalfOpenAfter()} milliseconds).
+     * <p>
+     * Note: a single {@link ThrottlingExceptionRoutePolicy} instance is designed for one route. When attached to
+     * multiple routes, only the last route bound via {@link #setRoute(Route)} is acted upon by this setter.
+     */
     public void setKeepOpen(boolean keepOpen) {
         this.keepOpenBool.set(keepOpen);
+        // Immediately act on the new value so callers do not have to send a
+        // trigger message and wait for the next onExchangeDone() callback:
+        //  - keepOpen=true  → open the circuit right away (openCircuit is idempotent under its lock)
+        //  - keepOpen=false → the half-open timer will close the circuit on its next tick
+        if (keepOpen && route != null) {
+            LOG.debug("Opening circuit (keepOpen set to true)");
+            openCircuit(route);
+        }
     }
 
     public int getFailureThreshold() {

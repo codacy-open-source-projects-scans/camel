@@ -1,0 +1,1667 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.camel.dsl.jbang.core.commands.tui;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Queue;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
+
+import dev.tamboui.buffer.Buffer;
+import dev.tamboui.export.ExportRequest;
+import dev.tamboui.text.CharWidth;
+import dev.tamboui.text.Span;
+import dev.tamboui.tui.event.KeyCode;
+import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.KeyModifiers;
+import dev.tamboui.widgets.tabs.TabsState;
+import org.apache.camel.dsl.jbang.core.commands.ai.AuthoringTools;
+import org.apache.camel.dsl.jbang.core.commands.ai.IntegrationSummary;
+import org.apache.camel.dsl.jbang.core.commands.ai.SourceValidator;
+import org.apache.camel.dsl.jbang.core.commands.ai.ToolExecutionException;
+import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
+import org.apache.camel.dsl.jbang.core.common.RuntimeHelper;
+import org.apache.camel.util.json.JsonArray;
+import org.apache.camel.util.json.JsonObject;
+
+import static org.apache.camel.dsl.jbang.core.commands.tui.TuiHelper.hint;
+import static org.apache.camel.dsl.jbang.core.commands.tui.TuiHelper.hintLast;
+
+/**
+ * Facade that exposes monitor state and actions to the MCP server.
+ * <p>
+ * Extracts the MCP-facing accessor and control methods from {@link CamelMonitor} to reduce coupling and class size.
+ * {@link TuiMcpServer} depends only on this facade, not on the full monitor.
+ */
+class McpFacade {
+
+    /**
+     * Pending key event queued for injection into the TUI event loop.
+     */
+    record PendingKey(KeyEvent event, long fireAt) {
+    }
+
+    /**
+     * Callback interface for operations that remain in {@link CamelMonitor}.
+     */
+    interface MonitorBridge {
+
+        MonitorTab activeTab();
+
+        void handleTabKey(int tabIndex);
+
+        void selectMoreTab(int moreIndex);
+
+        boolean isSwitchPopupVisible();
+
+        boolean isMorePopupVisible();
+
+        void renderOverviewFooter(List<Span> spans);
+
+        void insertFKeyHints(List<Span> spans);
+
+        void sendRouteCommand(String pid, String routeId, String command);
+
+        void restartProcess();
+
+        void stopProcess(boolean forceKill);
+
+        void stopAll();
+
+        void resetIntegrationTabState();
+
+        /**
+         * Asks the user to confirm a file write requested by an AI tool, blocking the calling (tool) thread until the
+         * user answers. Returns false when the user declines, or when no one answers.
+         */
+        default boolean confirmFileWrite(FileWrite request) {
+            return false;
+        }
+
+        /**
+         * Replays a file write in the source editor so the user watches the edit happen and then saves or discards it
+         * (write mode {@code live}), blocking the calling (tool) thread until then. Returns null when the replay could
+         * not start, in which case the caller falls back to the confirm dialog.
+         */
+        default ReplayOutcome replayFileWrite(FileWrite request) {
+            return null;
+        }
+
+        /**
+         * The file of a live edit parked in the editor (the user asked about it and has not continued, saved or
+         * discarded it yet), or null. Another file cannot be replayed until then.
+         */
+        default String parkedReplayFile() {
+            return null;
+        }
+
+        /**
+         * Tells that a tool wrote a file, so a view of the file shows what is in it now. Called on the calling (tool)
+         * thread.
+         */
+        default void fileWritten(Path file) {
+        }
+    }
+
+    /** How file writes requested by tools are handled; set by the user with /write in the AI panel. */
+    enum WriteMode {
+        CONFIRM,
+        AUTO,
+        LIVE
+    }
+
+    /**
+     * What happened to a file write replayed in the editor: whether the user saved it, how many hunks were applied,
+     * which were skipped (their context was changed by the user), and the content of the file afterwards. A
+     * {@link #paused()} outcome means the user paused the replay to ask {@code question} about the edit: the editor
+     * still holds the applied hunks ({@code content} is the buffer, not the file), {@code remaining} hunks wait.
+     */
+    record ReplayOutcome(boolean saved, int applied, List<Integer> skipped, String content, String question,
+            int remaining, boolean undecided) {
+
+        ReplayOutcome(boolean saved, int applied, List<Integer> skipped, String content, String question,
+                      int remaining) {
+            this(saved, applied, skipped, content, question, remaining, false);
+        }
+
+        ReplayOutcome(boolean saved, int applied, List<Integer> skipped, String content) {
+            this(saved, applied, skipped, content, null, 0, false);
+        }
+
+        /**
+         * The user has neither saved nor discarded the replayed edit for a long while: the tool call returns, the edit
+         * stays in the editor, and what the user does with it is told with the next question.
+         */
+        static ReplayOutcome undecidedOutcome() {
+            return new ReplayOutcome(false, 0, List.of(), null, null, 0, true);
+        }
+
+        boolean paused() {
+            return question != null;
+        }
+    }
+
+    /**
+     * A file write requested by an AI tool, waiting for the user's confirmation. {@code oldContent} is null when the
+     * file does not exist yet.
+     */
+    record FileWrite(String file, Path directory, String oldContent, String newContent, boolean temporary,
+            boolean devMode) {
+    }
+
+    // Tab name constants
+    /**
+     * The index of a main tab by its name, by the label the tab bar shows (Route, Endpoint) or by its number key, else
+     * -1.
+     */
+    static int tabIndex(String tabName) {
+        if (tabName == null) {
+            return -1;
+        }
+        String name = tabName.trim();
+        for (int i = 0; i < TAB_NAMES.length; i++) {
+            String tab = TAB_NAMES[i];
+            String label = tab.endsWith("s") && !"Errors".equals(tab) ? tab.substring(0, tab.length() - 1) : tab;
+            String key = String.valueOf((i + 1) % 10);
+            if (tab.equalsIgnoreCase(name) || label.equalsIgnoreCase(name) || key.equals(name)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    static final String[] TAB_NAMES = {
+            "Overview", "Source", "Log", "Activity", "Diagram",
+            "Routes", "Endpoints", "Inspect", "Errors", "More"
+    };
+
+    private final MonitorContext ctx;
+    private final AtomicReference<List<IntegrationInfo>> data;
+    private final TabsState tabsState;
+    private final RecordingManager recordingManager;
+    private final CaptionOverlay captionOverlay;
+    private final DrawOverlay drawOverlay;
+    private final CanvasOverlay canvasOverlay;
+    private final HelpOverlay helpOverlay;
+    private final ActionsPopup actionsPopup;
+    private final FilesBrowser filesBrowser;
+    private final TabRegistry tabRegistry;
+    private final Queue<PendingKey> pendingKeys;
+    private final MonitorBridge bridge;
+
+    private volatile Supplier<List<AiPanel.LogEntry>> aiActivityLog;
+    private volatile StatusFileReader statusFiles = StatusFileReader.defaultReader();
+    private volatile Supplier<List<TuiMcpServer.LogEntry>> mcpActivityLog;
+    private volatile Supplier<Integer> mcpToolCallCount;
+    // the F2 menu's launcher: starts examples (tui_run_example) and infra services (tui_infra start). It is held
+    // here, not in the tool registry, so the AI panel's registry and the MCP server's registry both see it.
+    private volatile LaunchManager launchManager;
+    // asks the data refresh for a scan of every integration, and counts the scans done: on the other tabs only the
+    // selected integration is refreshed, so the Overview rows of the others go stale while an agent reads them
+    private volatile Runnable fullScanRequest;
+    private volatile LongSupplier fullScansDone;
+
+    McpFacade(
+              MonitorContext ctx,
+              AtomicReference<List<IntegrationInfo>> data,
+              TabsState tabsState,
+              RecordingManager recordingManager,
+              CaptionOverlay captionOverlay,
+              DrawOverlay drawOverlay,
+              CanvasOverlay canvasOverlay,
+              HelpOverlay helpOverlay,
+              ActionsPopup actionsPopup,
+              FilesBrowser filesBrowser,
+              TabRegistry tabRegistry,
+              Queue<PendingKey> pendingKeys,
+              MonitorBridge bridge) {
+        this.ctx = ctx;
+        this.data = data;
+        this.tabsState = tabsState;
+        this.recordingManager = recordingManager;
+        this.captionOverlay = captionOverlay;
+        this.drawOverlay = drawOverlay;
+        this.canvasOverlay = canvasOverlay;
+        this.helpOverlay = helpOverlay;
+        this.actionsPopup = actionsPopup;
+        this.filesBrowser = filesBrowser;
+        this.tabRegistry = tabRegistry;
+        this.pendingKeys = pendingKeys;
+        this.bridge = bridge;
+    }
+
+    void setAiActivityLog(Supplier<List<AiPanel.LogEntry>> aiActivityLog) {
+        this.aiActivityLog = aiActivityLog;
+    }
+
+    void setMcpActivityLog(Supplier<List<TuiMcpServer.LogEntry>> mcpActivityLog, Supplier<Integer> mcpToolCallCount) {
+        this.mcpActivityLog = mcpActivityLog;
+        this.mcpToolCallCount = mcpToolCallCount;
+    }
+
+    void setLaunchManager(LaunchManager launchManager) {
+        this.launchManager = launchManager;
+    }
+
+    void setFullScan(Runnable request, LongSupplier done) {
+        this.fullScanRequest = request;
+        this.fullScansDone = done;
+    }
+
+    /**
+     * Brings the data of every integration up to date before an agent reads the Overview from another tab, waiting at
+     * most a few seconds for the next scan.
+     */
+    void awaitFullScan() {
+        Runnable request = fullScanRequest;
+        LongSupplier done = fullScansDone;
+        if (request == null || done == null) {
+            return;
+        }
+        long before = done.getAsLong();
+        request.run();
+        long deadline = System.currentTimeMillis() + FULL_SCAN_TIMEOUT_MS;
+        while (done.getAsLong() <= before && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    LaunchManager getLaunchManager() {
+        return launchManager;
+    }
+
+    List<AiPanel.LogEntry> getAiActivityLog() {
+        Supplier<List<AiPanel.LogEntry>> s = aiActivityLog;
+        return s != null ? s.get() : List.of();
+    }
+
+    List<TuiMcpServer.LogEntry> getMcpActivityLog() {
+        Supplier<List<TuiMcpServer.LogEntry>> s = mcpActivityLog;
+        return s != null ? s.get() : List.of();
+    }
+
+    int getMcpToolCallCount() {
+        Supplier<Integer> s = mcpToolCallCount;
+        return s != null ? s.get() : 0;
+    }
+
+    // ---- Screen state ----
+
+    Buffer getLastBuffer() {
+        return recordingManager.getLastBuffer();
+    }
+
+    long getRenderGeneration() {
+        return recordingManager.getRenderGeneration();
+    }
+
+    // ---- Recording / events ----
+
+    boolean isKeystrokesVisible() {
+        return recordingManager.isRecording();
+    }
+
+    TapeRecorder getTapeRecorder() {
+        return recordingManager.getTapeRecorder();
+    }
+
+    boolean isTapeRecording() {
+        return recordingManager.isTapeRecording();
+    }
+
+    void startTapeRecording(String title) {
+        recordingManager.startTapeRecording(title);
+    }
+
+    void clearTapeRecorder() {
+        recordingManager.clearTapeRecorder();
+    }
+
+    TuiEventLog getEventLog() {
+        return recordingManager.getEventLog();
+    }
+
+    // ---- Navigation state ----
+
+    int getActiveTabIndex() {
+        return tabsState.selected();
+    }
+
+    String getActiveTabName() {
+        int idx = tabsState.selected();
+        return idx >= 0 && idx < TAB_NAMES.length ? TAB_NAMES[idx] : "Unknown";
+    }
+
+    String getSelectedPid() {
+        return ctx != null ? ctx.selectedPid : null;
+    }
+
+    /** Whether a running integration goes by this name (a model often passes it where a directory is asked for). */
+    boolean hasIntegration(String name) {
+        return name != null && !name.isEmpty() && findIntegration(name) != null;
+    }
+
+    String getSelectedIntegrationName() {
+        if (ctx == null) {
+            return null;
+        }
+        IntegrationInfo info = ctx.findSelectedIntegration();
+        return info != null ? info.name : null;
+    }
+
+    /** How often the selected integration has reloaded its routes, 0 when nothing is selected. */
+    int getSelectedReloadCount() {
+        if (ctx == null) {
+            return 0;
+        }
+        IntegrationInfo info = ctx.findSelectedIntegration();
+        return info != null ? info.reloaded : 0;
+    }
+
+    /** The status document of the selected integration, null when nothing is selected or it has none yet. */
+    JsonObject readSelectedStatus() {
+        if (ctx == null || ctx.selectedPid == null) {
+            return null;
+        }
+        try {
+            return RuntimeHelper.readStatus(Long.parseLong(ctx.selectedPid));
+        } catch (RuntimeException e) {
+            // not a pid, or a status that cannot be read: no tool groups, the core set is still offered
+            return null;
+        }
+    }
+
+    String getSelectedCamelVersion() {
+        if (ctx == null) {
+            return null;
+        }
+        IntegrationInfo info = ctx.findSelectedIntegration();
+        return info != null ? info.camelVersion : null;
+    }
+
+    /** The source directory of the selected integration, the default directory of the shared file tools. */
+    Path getSelectedSourceDirectory() {
+        IntegrationInfo info = findIntegration(null);
+        if (info == null) {
+            return null;
+        }
+        Path dir = FilesBrowser.resolveSourceDirectory(info);
+        return dir != null && Files.isDirectory(dir) ? dir : null;
+    }
+
+    int getIntegrationCount() {
+        List<IntegrationInfo> list = data.get();
+        return (int) list.stream().filter(i -> !i.vanishing).count();
+    }
+
+    // ---- Caption / draw overlays ----
+
+    boolean isCaptionVisible() {
+        return captionOverlay.isCaptionVisible();
+    }
+
+    void showCaption(String text) {
+        captionOverlay.showCaption(text);
+    }
+
+    void showCaption(String text, int durationSeconds) {
+        captionOverlay.showCaption(text, durationSeconds);
+    }
+
+    void setDrawing(List<DrawOverlay.DrawCell> cells, int durationSeconds) {
+        drawOverlay.setDrawing(cells, durationSeconds);
+    }
+
+    void appendDrawing(List<DrawOverlay.DrawCell> cells) {
+        drawOverlay.appendDrawing(cells);
+    }
+
+    void clearDrawing() {
+        drawOverlay.clear();
+    }
+
+    void openCanvas() {
+        canvasOverlay.open();
+    }
+
+    void closeCanvas() {
+        canvasOverlay.close();
+    }
+
+    boolean isCanvasVisible() {
+        return canvasOverlay.isVisible();
+    }
+
+    // ---- Tab navigation ----
+
+    String navigateToTab(String tabName) {
+        int index = tabIndex(tabName);
+        if (index >= 0) {
+            bridge.handleTabKey(index);
+            return TAB_NAMES[index];
+        }
+        for (int i = 0; i < TAB_NAMES.length; i++) {
+            if (TAB_NAMES[i].equalsIgnoreCase(tabName)) {
+                bridge.handleTabKey(i);
+                return TAB_NAMES[i];
+            }
+        }
+        // Check More submenu tabs
+        List<TabRegistry.MoreTab> moreTabs = tabRegistry.moreTabs();
+        for (int i = 0; i < moreTabs.size(); i++) {
+            if (moreTabs.get(i).name().equalsIgnoreCase(tabName)) {
+                bridge.selectMoreTab(i);
+                return moreTabs.get(i).name();
+            }
+        }
+        return null;
+    }
+
+    String selectIntegration(String nameOrPid) {
+        IntegrationInfo info = findIntegration(data.get(), nameOrPid);
+        if (info == null) {
+            return null;
+        }
+        ctx.selectedPid = info.pid;
+        bridge.resetIntegrationTabState();
+        return info.name != null ? info.name : info.pid;
+    }
+
+    /**
+     * The integration by its pid or name, else by the folder of its project: an opened project runs under the name its
+     * app gives itself (camel.main.name, spring.application.name), not the name of the folder it was opened as.
+     */
+    static IntegrationInfo findIntegration(List<IntegrationInfo> infos, String nameOrPid) {
+        for (IntegrationInfo info : infos) {
+            if (!info.vanishing && (nameOrPid.equals(info.pid)
+                    || (info.name != null && info.name.equalsIgnoreCase(nameOrPid)))) {
+                return info;
+            }
+        }
+        for (IntegrationInfo info : infos) {
+            if (!info.vanishing && (folderNamed(info.directory, nameOrPid) || folderNamed(info.sourceDir, nameOrPid))) {
+                return info;
+            }
+        }
+        return null;
+    }
+
+    private static boolean folderNamed(String dir, String name) {
+        if (dir == null || dir.isBlank()) {
+            return false;
+        }
+        Path folder = Path.of(dir).getFileName();
+        return folder != null && folder.toString().equalsIgnoreCase(name);
+    }
+
+    List<String> getTabNames() {
+        List<String> names = new ArrayList<>();
+        names.addAll(List.of(TAB_NAMES));
+        for (TabRegistry.MoreTab mt : tabRegistry.moreTabs()) {
+            names.add(mt.name());
+        }
+        return names;
+    }
+
+    List<TabRegistry.TabEntry> getTabEntries() {
+        return tabRegistry.allTabEntries(ctx != null ? ctx.findSelectedIntegration() : null);
+    }
+
+    List<String> getActionLabels() {
+        return actionsPopup.getActionLabels();
+    }
+
+    SelectionContext getSelectionContext() {
+        SelectionContext popup = actionsPopup.getSelectionContext();
+        if (popup != null) {
+            return popup;
+        }
+        MonitorTab tab = bridge.activeTab();
+        return tab != null ? tab.getSelectionContext() : null;
+    }
+
+    Boolean isDetailFocused() {
+        MonitorTab tab = bridge.activeTab();
+        return tab != null ? tab.isDetailFocused() : null;
+    }
+
+    /**
+     * Reader for the per-process status documents; replaceable so tests can point it at a temporary directory.
+     */
+    StatusFileReader statusFiles() {
+        return statusFiles;
+    }
+
+    void setStatusFiles(StatusFileReader statusFiles) {
+        this.statusFiles = statusFiles;
+    }
+
+    /**
+     * Integrations currently monitored (vanished processes excluded), for callers that need pid and name.
+     */
+    List<IntegrationInfo> liveIntegrations() {
+        List<IntegrationInfo> all = data.get();
+        return all == null ? List.of() : all.stream().filter(i -> !i.vanishing).toList();
+    }
+
+    List<String> getIntegrationNames() {
+        return data.get().stream()
+                .filter(i -> !i.vanishing)
+                .map(i -> i.name != null ? i.name : i.pid)
+                .toList();
+    }
+
+    /**
+     * Infra services (brokers, databases, ...) started with {@code camel infra run} that are still alive.
+     */
+    List<InfraInfo> liveInfraServices() {
+        if (ctx == null || ctx.infraData == null) {
+            return List.of();
+        }
+        List<InfraInfo> all = ctx.infraData.get();
+        return all == null ? List.of() : all.stream().filter(i -> !i.vanishing).toList();
+    }
+
+    InfraInfo findInfra(String aliasOrPid) {
+        return InfraSupport.find(liveInfraServices(), aliasOrPid);
+    }
+
+    /** Alias of the infra service selected in Overview, or null when an integration (or nothing) is selected. */
+    String getSelectedInfraAlias() {
+        InfraInfo infra = ctx != null ? ctx.findSelectedInfra() : null;
+        return infra != null ? infra.alias : null;
+    }
+
+    JsonObject getInfraLogData(InfraInfo info, int limit, String filter) throws IOException {
+        List<String> lines = InfraSupport.readLogTail(CommandLineHelper.getCamelDir(), info, limit, filter);
+        JsonObject result = new JsonObject();
+        result.put("infra", info.alias);
+        result.put("pid", info.pid);
+        JsonArray arr = new JsonArray();
+        arr.addAll(lines);
+        result.put("lines", arr);
+        result.put("returnedLines", lines.size());
+        return result;
+    }
+
+    boolean stopInfra(InfraInfo info) {
+        return InfraSupport.stop(CommandLineHelper.getCamelDir(), info);
+    }
+
+    // ---- Key injection ----
+
+    int injectKeys(List<String> keys, int delayMs) {
+        long fireAt = System.currentTimeMillis();
+        int count = 0;
+        for (String key : keys) {
+            KeyEvent ke = parseKey(key);
+            if (ke != null) {
+                pendingKeys.add(new PendingKey(ke, fireAt));
+                fireAt += delayMs;
+                count++;
+            }
+        }
+        return count;
+    }
+
+    static KeyEvent parseKey(String key) {
+        if (key == null || key.isEmpty()) {
+            return null;
+        }
+
+        boolean ctrl = false;
+        boolean shift = false;
+        String remainder = key;
+        while (remainder.contains("+")) {
+            int plus = remainder.indexOf('+');
+            String mod = remainder.substring(0, plus).trim();
+            remainder = remainder.substring(plus + 1).trim();
+            if (mod.equalsIgnoreCase("Ctrl")) {
+                ctrl = true;
+            } else if (mod.equalsIgnoreCase("Shift")) {
+                shift = true;
+            }
+        }
+
+        KeyModifiers mods = KeyModifiers.of(ctrl, false, shift);
+
+        KeyCode code = switch (remainder.toLowerCase(Locale.ROOT)) {
+            case "enter", "return" -> KeyCode.ENTER;
+            case "esc", "escape" -> KeyCode.ESCAPE;
+            case "tab" -> KeyCode.TAB;
+            case "backspace" -> KeyCode.BACKSPACE;
+            case "delete", "del" -> KeyCode.DELETE;
+            case "up" -> KeyCode.UP;
+            case "down" -> KeyCode.DOWN;
+            case "left" -> KeyCode.LEFT;
+            case "right" -> KeyCode.RIGHT;
+            case "home" -> KeyCode.HOME;
+            case "end" -> KeyCode.END;
+            case "pageup", "pgup" -> KeyCode.PAGE_UP;
+            case "pagedown", "pgdn" -> KeyCode.PAGE_DOWN;
+            case "f1" -> KeyCode.F1;
+            case "f2" -> KeyCode.F2;
+            case "f3" -> KeyCode.F3;
+            case "f4" -> KeyCode.F4;
+            case "f5" -> KeyCode.F5;
+            case "f6" -> KeyCode.F6;
+            case "f7" -> KeyCode.F7;
+            case "f8" -> KeyCode.F8;
+            case "f9" -> KeyCode.F9;
+            case "f10" -> KeyCode.F10;
+            case "f11" -> KeyCode.F11;
+            case "f12" -> KeyCode.F12;
+            case "space" -> null;
+            default -> null;
+        };
+
+        if (code != null) {
+            return KeyEvent.ofKey(code, mods);
+        }
+        if ("space".equalsIgnoreCase(remainder)) {
+            return KeyEvent.ofChar(' ', mods);
+        }
+        if (remainder.length() == 1) {
+            return KeyEvent.ofChar(remainder.charAt(0), mods);
+        }
+        return null;
+    }
+
+    // ---- Data access ----
+
+    /** How long a table read waits for a tab that loads its data on demand. The connector action timeout is 5s. */
+    static final long ON_DEMAND_LOAD_TIMEOUT_MS = 8_000;
+    // a full scan runs at most every 2 seconds, on the next refresh
+    static final long FULL_SCAN_TIMEOUT_MS = 4_000;
+
+    JsonObject getTableData(String tabName) {
+        MonitorTab tab = resolveTab(tabName);
+        if (tab != null && tab == tabRegistry.overviewTab() && bridge != null && bridge.activeTab() != tab) {
+            awaitFullScan();
+        }
+        return tab != null ? awaitTableData(tab, ON_DEMAND_LOAD_TIMEOUT_MS) : null;
+    }
+
+    /**
+     * Why {@link #getTableData(String)} returned nothing for the tab: unknown tab, a load error, or an empty tab.
+     */
+    String tableDataError(String tabName) {
+        MonitorTab tab = resolveTab(tabName);
+        if (tab == null) {
+            return tabName != null && !tabName.isBlank() ? "Unknown tab: " + tabName : "No active tab";
+        }
+        String error = tab.dataLoadError();
+        return error != null ? error : "No table data available for tab: " + tabName;
+    }
+
+    private MonitorTab resolveTab(String tabName) {
+        if (tabName != null && !tabName.isBlank()) {
+            return tabRegistry.findTabByName(tabName);
+        }
+        return bridge.activeTab();
+    }
+
+    /**
+     * Reads the tab's table, and when the tab loads its data on demand and has none yet, starts the load and waits
+     * (polling) until data arrives, the load reports an error or an empty result, or the timeout passes. Must not be
+     * called on the render thread, since the loads complete there.
+     */
+    static JsonObject awaitTableData(MonitorTab tab, long timeoutMs) {
+        JsonObject data = tab.getTableDataAsJson();
+        if (data != null || !tab.ensureDataLoaded()) {
+            return data;
+        }
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (data == null && System.currentTimeMillis() < deadline && tab.dataLoadError() == null) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            data = tab.getTableDataAsJson();
+        }
+        return data;
+    }
+
+    boolean executeAction(String actionName) {
+        return actionsPopup.executeActionByName(actionName);
+    }
+
+    JsonObject getLogData(int limit, String filter, String level) {
+        return tabRegistry.logTab().getLogDataAsJson(limit, filter, level);
+    }
+
+    JsonObject getDiagramData() {
+        MonitorTab tab = bridge.activeTab();
+        if (tab instanceof DiagramTab dt) {
+            return dt.getTableDataAsJson();
+        }
+        return tabRegistry.diagramTab().getTableDataAsJson();
+    }
+
+    void selectTraceExchange(String exchangeId) {
+        tabRegistry.historyTab().selectTraceExchange(exchangeId);
+    }
+
+    JsonObject getTopologyData() {
+        return tabRegistry.diagramTab().getTopologyDataAsJson();
+    }
+
+    /** Snapshot of the Ollama monitor for the tui_get_ollama tool; polls first so the caller sees current data. */
+    JsonObject getOllamaData(int limit) {
+        OllamaMonitor monitor = ctx.ollamaMonitor;
+        if (monitor == null) {
+            JsonObject none = new JsonObject();
+            none.put("connected", false);
+            return none;
+        }
+        monitor.poll();
+        return monitor.toJson(limit);
+    }
+
+    JsonObject getSpanData(String traceId, int limit) {
+        String pid = ctx.selectedPid;
+        if (pid == null) {
+            JsonObject err = new JsonObject();
+            err.put("error", "No integration selected");
+            return err;
+        }
+        try {
+            JsonObject action = new JsonObject();
+            action.put("action", "span");
+            action.put("dump", "true");
+            action.put("limit", String.valueOf(limit));
+
+            JsonObject response = ctx.executeAction(pid, action, 3000);
+            if (response != null) {
+                Boolean enabled = response.getBoolean("enabled");
+                if (enabled == null || !enabled) {
+                    JsonObject err = new JsonObject();
+                    err.put("error", "OpenTelemetry not enabled (requires --observe flag)");
+                    return err;
+                }
+                if (traceId != null && !traceId.isBlank()) {
+                    JsonArray all = response.getCollection("spans");
+                    if (all != null) {
+                        JsonArray filtered = new JsonArray();
+                        for (Object o : all) {
+                            JsonObject span = (JsonObject) o;
+                            String tid = span.getString("traceId");
+                            if (tid != null && tid.contains(traceId)) {
+                                filtered.add(span);
+                            }
+                        }
+                        response.put("spans", filtered);
+                    }
+                }
+                return response;
+            }
+            JsonObject err = new JsonObject();
+            err.put("error", "Timeout waiting for span data");
+            return err;
+        } catch (Exception e) {
+            JsonObject err = new JsonObject();
+            err.put("error", e.getMessage());
+            return err;
+        }
+    }
+
+    JsonObject getProcessorDetail(String routeId) {
+        String pid = ctx.selectedPid;
+        if (pid == null) {
+            JsonObject err = new JsonObject();
+            err.put("error", "No integration selected");
+            return err;
+        }
+        try {
+            JsonObject action = new JsonObject();
+            action.put("action", "processor-detail");
+            action.put("routeId", routeId != null ? routeId : "*");
+
+            JsonObject response = ctx.executeAction(pid, action, 5000);
+            return response;
+        } catch (Exception e) {
+            JsonObject err = new JsonObject();
+            err.put("error", e.getMessage());
+            return err;
+        }
+    }
+
+    // ---- Diagram navigation ----
+
+    String navigateDiagramToRoute(String routeId) {
+        return navigateDiagramToRoute(routeId, 0);
+    }
+
+    /**
+     * Selects a route in the Diagram tab, waiting up to {@code waitMs} for the diagram to load: right after the
+     * integration was selected (or the tab opened) its routes are not there yet. The tab is switched to once.
+     */
+    String navigateDiagramToRoute(String routeId, long waitMs) {
+        navigateToTab("Diagram");
+        DiagramTab tab = tabRegistry.diagramTab();
+        return TuiToolRegistry.retryUntilFound(
+                () -> tab.selectRoute(routeId) ? routeId : null, tab::isDiagramShown, waitMs);
+    }
+
+    /** As {@link #navigateDiagramToNode(String, String)}, waiting up to {@code waitMs} for the diagram to load. */
+    String navigateDiagramToNode(String routeId, String nodeId, long waitMs) {
+        navigateToTab("Diagram");
+        DiagramTab tab = tabRegistry.diagramTab();
+        return TuiToolRegistry.retryUntilFound(
+                () -> tab.selectNode(routeId, nodeId) ? (nodeId != null ? nodeId : routeId) : null,
+                tab::isDiagramShown, waitMs);
+    }
+
+    String navigateDiagramToNode(String routeId, String nodeId) {
+        navigateToTab("Diagram");
+        if (tabRegistry.diagramTab().selectNode(routeId, nodeId)) {
+            return nodeId;
+        }
+        return null;
+    }
+
+    JsonObject getDiagramState() {
+        return tabRegistry.diagramTab().getDiagramStateAsJson();
+    }
+
+    // ---- Screen location ----
+
+    JsonArray locateText(String search) {
+        Buffer buf = recordingManager.getLastBuffer();
+        if (buf == null || search == null || search.isEmpty()) {
+            return new JsonArray();
+        }
+        String screen = ExportRequest.export(buf).text().toString();
+        String[] lines = screen.split("\n", -1);
+        int searchWidth = 0;
+        for (int i = 0; i < search.length();) {
+            int cp = search.codePointAt(i);
+            searchWidth += Math.max(1, CharWidth.of(cp));
+            i += Character.charCount(cp);
+        }
+        JsonArray matches = new JsonArray();
+        for (int y = 0; y < lines.length; y++) {
+            String line = lines[y];
+            int idx = line.indexOf(search);
+            while (idx >= 0) {
+                int visualCol = 0;
+                for (int i = 0; i < idx;) {
+                    int cp = line.codePointAt(i);
+                    visualCol += Math.max(1, CharWidth.of(cp));
+                    i += Character.charCount(cp);
+                }
+                JsonObject match = new JsonObject();
+                match.put("x", visualCol);
+                match.put("y", y);
+                match.put("width", searchWidth);
+                match.put("height", 1);
+                match.put("text", search);
+                matches.add(match);
+                idx = line.indexOf(search, idx + 1);
+            }
+            if (matches.size() >= 20) {
+                break;
+            }
+        }
+        return matches;
+    }
+
+    JsonObject locateNodes(List<String> nodeIds) {
+        return tabRegistry.diagramTab().locateNodes(nodeIds);
+    }
+
+    // ---- Footer actions ----
+
+    JsonArray getFooterActionsAsJson() {
+        List<Span> spans = new ArrayList<>();
+        if (helpOverlay.isVisible()) {
+            helpOverlay.renderFooter(spans);
+        } else if (captionOverlay.isCaptionVisible()) {
+            captionOverlay.renderFooter(spans);
+        } else if (filesBrowser.isVisible()) {
+            filesBrowser.renderFooter(spans);
+        } else if (bridge.isSwitchPopupVisible() || bridge.isMorePopupVisible()) {
+            if (bridge.isSwitchPopupVisible()) {
+                hint(spans, "Enter", "switch");
+                hintLast(spans, "Esc", "close");
+            } else {
+                hint(spans, "Enter", "open");
+                hintLast(spans, "Esc", "close");
+            }
+        } else {
+            MonitorTab tab = bridge.activeTab();
+            if (tabsState.selected() == TabRegistry.TAB_OVERVIEW) {
+                bridge.renderOverviewFooter(spans);
+            } else if (tab != null) {
+                tab.renderFooter(spans);
+                tab.renderViewToggles(spans);
+                bridge.insertFKeyHints(spans);
+            }
+        }
+        JsonArray actions = new JsonArray();
+        for (int i = 0; i + 1 < spans.size(); i += 2) {
+            String key = spans.get(i).content().trim();
+            String rawLabel = spans.get(i + 1).content().trim();
+            // compact "show BHPV" pattern: key="show", then space, then 4 single-letter spans, then trailing space
+            if ("show".equals(key) && i + 6 < spans.size()) {
+                for (int j = 0; j < 4; j++) {
+                    Span letter = spans.get(i + 2 + j);
+                    String ch = letter.content();
+                    boolean on = ch.equals(ch.toUpperCase());
+                    JsonObject toggle = new JsonObject();
+                    toggle.put("key", ch.toLowerCase());
+                    String label = switch (ch.toLowerCase()) {
+                        case "b" -> "body";
+                        case "h" -> "headers";
+                        case "p" -> "properties";
+                        case "v" -> "variables";
+                        default -> ch;
+                    };
+                    toggle.put("label", label);
+                    toggle.put("state", on ? "on" : "off");
+                    actions.add(toggle);
+                }
+                i += 5; // skip the 7-span group (loop adds 2, we consumed 5 more)
+                continue;
+            }
+            JsonObject action = new JsonObject();
+            action.put("key", key);
+            int bracket = rawLabel.indexOf('[');
+            if (bracket > 0 && rawLabel.endsWith("]")) {
+                action.put("label", rawLabel.substring(0, bracket).trim());
+                action.put("state", rawLabel.substring(bracket + 1, rawLabel.length() - 1));
+            } else {
+                action.put("label", rawLabel);
+            }
+            actions.add(action);
+        }
+        return actions;
+    }
+
+    // ---- Tab filter / input ----
+
+    void setLogLevel(String level) {
+        tabRegistry.logTab().setLogLevel(level);
+    }
+
+    boolean setTabFilter(String tabName, String filter) {
+        if (tabName != null) {
+            navigateToTab(tabName);
+        }
+        MonitorTab tab = bridge.activeTab();
+        return tab != null && tab.setFilter(filter);
+    }
+
+    boolean setTabInputValue(String tabName, String field, String value) {
+        if (tabName != null) {
+            navigateToTab(tabName);
+        }
+        MonitorTab tab = bridge.activeTab();
+        return tab != null && tab.setInputValue(field, value);
+    }
+
+    String toggleTraceDisplay(String section, Boolean enabled) {
+        return tabRegistry.historyTab().toggleDisplaySection(section, enabled);
+    }
+
+    // ---- Integration data ----
+
+    JsonObject getReadme(String name) {
+        List<IntegrationInfo> integrations = data.get();
+        IntegrationInfo target = null;
+        if (name != null && !name.isEmpty()) {
+            for (IntegrationInfo info : integrations) {
+                if (!info.vanishing && name.equals(info.name)) {
+                    target = info;
+                    break;
+                }
+            }
+        } else {
+            target = ctx != null ? ctx.findSelectedIntegration() : null;
+        }
+        if (target == null) {
+            return null;
+        }
+        if (target.readmeFiles == null || target.readmeFiles.isEmpty()) {
+            return null;
+        }
+        try {
+            JsonObject action = new JsonObject();
+            action.put("action", "readme");
+            return ctx.executeAction(target.pid, action, 5000);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * The integration summary of an integration's project (CAMEL-25143), as the readme tool answers it when there is no
+     * README: the view without the tool comments, and whether it still matches the routes. Null when the project has
+     * none.
+     */
+    JsonObject getIntegrationSummary(String name) {
+        IntegrationInfo target = findIntegration(name);
+        Path dir = target != null ? FilesBrowser.resolveSourceDirectory(target) : null;
+        if (dir == null || !Files.isRegularFile(dir.resolve(IntegrationSummary.FILE_NAME))) {
+            return null;
+        }
+        IntegrationSummaryDoc.Doc doc = IntegrationSummaryDoc.load(dir);
+        if (doc == null) {
+            return null;
+        }
+        JsonObject result = new JsonObject();
+        result.put("file", IntegrationSummary.FILE_NAME);
+        result.put("content", doc.markdown());
+        result.put("note", "The sections and route texts marked " + IntegrationSummary.AI_MARK
+                           + " were written by an AI: say so when you repeat them; the rest is derived from the sources");
+        if (doc.title().contains("out of date")) {
+            result.put("upToDate", false);
+        }
+        return result;
+    }
+
+    /** The pid of the integration, or else the infra service, with the given name (alias) or pid. */
+    private String findPidByNameOrPid(String nameOrPid) {
+        for (IntegrationInfo info : data.get()) {
+            if (!info.vanishing && (nameOrPid.equals(info.name) || nameOrPid.equals(info.pid))) {
+                return info.pid;
+            }
+        }
+        List<InfraInfo> infras = ctx.infraData != null ? ctx.infraData.get() : null;
+        if (infras != null) {
+            for (InfraInfo info : infras) {
+                if (!info.vanishing && (nameOrPid.equals(info.alias) || nameOrPid.equals(info.pid))) {
+                    return info.pid;
+                }
+            }
+        }
+        return null;
+    }
+
+    private IntegrationInfo findIntegration(String name) {
+        if (name != null && !name.isEmpty()) {
+            for (IntegrationInfo info : data.get()) {
+                if (!info.vanishing && name.equals(info.name)) {
+                    return info;
+                }
+            }
+            return null;
+        }
+        return ctx != null ? ctx.findSelectedIntegration() : null;
+    }
+
+    /**
+     * Tells an agent where the sources are and whether editing them makes sense: the directory differs with how the
+     * integration was started (plain files, --source-dir, an example extracted to a temporary folder, an exported
+     * project), and edits only take effect on reload (dev mode) or restart.
+     */
+    // time the last camel_write_file spent waiting for the user's confirmation; the AI panel subtracts it from the
+    // tool time of the call so the usage statistics show what the tool did, not how long the user thought about it
+    private volatile long lastConfirmWaitMs;
+
+    // only the user chooses how writes are handled (/write in the AI panel): a model asked to respect a rejection
+    // may simply retry with confirm=false, so that argument is honoured in AUTO mode only
+    private volatile WriteMode writeMode = WriteMode.CONFIRM;
+
+    void setWriteMode(WriteMode writeMode) {
+        this.writeMode = writeMode;
+    }
+
+    WriteMode getWriteMode() {
+        return writeMode;
+    }
+
+    // validates source by file type (Camel YAML DSL, application.properties) with the editor's own checks,
+    // see SourceEditAssist#validateSource
+    private BiFunction<String, String, List<String>> sourceValidator;
+    // the editor's check of a properties line the catalog does not know (Spring Boot), for the shared tools
+    private Function<String, String> propertyLineValidator;
+
+    void setSourceValidator(BiFunction<String, String, List<String>> sourceValidator) {
+        this.sourceValidator = sourceValidator;
+    }
+
+    void setPropertyLineValidator(Function<String, String> propertyLineValidator) {
+        this.propertyLineValidator = propertyLineValidator;
+    }
+
+    Function<String, String> getPropertyLineValidator() {
+        return propertyLineValidator;
+    }
+
+    /**
+     * Validates source before it is written: {@code content} when given (the file name decides the checks), otherwise
+     * the file from the integration's source directory. A YAML file is validated as Camel YAML DSL and a .properties
+     * file as Camel and Spring Boot options.
+     */
+    JsonObject validateSource(String name, String file, String content) {
+        if (file == null || file.isBlank()) {
+            if (content == null) {
+                return writeError("file is required (and content, unless the file exists in the source directory)");
+            }
+            file = "source.camel.yaml";
+        }
+        if (content == null) {
+            JsonObject existing = getFiles(name, file);
+            if (existing == null || existing.getString("content") == null) {
+                String error = existing != null ? existing.getString("error") : null;
+                return writeError(error != null ? error : "No such file in the source directory: " + file);
+            }
+            content = existing.getString("content");
+        }
+        if (sourceValidator == null) {
+            return writeError("Validation is not available");
+        }
+        if (!SourceValidator.isValidatableFile(file)) {
+            return writeError("No validation for " + file + ": only YAML routes and .properties files are validated");
+        }
+        List<String> errors = sourceValidator.apply(file, content);
+        JsonObject result = new JsonObject();
+        result.put("valid", errors.isEmpty());
+        result.put("file", file);
+        JsonArray arr = new JsonArray();
+        arr.addAll(errors);
+        result.put("errors", arr);
+        result.put("message", errors.isEmpty()
+                ? "The source is valid"
+                : errors.size() + " problem(s) found; fix them before writing the file");
+        return result;
+    }
+
+    long consumeConfirmWaitMs() {
+        long wait = lastConfirmWaitMs;
+        lastConfirmWaitMs = 0;
+        return wait;
+    }
+
+    private static void describeSourceDirectory(IntegrationInfo info, Path dir, JsonObject result) {
+        boolean temporary = FilesBrowser.isTemporaryDirectory(dir);
+        result.put("directory", dir.toString());
+        result.put("devMode", info.devMode);
+        result.put("temporary", temporary);
+        String editing;
+        if (temporary) {
+            editing = "The directory is a temporary copy of the sources; edits made with camel_write_file are lost when"
+                      + " the integration stops"
+                      + (info.devMode ? ", but are reloaded while it runs (dev mode)." : ".");
+        } else if (info.devMode) {
+            editing = "Files can be edited with camel_write_file; changes are reloaded automatically (dev mode).";
+        } else {
+            editing = "Files can be edited with camel_write_file; restart the integration for changes to take effect.";
+        }
+        result.put("editing", editing);
+    }
+
+    /**
+     * The shared {@code camel_get_files} on the integration's source directory, with what only the TUI knows: whether
+     * the directory is editable and, for the listing, which file and line each running route comes from. A missing file
+     * or a bad path comes back as {@code error} with the directory, so the model corrects the path instead of
+     * concluding the sources are gone; null only when there is no integration or no source directory.
+     */
+    JsonObject getFiles(String name, String file) {
+        IntegrationInfo target = findIntegration(name);
+        if (target == null) {
+            return null;
+        }
+        Path dir = FilesBrowser.resolveSourceDirectory(target);
+        if (dir == null || !Files.isDirectory(dir)) {
+            return null;
+        }
+        JsonObject result;
+        try {
+            result = file != null && !file.isEmpty()
+                    ? AuthoringTools.readFile(dir, file) : AuthoringTools.listFiles(dir);
+        } catch (ToolExecutionException e) {
+            JsonObject error = new JsonObject();
+            error.put("error", e.getMessage());
+            describeSourceDirectory(target, dir, error);
+            return error;
+        }
+        describeSourceDirectory(target, dir, result);
+        if (file == null || file.isEmpty()) {
+            JsonArray routes = new JsonArray();
+            for (RouteInfo r : target.routes) {
+                if (r.source != null && !r.source.isBlank()) {
+                    JsonObject j = new JsonObject();
+                    if (r.routeId != null) {
+                        j.put("routeId", r.routeId);
+                    }
+                    j.put("source", r.source);
+                    routes.add(j);
+                }
+            }
+            JsonArray mapped = AuthoringTools.routeSources(routes, dir);
+            if (!mapped.isEmpty()) {
+                result.put("routes", mapped);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Writes (creates or replaces) a file in the integration's source directory, after the user confirmed it in the TUI
+     * unless {@code confirm} is false. The file is a path relative to that directory. A YAML route or .properties file
+     * is always validated first (the editor's checks) and not written when it has errors, so a model fixes them instead
+     * of the user finding them in the log after the reload (CAMEL-24897).
+     */
+    JsonObject writeFile(String name, String file, String content, boolean confirm) {
+        IntegrationInfo target = findIntegration(name);
+        if (target == null) {
+            return writeError(name != null && !name.isEmpty()
+                    ? "No integration named '" + name + "'" : "No integration selected");
+        }
+        Path dir = FilesBrowser.resolveSourceDirectory(target);
+        if (dir == null || !Files.isDirectory(dir)) {
+            return writeError("No source directory found for the integration");
+        }
+        if (file == null || file.isBlank()) {
+            return writeError("file is required");
+        }
+        if (content == null) {
+            return writeError("content is required");
+        }
+        Path filePath;
+        try {
+            filePath = AuthoringTools.resolveFile(dir, file);
+        } catch (ToolExecutionException e) {
+            return writeError(e.getMessage());
+        }
+        boolean exists = Files.exists(filePath);
+        if (exists && !Files.isRegularFile(filePath)) {
+            return writeError(file + " is not a regular file");
+        }
+        if (sourceValidator != null && SourceValidator.isValidatableFile(file)) {
+            List<String> errors = sourceValidator.apply(file, content);
+            if (!errors.isEmpty() && exists) {
+                // only the problems the write brings refuse it, not the ones the file already had: an edit that fixes
+                // one problem would be refused for the others
+                try {
+                    List<String> before = sourceValidator.apply(file, Files.readString(filePath, StandardCharsets.UTF_8));
+                    errors = AuthoringTools.newProblems(before, errors, new ArrayList<>());
+                } catch (IOException e) {
+                    // the file as it was is not known: every problem refuses the write
+                }
+            }
+            if (!errors.isEmpty()) {
+                JsonObject result = new JsonObject();
+                result.put("status", "invalid");
+                result.put("file", file);
+                JsonArray arr = new JsonArray();
+                arr.addAll(errors);
+                result.put("errors", arr);
+                result.put("message", "The file was not written: the content has validation errors. Fix them and"
+                                      + " call camel_write_file again.");
+                return result;
+            }
+        }
+        int lines = content.isEmpty() ? 0 : (int) content.lines().count();
+        String oldContent = null;
+        if (exists) {
+            try {
+                oldContent = Files.readString(filePath, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                oldContent = "";
+            }
+        }
+        FileWrite request = new FileWrite(
+                file, dir, oldContent, content, FilesBrowser.isTemporaryDirectory(dir), target.devMode);
+        if (writeMode == WriteMode.LIVE && bridge != null) {
+            String parked = bridge.parkedReplayFile();
+            if (parked != null && !parked.equals(file)) {
+                JsonObject result = new JsonObject();
+                result.put("status", "deferred");
+                result.put("file", file);
+                result.put("message", "Not written: the editor still holds the paused live edit of " + parked
+                                      + " (the user asked about it and has not continued, saved or discarded it"
+                                      + " yet). Answer the user's question now and end your turn without writing"
+                                      + " more files. The user finishes that edit first; your next message tells"
+                                      + " you what became of it, then write " + file + ".");
+                return result;
+            }
+        }
+        if (writeMode == WriteMode.LIVE && exists && bridge != null) {
+            long waitStart = System.currentTimeMillis();
+            ReplayOutcome outcome = bridge.replayFileWrite(request);
+            lastConfirmWaitMs = System.currentTimeMillis() - waitStart;
+            if (outcome != null) {
+                return replayResult(target, dir, file, content, outcome);
+            }
+            // could not replay (for example unsaved edits in the editor): fall back to the dialog
+        }
+        if (confirm || writeMode != WriteMode.AUTO) {
+            long waitStart = System.currentTimeMillis();
+            boolean confirmed = bridge != null && bridge.confirmFileWrite(request);
+            lastConfirmWaitMs = System.currentTimeMillis() - waitStart;
+            if (!confirmed) {
+                JsonObject result = new JsonObject();
+                result.put("status", "rejected");
+                result.put("file", file);
+                result.put("message", "The user rejected the change to " + file + " in the TUI; the file is"
+                                      + " unchanged and nothing is pending. Do not say you are waiting for a"
+                                      + " confirmation, and do not retry unless the user asks for it. Passing"
+                                      + " confirm=false does not skip the dialog; only the user can turn it off.");
+                return result;
+            }
+        }
+        try {
+            Files.createDirectories(filePath.getParent());
+            Files.writeString(filePath, content, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return writeError("Failed to write " + filePath + ": " + e.getMessage());
+        }
+        if (bridge != null) {
+            bridge.fileWritten(filePath);
+        }
+        JsonObject result = new JsonObject();
+        result.put("status", exists ? "overwritten" : "created");
+        result.put("file", file);
+        describeSourceDirectory(target, dir, result);
+        result.put("lines", lines);
+        result.put("bytes", content.getBytes(StandardCharsets.UTF_8).length);
+        return result;
+    }
+
+    /**
+     * Replaces one snippet of a file of the integration and writes the result through
+     * {@link #writeFile(String, String, String, boolean)}, so an edit is confirmed and replayed in the editor like a
+     * write (CAMEL-24909). The reading and the matching are the shared tool's, only the writing is the TUI's.
+     */
+    JsonObject editFile(String name, String file, String find, String replace, boolean confirm) {
+        IntegrationInfo target = findIntegration(name);
+        if (target == null) {
+            return writeError(name != null && !name.isEmpty()
+                    ? "No integration named '" + name + "'" : "No integration selected");
+        }
+        Path dir = FilesBrowser.resolveSourceDirectory(target);
+        if (dir == null || !Files.isDirectory(dir)) {
+            return writeError("No source directory found for the integration");
+        }
+        JsonObject edit = AuthoringTools.editedContent(dir, file, find, replace);
+        String content = edit.getString("content");
+        if (content == null) {
+            return edit; // not-found, ambiguous or an error: the shared answer says what to do
+        }
+        JsonObject result = writeFile(name, file, content, confirm);
+        if (!"invalid".equals(result.getString("status")) && !"error".equals(result.getString("status"))) {
+            result.put("status", "edited");
+            result.put("editedAtLine", edit.getInteger("editedAtLine"));
+            result.put("replacedLines", edit.getInteger("replacedLines"));
+        }
+        return result;
+    }
+
+    private JsonObject replayResult(
+            IntegrationInfo target, Path dir, String file, String requested, ReplayOutcome outcome) {
+        JsonObject result = new JsonObject();
+        result.put("file", file);
+        JsonArray skipped = new JsonArray();
+        skipped.addAll(outcome.skipped());
+        if (outcome.undecided()) {
+            result.put("status", "pending");
+            result.put("message", "The change is in the user's editor, replayed as a live edit, but the user has not"
+                                  + " saved or discarded it yet; the file on disk is unchanged. End your turn now:"
+                                  + " do not write " + file + " again and do not say it is saved. Your next message"
+                                  + " tells you what the user did with it.");
+            return result;
+        }
+        if (outcome.paused()) {
+            result.put("status", "paused");
+            result.put("appliedHunks", outcome.applied());
+            result.put("pendingHunks", outcome.remaining());
+            result.put("skippedHunks", skipped);
+            result.put("question", outcome.question());
+            result.put("content", outcome.content() != null ? outcome.content() : "");
+            result.put("message", "The user paused the replay in the editor after " + outcome.applied()
+                                  + " of " + (outcome.applied() + outcome.remaining())
+                                  + " edit(s) and asks: " + outcome.question()
+                                  + "\nAnswer the question briefly (what the edit does and why); look options up with"
+                                  + " camel_catalog_doc rather than listing them from memory. Nothing is written"
+                                  + " yet: 'content' is the editor buffer with the applied edits, the file on disk"
+                                  + " is unchanged. If the user wants the change done differently, call"
+                                  + " camel_write_file again with the complete new content: it continues in the"
+                                  + " editor from 'content'. Otherwise only answer and end your turn: do not write"
+                                  + " other files until the user has finished this edit (Enter continues the"
+                                  + " pending edit(s), then the user saves or discards).");
+            return result;
+        }
+        if (!outcome.saved()) {
+            result.put("status", "rejected");
+            result.put("message", "The change was replayed in the editor and the user discarded it; the file is"
+                                  + " unchanged and nothing is pending. Do not retry unless the user asks for it.");
+            return result;
+        }
+        result.put("status", "written");
+        describeSourceDirectory(target, dir, result);
+        result.put("appliedHunks", outcome.applied());
+        result.put("skippedHunks", skipped);
+        String content = outcome.content() != null ? outcome.content() : "";
+        result.put("lines", content.isEmpty() ? 0 : (int) content.lines().count());
+        StringBuilder message = new StringBuilder();
+        message.append("The change was replayed in the editor and the user saved the file");
+        if (!outcome.skipped().isEmpty()) {
+            message.append("; edit(s) ").append(outcome.skipped())
+                    .append(" were skipped because the user changed that part of the file in the meantime");
+        }
+        if (!content.equals(requested)) {
+            message.append(". The saved file differs from what you sent (the user edited it); its content is in"
+                           + " 'content', use that as the current state");
+            result.put("content", content);
+        }
+        result.put("message", message.toString());
+        return result;
+    }
+
+    private static JsonObject writeError(String message) {
+        JsonObject result = new JsonObject();
+        result.put("status", "error");
+        result.put("error", message);
+        return result;
+    }
+
+    // ---- Integration messaging / control ----
+
+    JsonObject sendMessage(String endpoint, String body, String headers) {
+        if (ctx.selectedPid == null) {
+            return null;
+        }
+        long pid;
+        try {
+            pid = Long.parseLong(ctx.selectedPid);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        return RuntimeHelper.sendMessage(pid, endpoint, body, headers);
+    }
+
+    JsonObject executeSql(String sql, String datasource, int maxRows, int queryTimeout) {
+        if (ctx.selectedPid == null) {
+            return null;
+        }
+        long pid;
+        try {
+            pid = Long.parseLong(ctx.selectedPid);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        return RuntimeHelper.executeSqlQuery(pid, sql, datasource, maxRows, queryTimeout);
+    }
+
+    JsonObject updateRow(String table, String datasource, String pkValuesJson, String colValuesJson) {
+        if (ctx.selectedPid == null) {
+            return null;
+        }
+        long pid;
+        try {
+            pid = Long.parseLong(ctx.selectedPid);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        return RuntimeHelper.executeRowUpdate(pid, table, datasource, pkValuesJson, colValuesJson);
+    }
+
+    String controlIntegration(String action) {
+        return controlIntegration(action, null);
+    }
+
+    /**
+     * Controls the integration with the given name or pid, which becomes the selected one, so the screen shows what the
+     * agent acts on (CAMEL-25424). Without a name: the selected integration, or the only one running.
+     */
+    String controlIntegration(String action, String nameOrPid) {
+        if (action == null || action.isBlank()) {
+            return "Error: action is required";
+        }
+        if ("stop-all".equals(action)) {
+            bridge.stopAll();
+            return "Stopping all processes";
+        }
+        if (nameOrPid != null && !nameOrPid.isBlank()) {
+            String pid = findPidByNameOrPid(nameOrPid.trim());
+            if (pid == null) {
+                List<String> known = new ArrayList<>();
+                data.get().stream().filter(i -> !i.vanishing).forEach(i -> known.add(i.name + " (pid " + i.pid + ")"));
+                List<InfraInfo> infras = ctx.infraData != null ? ctx.infraData.get() : null;
+                if (infras != null) {
+                    // infra services can be named too
+                    infras.stream().filter(i -> !i.vanishing)
+                            .forEach(i -> known.add(i.alias + " (infra, pid " + i.pid + ")"));
+                }
+                String names = String.join(", ", known);
+                return "Error: no integration with name or pid " + nameOrPid
+                       + (names.isEmpty() ? "; none is running" : ". Known: " + names);
+            }
+            ctx.selectedPid = pid;
+        } else if (ctx.selectedPid == null) {
+            List<IntegrationInfo> running = data.get().stream().filter(i -> !i.vanishing && !i.phantom).toList();
+            if (running.size() == 1) {
+                ctx.selectedPid = running.get(0).pid;
+            }
+        }
+        if ("close".equals(action)) {
+            if (ctx.selectedPid == null) {
+                return "Error: no integration selected";
+            }
+            IntegrationInfo info = ctx.findSelectedIntegration();
+            if (info == null || !info.phantom) {
+                return "Error: selected integration is not a phantom (opened but not running)";
+            }
+            ctx.removePhantom(info.pid);
+            ctx.selectedPid = null;
+            return "Closed project: " + info.name;
+        }
+        if (ctx.selectedPid == null) {
+            return "Error: no integration selected; give its name or pid";
+        }
+        String name = ctx.selectedName();
+        return switch (action) {
+            case "reset-stats", "clear-stats" -> {
+                if (ctx.isInfraSelected()) {
+                    yield "Error: cannot reset statistics on infra service";
+                }
+                actionsPopup.executeActionByName("reset-stats");
+                yield "Statistics reset for " + name;
+            }
+            case "stop-routes", "pause" -> {
+                if (ctx.isInfraSelected()) {
+                    yield "Error: cannot stop routes on infra service";
+                }
+                bridge.sendRouteCommand(ctx.selectedPid, "*", "stop");
+                yield "Routes stopped for " + name;
+            }
+            case "start-routes", "resume" -> {
+                if (ctx.isInfraSelected()) {
+                    yield "Error: cannot start routes on infra service";
+                }
+                bridge.sendRouteCommand(ctx.selectedPid, "*", "start");
+                yield "Routes started for " + name;
+            }
+            case "restart" -> {
+                if (ctx.isInfraSelected()) {
+                    yield "Error: cannot restart infra service";
+                }
+                bridge.restartProcess();
+                yield "Restarting " + name;
+            }
+            case "stop" -> {
+                bridge.stopProcess(false);
+                yield "Stopping " + name;
+            }
+            case "kill" -> {
+                bridge.stopProcess(true);
+                yield "Killed " + name;
+            }
+            default -> "Unknown action: " + action
+                       + ". Available: stop-routes, start-routes, restart, stop, kill, stop-all, close";
+        };
+    }
+
+    String openProject(String directory) {
+        Path dirPath = Path.of(directory).toAbsolutePath().normalize();
+        if (!Files.isDirectory(dirPath)) {
+            if (Files.isRegularFile(dirPath)) {
+                dirPath = dirPath.getParent();
+            } else {
+                return "Error: directory does not exist: " + directory;
+            }
+        }
+        IntegrationInfo existing = ctx.findPhantomByDirectory(dirPath.toString());
+        if (existing != null) {
+            ctx.selectedPid = existing.pid;
+            return "Project already open: " + existing.name;
+        }
+
+        Path pomFile = dirPath.resolve("pom.xml");
+        String runtime = Files.isRegularFile(pomFile) ? TuiHelper.detectPomRuntime(pomFile) : null;
+
+        IntegrationInfo phantom = new IntegrationInfo();
+        phantom.name = dirPath.getFileName().toString();
+        phantom.directory = dirPath.toString();
+        phantom.sourceDir = dirPath.toString();
+        phantom.projectType = runtime;
+        if ("spring-boot".equals(runtime)) {
+            phantom.platform = "Spring Boot";
+        } else if ("quarkus".equals(runtime)) {
+            phantom.platform = "Quarkus";
+        } else {
+            phantom.platform = "Camel";
+        }
+        if (runtime != null) {
+            phantom.camelVersion = DependencyLoader.detectCamelVersion(pomFile);
+        }
+        ctx.addPhantom(phantom);
+        ctx.selectedPid = phantom.pid;
+
+        return "Opened project: " + phantom.name + " (pid: " + phantom.pid + ")";
+    }
+
+}

@@ -40,8 +40,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Mail producer concurrent test.
  */
 public class MailProducerConcurrentTest extends CamelTestSupport {
-    private static final MailboxUser camel = Mailbox.getOrCreateUser("camel", "secret");
-    private static final MailboxUser someone = Mailbox.getOrCreateUser("someone", "secret");
+    private static final MailboxUser camel = Mailbox.getOrCreateUser("MailProducerConcurrentTest-camel", "secret");
+    private static final MailboxUser someone = Mailbox.getOrCreateUser("MailProducerConcurrentTest-someone", "secret");
 
     @Test
     public void testNoConcurrentProducers() throws Exception {
@@ -54,7 +54,7 @@ public class MailProducerConcurrentTest extends CamelTestSupport {
     }
 
     private void doSendMessages(int files, int poolSize) throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(camel, someone);
 
         NotifyBuilder builder = new NotifyBuilder(context).whenDone(files).create();
 
@@ -98,7 +98,7 @@ public class MailProducerConcurrentTest extends CamelTestSupport {
         return new RouteBuilder() {
             @Override
             public void configure() {
-                from("direct:start").to(camel.uriPrefix(Protocol.smtp), "mock:result");
+                from("direct:start").to(camel.uriPrefix(Protocol.smtp) + "&useHeaderRecipients=true", "mock:result");
             }
         };
     }

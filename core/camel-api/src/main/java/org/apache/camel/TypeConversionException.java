@@ -16,16 +16,30 @@
  */
 package org.apache.camel;
 
+import java.util.Objects;
+
+import org.jspecify.annotations.Nullable;
+
 /**
- * Exception when failing during type conversion.
+ * Unchecked exception thrown when a type converter is found but fails to convert a value to the required type.
+ * <p/>
+ * Contrast with {@link NoTypeConversionAvailableException}, which is thrown when no converter exists for the
+ * source-to-target type pair at all.
+ *
+ * @see NoTypeConversionAvailableException
  */
 public class TypeConversionException extends RuntimeCamelException {
 
-    private final transient Object value;
+    private final transient @Nullable Object value;
     private final transient Class<?> type;
 
-    public TypeConversionException(Object value, Class<?> type, Throwable cause) {
-        super(createMessage(value, type, cause), cause);
+    /**
+     * @param value the value that could not be converted
+     * @param type  the expected target type
+     * @param cause the cause of the failure
+     */
+    public TypeConversionException(@Nullable Object value, Class<?> type, Throwable cause) {
+        super(createMessage(value, Objects.requireNonNull(type, "type"), Objects.requireNonNull(cause, "cause")), cause);
         this.value = value;
         this.type = type;
     }
@@ -33,7 +47,7 @@ public class TypeConversionException extends RuntimeCamelException {
     /**
      * Returns the value which could not be converted
      */
-    public Object getValue() {
+    public @Nullable Object getValue() {
         return value;
     }
 
@@ -47,7 +61,7 @@ public class TypeConversionException extends RuntimeCamelException {
     /**
      * Returns the required <tt>from</tt> type. Returns <tt>null</tt> if the provided value was null.
      */
-    public Class<?> getFromType() {
+    public @Nullable Class<?> getFromType() {
         if (value != null) {
             return value.getClass();
         } else {
@@ -56,12 +70,28 @@ public class TypeConversionException extends RuntimeCamelException {
     }
 
     /**
-     * Returns an error message for type conversion failed.
+     * Returns an error message for type conversion failed. The value itself is intentionally omitted from the message
+     * to avoid calling {@code toString()} on potentially huge or sensitive message bodies; the value remains accessible
+     * via {@link #getValue()}.
      */
-    public static String createMessage(Object value, Class<?> type, Throwable cause) {
-        return "Error during type conversion from type: " + (value != null ? value.getClass().getCanonicalName() : null)
-               + " to the required type: " + type.getCanonicalName() + " with value " + value + " due to "
-               + cause.getClass().getName() + ": " + cause.getMessage();
+    public static String createMessage(@Nullable Object value, Class<?> type, Throwable cause) {
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(cause, "cause");
+        return "Error during type conversion from type: " + typeName(value != null ? value.getClass() : null)
+               + " to the required type: " + typeName(type)
+               + " due to " + cause.getClass().getName() + ": " + cause.getMessage();
+    }
+
+    /**
+     * Returns the class name, preferring canonical name but falling back to {@link Class#getName()} for anonymous or
+     * local classes whose canonical name is {@code null}.
+     */
+    private static String typeName(Class<?> clazz) {
+        if (clazz == null) {
+            return "null";
+        }
+        String name = clazz.getCanonicalName();
+        return name != null ? name : clazz.getName();
     }
 
 }

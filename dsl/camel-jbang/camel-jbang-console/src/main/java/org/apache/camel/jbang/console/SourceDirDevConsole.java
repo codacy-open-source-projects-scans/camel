@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -29,6 +30,7 @@ import java.util.stream.Stream;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.impl.console.ConsoleHelper;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.PatternHelper;
 import org.apache.camel.support.RouteOnDemandReloadStrategy;
@@ -36,26 +38,37 @@ import org.apache.camel.support.console.AbstractDevConsole;
 import org.apache.camel.util.StringHelper;
 import org.apache.camel.util.TimeUtils;
 import org.apache.camel.util.json.JsonArray;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 
 @DevConsole(name = "source-dir", group = "camel-jbang", displayName = "Source Directory",
-            description = "Information about Camel JBang source files")
+            description = "Information about Camel CLI source files")
 public class SourceDirDevConsole extends AbstractDevConsole {
 
-    /**
-     * Whether to show the source in the output
-     */
+    @Metadata(label = "query", description = "Whether to show the source in the output",
+              javaType = "java.lang.Boolean")
     public static final String SOURCE = "source";
 
+    public record FileEntry(
+            @Metadata(description = "The file name") String name,
+            @Metadata(description = "The file size in bytes") long size,
+            @Metadata(description = "Epoch time in milliseconds of the last modification") long lastModified,
+            @Metadata(description = "The source code lines (only present when requested and available)") List<Object> code) {
+    }
+
+    public record Response(
+            @Metadata(description = "The source directory (only present when a reload strategy is active)") String dir,
+            @Metadata(description = "The files in the source directory (only present when the directory is not empty)") List<FileEntry> files) {
+    }
+
     public SourceDirDevConsole() {
-        super("camel-jbang", "source-dir", "Source Directory", "Information about Camel JBang source files");
+        super("camel-jbang", "source-dir", "Source Directory", "Information about Camel CLI source files");
     }
 
     @Override
     protected String doCallText(Map<String, Object> options) {
         String path = (String) options.get(Exchange.HTTP_PATH);
         String subPath = path != null ? StringHelper.after(path, "/") : null;
-        String source = (String) options.get(SOURCE);
+        boolean source = optionBoolean(options, SOURCE, false);
 
         final StringBuilder sb = new StringBuilder();
 
@@ -84,7 +97,7 @@ public class SourceDirDevConsole extends AbstractDevConsole {
                                 long ts = Files.getLastModifiedTime(f).toMillis();
                                 String age = ts > 0 ? TimeUtils.printSince(ts) : "n/a";
                                 sb.append(String.format("    %s (size: %d age: %s)%n", fileName, size, age));
-                                if ("true".equals(source)) {
+                                if (source) {
                                     StringBuilder code = new StringBuilder();
                                     try (Reader fileReader = Files.newBufferedReader(f, StandardCharsets.UTF_8);
                                          LineNumberReader reader = new LineNumberReader(fileReader)) {
@@ -122,24 +135,24 @@ public class SourceDirDevConsole extends AbstractDevConsole {
     protected Map<String, Object> doCallJson(Map<String, Object> options) {
         String path = (String) options.get(Exchange.HTTP_PATH);
         String subPath = path != null ? StringHelper.after(path, "/") : null;
-        String source = (String) options.get(SOURCE);
+        boolean source = optionBoolean(options, SOURCE, false);
 
-        JsonObject root = new JsonObject();
+        String dir = null;
+        List<FileEntry> files = null;
 
         RouteOnDemandReloadStrategy reload = getCamelContext().hasService(RouteOnDemandReloadStrategy.class);
         if (reload != null) {
-            root.put("dir", reload.getFolder());
+            dir = reload.getFolder();
             // list files in this directory
-            Path dir = Paths.get(reload.getFolder());
-            if (Files.exists(dir) && Files.isDirectory(dir)) {
-                try (Stream<Path> streams = Files.list(dir)) {
-                    List<Path> files = streams.collect(Collectors.toList());
-                    if (!files.isEmpty()) {
+            Path dirPath = Paths.get(reload.getFolder());
+            if (Files.exists(dirPath) && Files.isDirectory(dirPath)) {
+                try (Stream<Path> streams = Files.list(dirPath)) {
+                    List<Path> paths = streams.collect(Collectors.toList());
+                    if (!paths.isEmpty()) {
                         // sort files by name (ignore case)
-                        files.sort((o1, o2) -> o1.getFileName().toString().compareToIgnoreCase(o2.getFileName().toString()));
-                        JsonArray arr = new JsonArray();
-                        root.put("files", arr);
-                        for (Path f : files) {
+                        paths.sort((o1, o2) -> o1.getFileName().toString().compareToIgnoreCase(o2.getFileName().toString()));
+                        files = new ArrayList<>();
+                        for (Path f : paths) {
                             String fileName = f.getFileName().toString();
                             boolean skip = fileName.startsWith(".") || Files.isHidden(f);
                             if (skip) {
@@ -148,21 +161,19 @@ public class SourceDirDevConsole extends AbstractDevConsole {
                             boolean match = subPath == null || fileName.startsWith(subPath) || fileName.endsWith(subPath)
                                     || PatternHelper.matchPattern(fileName, subPath);
                             if (match) {
-                                JsonObject jo = new JsonObject();
-                                jo.put("name", fileName);
-                                jo.put("size", Files.size(f));
-                                jo.put("lastModified", Files.getLastModifiedTime(f).toMillis());
-                                if ("true".equals(source)) {
+                                List<Object> code = null;
+                                if (source) {
                                     try (Reader fileReader = Files.newBufferedReader(f, StandardCharsets.UTF_8)) {
-                                        List<JsonObject> code = ConsoleHelper.loadSourceAsJson(fileReader, null);
-                                        if (code != null) {
-                                            jo.put("code", code);
+                                        JsonArray codeArr = ConsoleHelper.loadSourceAsJson(fileReader, null);
+                                        if (codeArr != null) {
+                                            code = codeArr;
                                         }
                                     } catch (Exception e) {
                                         // ignore
                                     }
                                 }
-                                arr.add(jo);
+                                files.add(new FileEntry(
+                                        fileName, Files.size(f), Files.getLastModifiedTime(f).toMillis(), code));
                             }
                         }
                     }
@@ -171,6 +182,8 @@ public class SourceDirDevConsole extends AbstractDevConsole {
                 }
             }
         }
-        return root;
+
+        Response response = new Response(dir, files);
+        return JsonRecordSupport.toJsonObject(response);
     }
 }

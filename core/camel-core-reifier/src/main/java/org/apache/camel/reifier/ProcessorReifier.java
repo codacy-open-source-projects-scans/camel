@@ -34,9 +34,11 @@ import org.apache.camel.NamedNode;
 import org.apache.camel.Processor;
 import org.apache.camel.Route;
 import org.apache.camel.StartupStep;
+import org.apache.camel.model.A2ASubTaskDefinition;
 import org.apache.camel.model.AggregateDefinition;
 import org.apache.camel.model.AggregationStrategyAwareDefinition;
 import org.apache.camel.model.BeanDefinition;
+import org.apache.camel.model.CacheDefinition;
 import org.apache.camel.model.CatchDefinition;
 import org.apache.camel.model.ChoiceDefinition;
 import org.apache.camel.model.CircuitBreakerDefinition;
@@ -99,6 +101,7 @@ import org.apache.camel.model.SortDefinition;
 import org.apache.camel.model.SplitDefinition;
 import org.apache.camel.model.StepDefinition;
 import org.apache.camel.model.StopDefinition;
+import org.apache.camel.model.SwitchDefinition;
 import org.apache.camel.model.ThreadsDefinition;
 import org.apache.camel.model.ThrottleDefinition;
 import org.apache.camel.model.ThrowExceptionDefinition;
@@ -123,9 +126,11 @@ import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.InterceptStrategy;
 import org.apache.camel.spi.NodeIdFactory;
 import org.apache.camel.spi.ProcessorFactory;
-import org.apache.camel.spi.ReifierStrategy;
+import org.apache.camel.spi.PropertiesComponent;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.CamelContextHelper;
+import org.apache.camel.support.EndpointHelper;
 import org.apache.camel.support.PluginHelper;
 import org.apache.camel.util.ObjectHelper;
 import org.slf4j.Logger;
@@ -171,9 +176,6 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
     public static void registerReifier(
             Class<?> processorClass,
             BiFunction<Route, ProcessorDefinition<?>, ProcessorReifier<? extends ProcessorDefinition<?>>> creator) {
-        if (PROCESSORS.isEmpty()) {
-            ReifierStrategy.addReifierClearer(ProcessorReifier::clearReifiers);
-        }
         PROCESSORS.put(processorClass, creator);
     }
 
@@ -206,12 +208,18 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
     public static ProcessorReifier<? extends ProcessorDefinition<?>> coreReifier(
             Route route, ProcessorDefinition<?> definition) {
 
-        if (definition instanceof AggregateDefinition) {
+        if (definition instanceof A2ASubTaskDefinition) {
+            return new A2ASubTaskReifier(route, definition);
+        } else if (definition instanceof AggregateDefinition) {
             return new AggregateReifier(route, definition);
         } else if (definition instanceof BeanDefinition) {
             return new BeanReifier(route, definition);
+        } else if (definition instanceof CacheDefinition) {
+            return new CacheReifier(route, definition);
         } else if (definition instanceof CatchDefinition) {
             return new CatchReifier(route, definition);
+        } else if (definition instanceof SwitchDefinition) {
+            return new SwitchReifier(route, definition);
         } else if (definition instanceof ChoiceDefinition) {
             return new ChoiceReifier(route, definition);
         } else if (definition instanceof CircuitBreakerDefinition) {
@@ -467,7 +475,7 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
                                                + " is not an ScheduledExecutorService instance");
         } else if (definition.getExecutorServiceRef() != null) {
             ScheduledExecutorService answer = lookupScheduledExecutorServiceRef(name, definition,
-                    definition.getExecutorServiceRef());
+                    parseString(definition.getExecutorServiceRef()));
             if (answer == null) {
                 throw new IllegalArgumentException(
                         "ExecutorServiceRef " + definition.getExecutorServiceRef()
@@ -651,7 +659,7 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
     }
 
     protected Channel wrapChannel(Processor processor, ProcessorDefinition<?> child) throws Exception {
-        return wrapChannel(processor, child, definition.getInheritErrorHandler());
+        return wrapChannel(processor, child, parseBoolean(definition.getInheritErrorHandler()));
     }
 
     protected Channel wrapChannel(Processor processor, ProcessorDefinition<?> child, Boolean inheritErrorHandler)
@@ -756,6 +764,27 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
     }
 
     /**
+     * Injects the id, route id and step id of the definition into the processor (when it is aware of them).
+     */
+    protected void injectIds(Processor processor, ProcessorDefinition<?> output) {
+        if (processor instanceof IdAware idAware) {
+            String id = getId(output);
+            idAware.setId(id);
+        }
+        if (processor instanceof RouteIdAware routeIdAware) {
+            routeIdAware.setRouteId(route.getRouteId());
+        }
+        if (processor instanceof StepIdAware stepIdAware) {
+            StepDefinition step = ProcessorDefinitionHelper.findFirstParentOfType(
+                    StepDefinition.class, output, true);
+            if (step != null) {
+                stepIdAware.setStepId(step.idOrCreate(
+                        camelContext.getCamelContextExtension().getContextPlugin(NodeIdFactory.class)));
+            }
+        }
+    }
+
+    /**
      * Creates a new instance of some kind of composite processor which defaults to using a {@link Pipeline} but derived
      * classes could change the behaviour
      */
@@ -777,14 +806,7 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
 
             Processor processor = createProcessor(output);
 
-            // inject id
-            if (processor instanceof IdAware idAware) {
-                String id = getId(output);
-                idAware.setId(id);
-            }
-            if (processor instanceof RouteIdAware routeIdAware) {
-                routeIdAware.setRouteId(route.getRouteId());
-            }
+            injectIds(processor, output);
 
             if (output instanceof Channel && processor == null) {
                 continue;
@@ -855,14 +877,7 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
                 processor = createProcessor();
             }
 
-            // inject id
-            if (processor instanceof IdAware idAware) {
-                String id = getId(definition);
-                idAware.setId(id);
-            }
-            if (processor instanceof RouteIdAware routeIdAware) {
-                routeIdAware.setRouteId(route.getRouteId());
-            }
+            injectIds(processor, definition);
 
             if (processor == null) {
                 // no processor to make
@@ -913,7 +928,7 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
     public AggregationStrategy getConfiguredAggregationStrategy(AggregationStrategyAwareDefinition<?> definition) {
         AggregationStrategy strategy = definition.getAggregationStrategyBean();
         if (strategy == null && definition.getAggregationStrategyRef() != null) {
-            Object aggStrategy = lookupByName(definition.getAggregationStrategyRef());
+            Object aggStrategy = lookupByName(definition.getAggregationStrategyRef(), AggregationStrategy.class);
             if (aggStrategy == null) {
                 aggStrategy = lookupByNameAndType(definition.getAggregationStrategyRef(), AggregationStrategy.class);
             }
@@ -934,7 +949,7 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
                 // closure.
                 AggregationStrategyBeanAdapter adapter = new AggregationStrategyBeanAdapter(
                         aggStrategy,
-                        definition.getAggregationStrategyMethodName());
+                        parseString(definition.getAggregationStrategyMethodName()));
                 if (definition.getAggregationStrategyMethodAllowNull() != null) {
                     adapter.setAllowNullNewExchange(
                             parseBoolean(definition.getAggregationStrategyMethodAllowNull(), false));
@@ -951,6 +966,20 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
 
         CamelContextAware.trySetCamelContext(strategy, camelContext);
         return strategy;
+    }
+
+    /**
+     * Checks if a URI is an optional property placeholder that resolved to null/empty, meaning the endpoint is not
+     * needed and the processor should be skipped.
+     */
+    protected static boolean isOptionalUriAndNotResolved(CamelContext camelContext, String rawUri) {
+        if (rawUri == null || !rawUri.contains(PropertiesComponent.PREFIX_OPTIONAL_TOKEN)) {
+            return false;
+        }
+        String resolved = EndpointHelper.resolveEndpointUriPropertyPlaceholders(camelContext, rawUri);
+        // if resolved is null/empty, or still contains unresolved optional placeholders, then skip
+        return resolved == null || resolved.isEmpty()
+                || resolved.contains(PropertiesComponent.PREFIX_OPTIONAL_TOKEN);
     }
 
     /**
@@ -974,4 +1003,16 @@ public abstract class ProcessorReifier<T extends ProcessorDefinition<?>> extends
         return disabled;
     }
 
+    /**
+     * Sets the step id (of the step the definition is inside) on the processor
+     */
+    protected void injectStepId(Object processor) {
+        if (processor instanceof StepIdAware stepIdAware) {
+            StepDefinition step = ProcessorDefinitionHelper.findFirstParentOfType(StepDefinition.class, definition, true);
+            if (step != null) {
+                stepIdAware.setStepId(
+                        step.idOrCreate(camelContext.getCamelContextExtension().getContextPlugin(NodeIdFactory.class)));
+            }
+        }
+    }
 }

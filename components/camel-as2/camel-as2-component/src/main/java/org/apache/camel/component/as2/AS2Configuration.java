@@ -115,7 +115,11 @@ public class AS2Configuration {
     @UriParam(label = "security")
     private Certificate[] validateSigningCertificateChain;
     @UriParam(label = "security")
+    private boolean signatureVerificationRequired;
+    @UriParam(label = "security")
     private SSLContext sslContext;
+    @UriParam(label = "security")
+    private String asyncMdnAllowedHosts;
     // If you use localhost-based AS2 server, you don't need to specify a hostnameVerifier
     @UriParam(label = "security")
     private HostnameVerifier hostnameVerifier;
@@ -543,6 +547,21 @@ public class AS2Configuration {
         this.validateSigningCertificateChain = validateSigningCertificateChain;
     }
 
+    public boolean isSignatureVerificationRequired() {
+        return signatureVerificationRequired;
+    }
+
+    /**
+     * Whether to reject an inbound signed AS2 message that cannot be verified because no
+     * validateSigningCertificateChain is configured (server only). When false (default), such a message is delivered
+     * after logging a warning, preserving the previous behaviour. When true, the message is rejected instead of being
+     * delivered without verifying its signature. Has no effect when validateSigningCertificateChain is set (signatures
+     * are always validated then) or for unsigned messages.
+     */
+    public void setSignatureVerificationRequired(boolean signatureVerificationRequired) {
+        this.signatureVerificationRequired = signatureVerificationRequired;
+    }
+
     public SSLContext getSslContext() {
         return sslContext;
     }
@@ -668,5 +687,21 @@ public class AS2Configuration {
      */
     public void setMdnAccessToken(String accessToken) {
         this.mdnAccessToken = accessToken;
+    }
+
+    public String getAsyncMdnAllowedHosts() {
+        return asyncMdnAllowedHosts;
+    }
+
+    /**
+     * Comma separated list of host names an asynchronous MDN may be delivered to. The delivery address is chosen by the
+     * sender of the AS2 message, so this is the list of hosts the operator vouches for.
+     *
+     * When set, an asynchronous MDN whose delivery address names a host outside the list is refused, and the configured
+     * mdnUserName/mdnPassword/mdnAccessToken are attached only to a host on the list. When not set, the MDN is still
+     * delivered to the sender-supplied address but no credentials are attached.
+     */
+    public void setAsyncMdnAllowedHosts(String asyncMdnAllowedHosts) {
+        this.asyncMdnAllowedHosts = asyncMdnAllowedHosts;
     }
 }

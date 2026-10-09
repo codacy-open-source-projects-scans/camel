@@ -40,6 +40,7 @@ import org.apache.camel.util.IOHelper;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -407,6 +408,73 @@ public class MimeMultipartDataFormatTest extends CamelTestSupport {
     }
 
     @Test
+    public void unmarshalInlineHeadersFiltersCamelInternalHeaders() {
+        // Camel-internal headers (Camel*, case-insensitive) present in the external MIME headers must not be
+        // copied onto the Camel message; ordinary application headers still pass through. This matches the
+        // inbound HeaderFilterStrategy applied by the mail consumer.
+        String mime = "CamelFoo: blocked\r\n"
+                      + "camelBar: blocked\r\n"
+                      + "CAMELBaz: blocked\r\n"
+                      + "X-Normal: keep-me\r\n"
+                      + "Content-Type: text/plain\r\n"
+                      + "\r\n"
+                      + "Body text";
+        in.setBody(mime);
+        Exchange out = template.send("direct:unmarshalonlyinlineheaders", exchange);
+        assertNotNull(out.getMessage());
+        assertEquals("keep-me", out.getMessage().getHeader("X-Normal"));
+        assertNull(out.getMessage().getHeader("CamelFoo"));
+        assertNull(out.getMessage().getHeader("camelBar"));
+        assertNull(out.getMessage().getHeader("CAMELBaz"));
+    }
+
+    @Test
+    void unmarshalAttachmentNameIsReducedToALeafName() {
+        // the attachment file name is chosen by the sender of the message being unmarshalled
+        in.setBody(new File("src/test/resources/multipart-traversal-name.txt"));
+        Exchange out = template.send("direct:unmarshalonlyinlineheaders", exchange);
+
+        AttachmentMessage am = out.getMessage(AttachmentMessage.class);
+        assertThat(am.getAttachmentNames())
+                .contains("evil.sh")
+                .doesNotContain("../../evil.sh");
+    }
+
+    @Test
+    void unmarshalContentIdKeyKeepsSlashesBecauseItIsNotAPath() {
+        // a Content-ID local part may legally contain '/' (RFC 5322 atext); it is an identifier, not a sender-chosen
+        // file name, so it must not be reduced to a leaf name the way a file name is
+        in.setBody(new File("src/test/resources/multipart-contentid-with-slash.txt"));
+        Exchange out = template.send("direct:unmarshalonlyinlineheaders", exchange);
+
+        AttachmentMessage am = out.getMessage(AttachmentMessage.class);
+        assertThat(am.getAttachmentNames())
+                .contains("a/b@example.com")
+                .doesNotContain("b@example.com");
+    }
+
+    @Test
+    void unmarshalInlineHeadersFiltersMailSessionPropertyHeaders() {
+        // MailHeaderFilterStrategy adds the mail.smtp. / mail.smtps. prefixes to the inbound filter
+        // (CAMEL-23522) so an external mail message cannot inject JavaMail session properties. The
+        // headersInline unmarshal path has to filter the same namespace as the mail consumer does.
+        String mime = "mail.smtp.host: blocked\r\n"
+                      + "mail.smtps.auth: blocked\r\n"
+                      + "MAIL.SMTP.PORT: blocked\r\n"
+                      + "X-Normal: keep-me\r\n"
+                      + "Content-Type: text/plain\r\n"
+                      + "\r\n"
+                      + "Body text";
+        in.setBody(mime);
+        Exchange out = template.send("direct:unmarshalonlyinlineheaders", exchange);
+        assertThat(out.getMessage()).isNotNull();
+        assertThat(out.getMessage().getHeader("X-Normal")).isEqualTo("keep-me");
+        assertThat(out.getMessage().getHeader("mail.smtp.host")).isNull();
+        assertThat(out.getMessage().getHeader("mail.smtps.auth")).isNull();
+        assertThat(out.getMessage().getHeader("MAIL.SMTP.PORT")).isNull();
+    }
+
+    @Test
     public void unmarshalRelated() throws IOException {
         in.setBody(new File("src/test/resources/multipart-related.txt"));
         Attachment dh = unmarshalAndCheckAttachmentName("950120.aaCB@XIson.com");
@@ -551,7 +619,7 @@ public class MimeMultipartDataFormatTest extends CamelTestSupport {
                 from("direct:marshalonlymixed").marshal().mimeMultipart();
                 from("direct:marshalonlyinlineheaders").marshal().mimeMultipart("mixed", false, true, "(included|x-.*)", false);
                 from("direct:unmarshalonly").unmarshal().mimeMultipart(false, false, false);
-                from("direct:unmarshalonlyinlineheaders").streamCaching().unmarshal().mimeMultipart(false, true, false);
+                from("direct:unmarshalonlyinlineheaders").streamCache(true).unmarshal().mimeMultipart(false, true, false);
             }
         };
     }

@@ -32,15 +32,30 @@ public class BedrockAgentRuntimeComponentConfigurer extends PropertyConfigurerSu
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "accesskey":
         case "accessKey": getOrCreateConfiguration(target).setAccessKey(property(camelContext, java.lang.String.class, value)); return true;
+        case "agentaliasid":
+        case "agentAliasId": getOrCreateConfiguration(target).setAgentAliasId(property(camelContext, java.lang.String.class, value)); return true;
+        case "agentid":
+        case "agentId": getOrCreateConfiguration(target).setAgentId(property(camelContext, java.lang.String.class, value)); return true;
         case "autowiredenabled":
         case "autowiredEnabled": target.setAutowiredEnabled(property(camelContext, boolean.class, value)); return true;
+        case "bedrockagentruntimeasyncclient":
+        case "bedrockAgentRuntimeAsyncClient": getOrCreateConfiguration(target).setBedrockAgentRuntimeAsyncClient(property(camelContext, software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeAsyncClient.class, value)); return true;
         case "bedrockagentruntimeclient":
         case "bedrockAgentRuntimeClient": getOrCreateConfiguration(target).setBedrockAgentRuntimeClient(property(camelContext, software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient.class, value)); return true;
         case "configuration": target.setConfiguration(property(camelContext, org.apache.camel.component.aws2.bedrock.agentruntime.BedrockAgentRuntimeConfiguration.class, value)); return true;
+        case "enabletrace":
+        case "enableTrace": getOrCreateConfiguration(target).setEnableTrace(property(camelContext, boolean.class, value)); return true;
+        case "flowaliasidentifier":
+        case "flowAliasIdentifier": getOrCreateConfiguration(target).setFlowAliasIdentifier(property(camelContext, java.lang.String.class, value)); return true;
+        case "flowidentifier":
+        case "flowIdentifier": getOrCreateConfiguration(target).setFlowIdentifier(property(camelContext, java.lang.String.class, value)); return true;
+        case "foundationmodel":
+        case "foundationModel": getOrCreateConfiguration(target).setFoundationModel(property(camelContext, java.lang.String.class, value)); return true;
         case "healthcheckconsumerenabled":
         case "healthCheckConsumerEnabled": target.setHealthCheckConsumerEnabled(property(camelContext, boolean.class, value)); return true;
         case "healthcheckproducerenabled":
         case "healthCheckProducerEnabled": target.setHealthCheckProducerEnabled(property(camelContext, boolean.class, value)); return true;
+        case "instruction": getOrCreateConfiguration(target).setInstruction(property(camelContext, java.lang.String.class, value)); return true;
         case "knowledgebaseid":
         case "knowledgeBaseId": getOrCreateConfiguration(target).setKnowledgeBaseId(property(camelContext, java.lang.String.class, value)); return true;
         case "lazystartproducer":
@@ -63,8 +78,12 @@ public class BedrockAgentRuntimeComponentConfigurer extends PropertyConfigurerSu
         case "region": getOrCreateConfiguration(target).setRegion(property(camelContext, java.lang.String.class, value)); return true;
         case "secretkey":
         case "secretKey": getOrCreateConfiguration(target).setSecretKey(property(camelContext, java.lang.String.class, value)); return true;
+        case "sessionid":
+        case "sessionId": getOrCreateConfiguration(target).setSessionId(property(camelContext, java.lang.String.class, value)); return true;
         case "sessiontoken":
         case "sessionToken": getOrCreateConfiguration(target).setSessionToken(property(camelContext, java.lang.String.class, value)); return true;
+        case "streamoutputmode":
+        case "streamOutputMode": getOrCreateConfiguration(target).setStreamOutputMode(property(camelContext, java.lang.String.class, value)); return true;
         case "trustallcertificates":
         case "trustAllCertificates": getOrCreateConfiguration(target).setTrustAllCertificates(property(camelContext, boolean.class, value)); return true;
         case "uriendpointoverride":
@@ -81,7 +100,7 @@ public class BedrockAgentRuntimeComponentConfigurer extends PropertyConfigurerSu
 
     @Override
     public String[] getAutowiredNames() {
-        return new String[]{"bedrockAgentRuntimeClient"};
+        return new String[]{"bedrockAgentRuntimeAsyncClient", "bedrockAgentRuntimeClient"};
     }
 
     @Override
@@ -89,15 +108,30 @@ public class BedrockAgentRuntimeComponentConfigurer extends PropertyConfigurerSu
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "accesskey":
         case "accessKey": return java.lang.String.class;
+        case "agentaliasid":
+        case "agentAliasId": return java.lang.String.class;
+        case "agentid":
+        case "agentId": return java.lang.String.class;
         case "autowiredenabled":
         case "autowiredEnabled": return boolean.class;
+        case "bedrockagentruntimeasyncclient":
+        case "bedrockAgentRuntimeAsyncClient": return software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeAsyncClient.class;
         case "bedrockagentruntimeclient":
         case "bedrockAgentRuntimeClient": return software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient.class;
         case "configuration": return org.apache.camel.component.aws2.bedrock.agentruntime.BedrockAgentRuntimeConfiguration.class;
+        case "enabletrace":
+        case "enableTrace": return boolean.class;
+        case "flowaliasidentifier":
+        case "flowAliasIdentifier": return java.lang.String.class;
+        case "flowidentifier":
+        case "flowIdentifier": return java.lang.String.class;
+        case "foundationmodel":
+        case "foundationModel": return java.lang.String.class;
         case "healthcheckconsumerenabled":
         case "healthCheckConsumerEnabled": return boolean.class;
         case "healthcheckproducerenabled":
         case "healthCheckProducerEnabled": return boolean.class;
+        case "instruction": return java.lang.String.class;
         case "knowledgebaseid":
         case "knowledgeBaseId": return java.lang.String.class;
         case "lazystartproducer":
@@ -120,8 +154,12 @@ public class BedrockAgentRuntimeComponentConfigurer extends PropertyConfigurerSu
         case "region": return java.lang.String.class;
         case "secretkey":
         case "secretKey": return java.lang.String.class;
+        case "sessionid":
+        case "sessionId": return java.lang.String.class;
         case "sessiontoken":
         case "sessionToken": return java.lang.String.class;
+        case "streamoutputmode":
+        case "streamOutputMode": return java.lang.String.class;
         case "trustallcertificates":
         case "trustAllCertificates": return boolean.class;
         case "uriendpointoverride":
@@ -142,15 +180,30 @@ public class BedrockAgentRuntimeComponentConfigurer extends PropertyConfigurerSu
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "accesskey":
         case "accessKey": return getOrCreateConfiguration(target).getAccessKey();
+        case "agentaliasid":
+        case "agentAliasId": return getOrCreateConfiguration(target).getAgentAliasId();
+        case "agentid":
+        case "agentId": return getOrCreateConfiguration(target).getAgentId();
         case "autowiredenabled":
         case "autowiredEnabled": return target.isAutowiredEnabled();
+        case "bedrockagentruntimeasyncclient":
+        case "bedrockAgentRuntimeAsyncClient": return getOrCreateConfiguration(target).getBedrockAgentRuntimeAsyncClient();
         case "bedrockagentruntimeclient":
         case "bedrockAgentRuntimeClient": return getOrCreateConfiguration(target).getBedrockAgentRuntimeClient();
         case "configuration": return target.getConfiguration();
+        case "enabletrace":
+        case "enableTrace": return getOrCreateConfiguration(target).isEnableTrace();
+        case "flowaliasidentifier":
+        case "flowAliasIdentifier": return getOrCreateConfiguration(target).getFlowAliasIdentifier();
+        case "flowidentifier":
+        case "flowIdentifier": return getOrCreateConfiguration(target).getFlowIdentifier();
+        case "foundationmodel":
+        case "foundationModel": return getOrCreateConfiguration(target).getFoundationModel();
         case "healthcheckconsumerenabled":
         case "healthCheckConsumerEnabled": return target.isHealthCheckConsumerEnabled();
         case "healthcheckproducerenabled":
         case "healthCheckProducerEnabled": return target.isHealthCheckProducerEnabled();
+        case "instruction": return getOrCreateConfiguration(target).getInstruction();
         case "knowledgebaseid":
         case "knowledgeBaseId": return getOrCreateConfiguration(target).getKnowledgeBaseId();
         case "lazystartproducer":
@@ -173,8 +226,12 @@ public class BedrockAgentRuntimeComponentConfigurer extends PropertyConfigurerSu
         case "region": return getOrCreateConfiguration(target).getRegion();
         case "secretkey":
         case "secretKey": return getOrCreateConfiguration(target).getSecretKey();
+        case "sessionid":
+        case "sessionId": return getOrCreateConfiguration(target).getSessionId();
         case "sessiontoken":
         case "sessionToken": return getOrCreateConfiguration(target).getSessionToken();
+        case "streamoutputmode":
+        case "streamOutputMode": return getOrCreateConfiguration(target).getStreamOutputMode();
         case "trustallcertificates":
         case "trustAllCertificates": return getOrCreateConfiguration(target).isTrustAllCertificates();
         case "uriendpointoverride":

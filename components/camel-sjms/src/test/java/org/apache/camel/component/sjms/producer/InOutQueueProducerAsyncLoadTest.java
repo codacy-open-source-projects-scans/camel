@@ -16,8 +16,10 @@
  */
 package org.apache.camel.component.sjms.producer;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import jakarta.jms.JMSException;
 import jakarta.jms.Message;
@@ -33,21 +35,27 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class InOutQueueProducerAsyncLoadTest extends JmsTestSupport {
+class InOutQueueProducerAsyncLoadTest extends JmsTestSupport {
 
     private static final String TEST_DESTINATION_NAME = "in.out.queue.producer.test.InOutQueueProducerAsyncLoadTest";
+    private static final int MESSAGE_COUNT = 500;
+    private static final long LATCH_TIMEOUT_SECONDS = 60;
+    private static final long EXECUTOR_SHUTDOWN_SECONDS = 10;
+    private static final long INFLIGHT_TIMEOUT_SECONDS = 30;
+
     private MessageConsumer mc1;
     private MessageConsumer mc2;
-
-    public InOutQueueProducerAsyncLoadTest() {
-    }
+    private final AtomicInteger listenerErrors = new AtomicInteger();
 
     @BeforeEach
-    public void setupConsumers() throws Exception {
+    void setupConsumers() throws Exception {
+        listenerErrors.set(0);
         mc1 = createQueueConsumer(TEST_DESTINATION_NAME + ".request");
         mc2 = createQueueConsumer(TEST_DESTINATION_NAME + ".request");
         mc1.setMessageListener(new MyMessageListener());
@@ -55,7 +63,7 @@ public class InOutQueueProducerAsyncLoadTest extends JmsTestSupport {
     }
 
     @AfterEach
-    public void cleanupConsumers() throws JMSException {
+    void cleanupConsumers() throws JMSException {
         MyMessageListener l1 = (MyMessageListener) mc1.getMessageListener();
         l1.close();
         mc1.close();
@@ -66,40 +74,42 @@ public class InOutQueueProducerAsyncLoadTest extends JmsTestSupport {
 
     /**
      * Test to verify that when using the consumer listener for the InOut producer we get the correct message back.
-     *
-     * @throws Exception
      */
     @Test
-    public void testInOutQueueProducer() throws Exception {
+    void testInOutQueueProducer() throws Exception {
+        final CountDownLatch latch = new CountDownLatch(MESSAGE_COUNT);
+        final AtomicInteger failures = new AtomicInteger();
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
-
-        for (int i = 1; i <= 5000; i++) {
-            final int tempI = i;
-            Runnable worker = new Runnable() {
-
-                @Override
-                public void run() {
+        try {
+            for (int i = 1; i <= MESSAGE_COUNT; i++) {
+                final int tempI = i;
+                executor.execute(() -> {
                     try {
                         final String requestText = "Message " + tempI;
                         final String responseText = "Response Message " + tempI;
                         String response = template.requestBody("direct:start", requestText, String.class);
                         assertNotNull(response);
                         assertEquals(responseText, response);
-                    } catch (Exception e) {
-                        log.error("TODO Auto-generated catch block", e);
+                    } catch (Throwable e) {
+                        failures.incrementAndGet();
+                        log.error("Failed to process message {}", tempI, e);
+                    } finally {
+                        latch.countDown();
                     }
-                }
-            };
-            executor.execute(worker);
+                });
+            }
+            assertTrue(latch.await(LATCH_TIMEOUT_SECONDS, SECONDS), "Not all messages were processed within the timeout");
+            assertEquals(0, failures.get(), "Some messages failed during processing");
+            assertEquals(0, listenerErrors.get(), "Some JMS listener callbacks failed");
+        } finally {
+            executor.shutdown();
         }
-        while (context.getInflightRepository().size() > 0) {
-            Thread.sleep(100);
-        }
-        executor.shutdown();
-        while (!executor.isTerminated()) {
-            Thread.sleep(100);
-        }
+        assertTrue(executor.awaitTermination(EXECUTOR_SHUTDOWN_SECONDS, SECONDS), "Executor did not terminate in time");
+
+        // async route completion can lag behind request/reply futures — poll until inflight is drained
+        await().atMost(INFLIGHT_TIMEOUT_SECONDS, SECONDS)
+                .untilAsserted(() -> assertEquals(0, context.getInflightRepository().size()));
     }
 
     @Override
@@ -134,12 +144,15 @@ public class InOutQueueProducerAsyncLoadTest extends JmsTestSupport {
                 }
                 mp.send(response);
             } catch (JMSException e) {
-                fail(e.getLocalizedMessage());
+                listenerErrors.incrementAndGet();
+                log.error("Failed to process JMS message in test listener", e);
             }
         }
 
         public void close() throws JMSException {
-            mp.close();
+            if (mp != null) {
+                mp.close();
+            }
         }
     }
 }

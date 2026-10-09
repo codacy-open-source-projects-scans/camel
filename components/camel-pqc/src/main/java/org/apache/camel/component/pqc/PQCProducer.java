@@ -16,8 +16,13 @@
  */
 package org.apache.camel.component.pqc;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.cert.Certificate;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -28,26 +33,33 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
+import org.apache.camel.CamelContext;
 import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
+import org.apache.camel.Message;
 import org.apache.camel.RuntimeCamelException;
+import org.apache.camel.StreamCache;
 import org.apache.camel.component.pqc.crypto.hybrid.HybridKEM;
 import org.apache.camel.component.pqc.crypto.hybrid.HybridSignature;
 import org.apache.camel.component.pqc.lifecycle.KeyLifecycleManager;
 import org.apache.camel.component.pqc.lifecycle.KeyMetadata;
+import org.apache.camel.component.pqc.metrics.PQCMetrics;
 import org.apache.camel.component.pqc.stateful.StatefulKeyState;
 import org.apache.camel.health.HealthCheck;
 import org.apache.camel.health.HealthCheckHelper;
 import org.apache.camel.health.WritableHealthCheckRepository;
 import org.apache.camel.support.DefaultProducer;
 import org.apache.camel.util.ObjectHelper;
+import org.apache.camel.util.SecureRandomHelper;
 import org.bouncycastle.jcajce.SecretKeyWithEncapsulation;
 import org.bouncycastle.jcajce.spec.KEMExtractSpec;
 import org.bouncycastle.jcajce.spec.KEMGenerateSpec;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.pqc.jcajce.interfaces.LMSPrivateKey;
 import org.bouncycastle.pqc.jcajce.interfaces.XMSSMTPrivateKey;
 import org.bouncycastle.pqc.jcajce.interfaces.XMSSPrivateKey;
+import org.bouncycastle.pqc.jcajce.provider.BouncyCastlePQCProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,7 +98,6 @@ public class PQCProducer extends DefaultProducer {
             PQCSignatureAlgorithms.XMSSMT.name(),
             PQCSignatureAlgorithms.DILITHIUM.name(),
             PQCSignatureAlgorithms.FALCON.name(),
-            PQCSignatureAlgorithms.PICNIC.name(),
             PQCSignatureAlgorithms.SNOVA.name(),
             PQCSignatureAlgorithms.MAYO.name(),
             PQCSignatureAlgorithms.SPHINCSPLUS.name());
@@ -103,9 +114,17 @@ public class PQCProducer extends DefaultProducer {
             PQCKeyEncapsulationAlgorithms.SNTRUPrime.name(),
             PQCKeyEncapsulationAlgorithms.KYBER.name());
 
+    private static final int STREAM_BUFFER_SIZE = 8192;
+
     private Signature signer;
     private KeyGenerator keyGenerator;
     private KeyPair keyPair;
+
+    // Set only when this producer created the Signature itself, so it knows how to create another one.
+    // Left null when the user configured an instance, which then has to be shared and locked instead.
+    private String signerAlgorithm;
+    private String signerProvider;
+    private String classicalSignerAlgorithm;
 
     // Hybrid cryptography fields
     private Signature classicalSigner;
@@ -115,6 +134,9 @@ public class PQCProducer extends DefaultProducer {
     // Health check fields
     private HealthCheck producerHealthCheck;
     private WritableHealthCheckRepository healthCheckRepository;
+
+    // Metrics (optional; a no-op unless Micrometer and a MeterRegistry are available)
+    private PQCMetrics metrics = PQCMetrics.NOOP;
 
     public PQCProducer(Endpoint endpoint) {
         super(endpoint);
@@ -132,72 +154,78 @@ public class PQCProducer extends DefaultProducer {
     public void process(Exchange exchange) throws Exception {
         PQCOperations operation = determineOperation(exchange);
         enforceKeyStatus(exchange, operation);
-        switch (operation) {
-            case sign:
-                signature(exchange);
-                break;
-            case verify:
-                verification(exchange);
-                break;
-            case hybridSign:
-                hybridSignature(exchange);
-                break;
-            case hybridVerify:
-                hybridVerification(exchange);
-                break;
-            case generateSecretKeyEncapsulation:
-                generateEncapsulation(exchange);
-                break;
-            case extractSecretKeyEncapsulation:
-                extractEncapsulation(exchange);
-                break;
-            case extractSecretKeyFromEncapsulation:
-                extractSecretKeyFromEncapsulation(exchange);
-                break;
-            case hybridGenerateSecretKeyEncapsulation:
-                hybridGenerateEncapsulation(exchange);
-                break;
-            case hybridExtractSecretKeyEncapsulation:
-                hybridExtractEncapsulation(exchange);
-                break;
-            case hybridExtractSecretKeyFromEncapsulation:
-                hybridExtractSecretKeyFromEncapsulation(exchange);
-                break;
-            case generateKeyPair:
-                lifecycleGenerateKeyPair(exchange);
-                break;
-            case exportKey:
-                lifecycleExportKey(exchange);
-                break;
-            case importKey:
-                lifecycleImportKey(exchange);
-                break;
-            case rotateKey:
-                lifecycleRotateKey(exchange);
-                break;
-            case getKeyMetadata:
-                lifecycleGetKeyMetadata(exchange);
-                break;
-            case listKeys:
-                lifecycleListKeys(exchange);
-                break;
-            case expireKey:
-                lifecycleExpireKey(exchange);
-                break;
-            case revokeKey:
-                lifecycleRevokeKey(exchange);
-                break;
-            case getRemainingSignatures:
-                statefulGetRemainingSignatures(exchange);
-                break;
-            case getKeyState:
-                statefulGetKeyState(exchange);
-                break;
-            case deleteKeyState:
-                statefulDeleteKeyState(exchange);
-                break;
-            default:
-                throw new IllegalArgumentException("Unsupported operation");
+        boolean success = false;
+        try {
+            switch (operation) {
+                case sign:
+                    signature(exchange);
+                    break;
+                case verify:
+                    verification(exchange);
+                    break;
+                case hybridSign:
+                    hybridSignature(exchange);
+                    break;
+                case hybridVerify:
+                    hybridVerification(exchange);
+                    break;
+                case generateSecretKeyEncapsulation:
+                    generateEncapsulation(exchange);
+                    break;
+                case extractSecretKeyEncapsulation:
+                    extractEncapsulation(exchange);
+                    break;
+                case extractSecretKeyFromEncapsulation:
+                    extractSecretKeyFromEncapsulation(exchange);
+                    break;
+                case hybridGenerateSecretKeyEncapsulation:
+                    hybridGenerateEncapsulation(exchange);
+                    break;
+                case hybridExtractSecretKeyEncapsulation:
+                    hybridExtractEncapsulation(exchange);
+                    break;
+                case hybridExtractSecretKeyFromEncapsulation:
+                    hybridExtractSecretKeyFromEncapsulation(exchange);
+                    break;
+                case generateKeyPair:
+                    lifecycleGenerateKeyPair(exchange);
+                    break;
+                case exportKey:
+                    lifecycleExportKey(exchange);
+                    break;
+                case importKey:
+                    lifecycleImportKey(exchange);
+                    break;
+                case rotateKey:
+                    lifecycleRotateKey(exchange);
+                    break;
+                case getKeyMetadata:
+                    lifecycleGetKeyMetadata(exchange);
+                    break;
+                case listKeys:
+                    lifecycleListKeys(exchange);
+                    break;
+                case expireKey:
+                    lifecycleExpireKey(exchange);
+                    break;
+                case revokeKey:
+                    lifecycleRevokeKey(exchange);
+                    break;
+                case getRemainingSignatures:
+                    statefulGetRemainingSignatures(exchange);
+                    break;
+                case getKeyState:
+                    statefulGetKeyState(exchange);
+                    break;
+                case deleteKeyState:
+                    statefulDeleteKeyState(exchange);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unsupported operation");
+            }
+            success = true;
+        } finally {
+            metrics.recordOperation(operation.name(), currentAlgorithm(), success);
         }
     }
 
@@ -211,6 +239,41 @@ public class PQCProducer extends DefaultProducer {
 
     protected PQCConfiguration getConfiguration() {
         return getEndpoint().getConfiguration();
+    }
+
+    private String currentAlgorithm() {
+        String alg = getConfiguration().getSignatureAlgorithm();
+        if (ObjectHelper.isEmpty(alg)) {
+            alg = getConfiguration().getKeyEncapsulationAlgorithm();
+        }
+        return ObjectHelper.isNotEmpty(alg) ? alg : "unknown";
+    }
+
+    private PQCMetrics createMetrics() {
+        CamelContext camelContext = getEndpoint().getCamelContext();
+        // Only touch Micrometer if it is actually on the classpath, keeping it an optional dependency.
+        // Use reflection to avoid a static class reference that GraalVM native image would follow.
+        if (camelContext.getClassResolver().resolveClass("io.micrometer.core.instrument.MeterRegistry") == null) {
+            return PQCMetrics.NOOP;
+        }
+        try {
+            Class<?> clazz = camelContext.getClassResolver()
+                    .resolveClass("org.apache.camel.component.pqc.metrics.PQCMicrometerMetrics");
+            if (clazz == null) {
+                return PQCMetrics.NOOP;
+            }
+            return (PQCMetrics) clazz.getMethod("create", CamelContext.class).invoke(null, camelContext);
+        } catch (Throwable t) {
+            LOG.debug("Micrometer metrics are not available for the PQC producer: {}", t.getMessage());
+            return PQCMetrics.NOOP;
+        }
+    }
+
+    private static boolean isStatefulSignatureAlgorithm(String algorithm) {
+        return PQCSignatureAlgorithms.XMSS.name().equals(algorithm)
+                || PQCSignatureAlgorithms.XMSSMT.name().equals(algorithm)
+                || PQCSignatureAlgorithms.LMS.name().equals(algorithm)
+                || PQCSignatureAlgorithms.HSS.name().equals(algorithm);
     }
 
     /**
@@ -321,7 +384,9 @@ public class PQCProducer extends DefaultProducer {
 
             if (ObjectHelper.isEmpty(signer)) {
                 PQCSignatureAlgorithms sigAlg = PQCSignatureAlgorithms.valueOf(getConfiguration().getSignatureAlgorithm());
-                signer = Signature.getInstance(sigAlg.getAlgorithm(), sigAlg.getBcProvider());
+                signerAlgorithm = sigAlg.getAlgorithm();
+                signerProvider = sigAlg.getBcProvider();
+                signer = Signature.getInstance(signerAlgorithm, signerProvider);
             }
         }
 
@@ -349,6 +414,15 @@ public class PQCProducer extends DefaultProducer {
             keyPair = getConfiguration().getKeyPair();
         }
 
+        // On JDK 25+, a JKS KeyStore (or user-supplied KeyPair) may contain JDK-native PQC keys
+        // (e.g. ML-DSA, ML-KEM) that Bouncy Castle's Signature / KeyGenerator SPI does not recognise,
+        // causing InvalidKeyException at initSign / initVerify time. Re-encoding through BC's KeyFactory
+        // transparently converts JDK-native keys into the BC types the rest of the component expects,
+        // and is a no-op for keys that are already BC instances.
+        if (keyPair != null) {
+            keyPair = ensureBcKeyPair(keyPair);
+        }
+
         // Initialize hybrid signature operations
         if (getConfiguration().getOperation().equals(PQCOperations.hybridSign)
                 || getConfiguration().getOperation().equals(PQCOperations.hybridVerify)) {
@@ -356,7 +430,9 @@ public class PQCProducer extends DefaultProducer {
             signer = getEndpoint().getConfiguration().getSigner();
             if (ObjectHelper.isEmpty(signer) && ObjectHelper.isNotEmpty(getConfiguration().getSignatureAlgorithm())) {
                 PQCSignatureAlgorithms sigAlg = PQCSignatureAlgorithms.valueOf(getConfiguration().getSignatureAlgorithm());
-                signer = Signature.getInstance(sigAlg.getAlgorithm(), sigAlg.getBcProvider());
+                signerAlgorithm = sigAlg.getAlgorithm();
+                signerProvider = sigAlg.getBcProvider();
+                signer = Signature.getInstance(signerAlgorithm, signerProvider);
             }
 
             // Initialize classical signer
@@ -365,7 +441,8 @@ public class PQCProducer extends DefaultProducer {
                     && ObjectHelper.isNotEmpty(getConfiguration().getClassicalSignatureAlgorithm())) {
                 PQCClassicalSignatureAlgorithms classAlg
                         = PQCClassicalSignatureAlgorithms.valueOf(getConfiguration().getClassicalSignatureAlgorithm());
-                classicalSigner = Signature.getInstance(classAlg.getAlgorithm());
+                classicalSignerAlgorithm = classAlg.getAlgorithm();
+                classicalSigner = Signature.getInstance(classicalSignerAlgorithm);
             }
 
             // Initialize classical key pair
@@ -410,6 +487,16 @@ public class PQCProducer extends DefaultProducer {
             producerHealthCheck.setEnabled(getEndpoint().getComponent().isHealthCheckProducerEnabled());
             healthCheckRepository.addHealthCheck(producerHealthCheck);
         }
+
+        // Optional Micrometer metrics (no-op unless a MeterRegistry is available)
+        metrics = createMetrics();
+        String signatureAlgorithm = getConfiguration().getSignatureAlgorithm();
+        if (isStatefulSignatureAlgorithm(signatureAlgorithm)) {
+            metrics.registerStatefulKeyGauge(signatureAlgorithm, () -> {
+                KeyPair kp = getRuntimeKeyPair();
+                return kp != null && kp.getPrivate() != null ? getStatefulKeyRemaining(kp.getPrivate()) : -1;
+            });
+        }
     }
 
     @Override
@@ -418,6 +505,8 @@ public class PQCProducer extends DefaultProducer {
             healthCheckRepository.removeHealthCheck(producerHealthCheck);
             producerHealthCheck = null;
         }
+        metrics.close();
+        metrics = PQCMetrics.NOOP;
         super.doStop();
     }
 
@@ -425,27 +514,114 @@ public class PQCProducer extends DefaultProducer {
             throws Exception {
         checkStatefulKeyBeforeSign();
 
-        String payload = exchange.getMessage().getMandatoryBody(String.class);
-
-        signer.initSign(keyPair.getPrivate());
-        signer.update(payload.getBytes());
-
-        byte[] signature = signer.sign();
+        Signature signerForExchange = signerForExchange();
+        byte[] signature;
+        synchronized (signerForExchange) {
+            signerForExchange.initSign(keyPair.getPrivate());
+            updateSignatureFromBody(signerForExchange, exchange.getMessage());
+            signature = signerForExchange.sign();
+        }
         exchange.getMessage().setHeader(PQCConstants.SIGNATURE, signature);
 
         persistStatefulKeyStateAfterSign(exchange);
     }
 
     private void verification(Exchange exchange)
-            throws InvalidPayloadException, InvalidKeyException, SignatureException {
-        String payload = exchange.getMessage().getMandatoryBody(String.class);
+            throws InvalidPayloadException, InvalidKeyException, SignatureException, IOException,
+            NoSuchAlgorithmException, NoSuchProviderException {
+        Signature signerForExchange = signerForExchange();
+        boolean verified;
+        synchronized (signerForExchange) {
+            signerForExchange.initVerify(keyPair.getPublic());
+            updateSignatureFromBody(signerForExchange, exchange.getMessage());
+            verified = signerForExchange.verify(exchange.getMessage().getHeader(PQCConstants.SIGNATURE, byte[].class));
+        }
+        exchange.getMessage().setHeader(PQCConstants.VERIFY, verified);
+    }
 
-        signer.initVerify(keyPair.getPublic());
-        signer.update(payload.getBytes());
-        if (signer.verify(exchange.getMessage().getHeader(PQCConstants.SIGNATURE, byte[].class))) {
-            exchange.getMessage().setHeader(PQCConstants.VERIFY, true);
+    /**
+     * Returns the {@link Signature} to use for a single exchange.
+     * <p>
+     * {@code java.security.Signature} carries per-operation state across its init - update - sign/verify sequence and
+     * is not thread-safe, while a Camel producer is a singleton invoked concurrently. Interleaving two sequences on one
+     * instance does not merely corrupt output: a concurrent {@code initVerify} can reset the object between another
+     * exchange's updates and its {@code verify()}, so the result no longer corresponds to the message it was called
+     * for.
+     * <p>
+     * When this producer created the instance it can simply create another the same way, which removes the sharing
+     * altogether. When the user configured one - {@code PQCDefault*Material.signer} are {@code public static final}, so
+     * a configured instance can be shared JVM-wide - that instance has to be handed back as-is, and the caller
+     * serializes on whatever it gets.
+     */
+    private Signature signerForExchange() throws NoSuchAlgorithmException, NoSuchProviderException {
+        if (signerAlgorithm == null) {
+            return signer;
+        }
+        return signerProvider != null
+                ? Signature.getInstance(signerAlgorithm, signerProvider) : Signature.getInstance(signerAlgorithm);
+    }
+
+    /**
+     * The classical counterpart of {@link #signerForExchange()}, used by the hybrid operations.
+     */
+    private Signature classicalSignerForExchange() throws NoSuchAlgorithmException {
+        if (classicalSignerAlgorithm == null) {
+            return classicalSigner;
+        }
+        return Signature.getInstance(classicalSignerAlgorithm);
+    }
+
+    /**
+     * Feeds the message body into the given {@link Signature} without materialising the whole payload as a String. A
+     * {@code byte[]} body is used directly, an {@link InputStream} body is read in chunks (and reset afterwards when it
+     * is a re-readable {@link StreamCache} so downstream processors still see the payload), and any other body type
+     * falls back to its String representation, encoded as UTF-8.
+     */
+    private static void updateSignatureFromBody(Signature signature, Message message)
+            throws InvalidPayloadException, SignatureException, IOException {
+        Object body = message.getBody();
+        if (body instanceof byte[] bytes) {
+            signature.update(bytes);
+        } else if (body instanceof InputStream stream) {
+            try {
+                byte[] buffer = new byte[STREAM_BUFFER_SIZE];
+                int read;
+                while ((read = stream.read(buffer)) != -1) {
+                    signature.update(buffer, 0, read);
+                }
+            } finally {
+                if (body instanceof StreamCache streamCache) {
+                    streamCache.reset();
+                }
+            }
         } else {
-            exchange.getMessage().setHeader(PQCConstants.VERIFY, false);
+            // Pin UTF-8: the JVM default charset is platform dependent, so signing and verifying on JVMs with a
+            // different default would disagree on the bytes for a non-ASCII payload
+            signature.update(message.getMandatoryBody(String.class).getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * Returns the message body as a byte array without a String round-trip when it is already binary. Used by the
+     * hybrid operations, which need the whole payload in memory. An {@link InputStream} is fully read (and reset
+     * afterwards when it is a re-readable {@link StreamCache}). Any other body type falls back to its String
+     * representation, encoded as UTF-8.
+     */
+    private static byte[] bodyToByteArray(Message message) throws InvalidPayloadException, IOException {
+        Object body = message.getBody();
+        if (body instanceof byte[] bytes) {
+            return bytes;
+        } else if (body instanceof InputStream stream) {
+            try {
+                return stream.readAllBytes();
+            } finally {
+                if (body instanceof StreamCache streamCache) {
+                    streamCache.reset();
+                }
+            }
+        } else {
+            // Pin UTF-8, as updateSignatureFromBody does
+            return message.getMandatoryBody(String.class).getBytes(StandardCharsets.UTF_8);
         }
     }
 
@@ -457,7 +633,7 @@ public class PQCProducer extends DefaultProducer {
                         keyPair.getPublic(),
                         getEndpoint().getConfiguration().getSymmetricKeyAlgorithm(),
                         getEndpoint().getConfiguration().getSymmetricKeyLength()),
-                new SecureRandom());
+                SecureRandomHelper.getSecureRandom());
         // SecretKeyWithEncapsulation is the class to use as the secret key, it has additional
         // methods on it for recovering the encapsulation as well.
         SecretKeyWithEncapsulation secEnc1 = (SecretKeyWithEncapsulation) keyGenerator.generateKey();
@@ -480,7 +656,7 @@ public class PQCProducer extends DefaultProducer {
                         keyPair.getPrivate(), payload.getEncapsulation(),
                         PQCSymmetricAlgorithms.valueOf(getConfiguration().getSymmetricKeyAlgorithm()).getAlgorithm(),
                         getEndpoint().getConfiguration().getSymmetricKeyLength()),
-                new SecureRandom());
+                SecureRandomHelper.getSecureRandom());
 
         // initialise for extracting the shared secret from the encapsulation.
         SecretKeyWithEncapsulation secEnc2 = (SecretKeyWithEncapsulation) keyGenerator.generateKey();
@@ -497,7 +673,12 @@ public class PQCProducer extends DefaultProducer {
             throw new IllegalArgumentException("Symmetric Algorithm needs to be specified");
         }
 
-        SecretKey restoredKey = new SecretKeySpec(payload.getEncoded(), getConfiguration().getSymmetricKeyAlgorithm());
+        // Use the mapped JCE algorithm name (as extractEncapsulation does), not the raw enum name: for algorithms
+        // whose enum name differs from the JCE name (for example GOST3412_2015 -> GOST3412-2015) the raw name is not a
+        // resolvable cipher algorithm, so the restored key would carry an unusable algorithm label
+        SecretKey restoredKey = new SecretKeySpec(
+                payload.getEncoded(),
+                PQCSymmetricAlgorithms.valueOf(getConfiguration().getSymmetricKeyAlgorithm()).getAlgorithm());
 
         if (!getConfiguration().isStoreExtractedSecretKeyAsHeader()) {
             exchange.getMessage().setBody(restoredKey, SecretKey.class);
@@ -509,11 +690,11 @@ public class PQCProducer extends DefaultProducer {
     // ========== Hybrid Signature Operations ==========
 
     private void hybridSignature(Exchange exchange)
-            throws InvalidPayloadException, InvalidKeyException, SignatureException {
+            throws InvalidPayloadException, InvalidKeyException, SignatureException, IOException,
+            NoSuchAlgorithmException, NoSuchProviderException {
         checkStatefulKeyBeforeSign();
 
-        String payload = exchange.getMessage().getMandatoryBody(String.class);
-        byte[] data = payload.getBytes();
+        byte[] data = bodyToByteArray(exchange.getMessage());
 
         if (classicalSigner == null || classicalKeyPair == null) {
             throw new IllegalStateException(
@@ -523,13 +704,22 @@ public class PQCProducer extends DefaultProducer {
             throw new IllegalStateException("PQC signer and key pair must be configured for hybrid signature operations");
         }
 
-        // Create hybrid signature
-        byte[] hybridSig = HybridSignature.sign(
-                data,
-                classicalKeyPair.getPrivate(),
-                classicalSigner,
-                keyPair.getPrivate(),
-                signer);
+        // Create hybrid signature. Both Signature instances need the same per-exchange isolation as the
+        // single-algorithm paths; see signerForExchange(). The two locks are always taken PQC-first so the
+        // nesting order is the same here and in hybridVerification().
+        Signature pqcSigner = signerForExchange();
+        Signature classical = classicalSignerForExchange();
+        byte[] hybridSig;
+        synchronized (pqcSigner) {
+            synchronized (classical) {
+                hybridSig = HybridSignature.sign(
+                        data,
+                        classicalKeyPair.getPrivate(),
+                        classical,
+                        keyPair.getPrivate(),
+                        pqcSigner);
+            }
+        }
 
         // Parse to get individual signatures for headers
         HybridSignature.HybridSignatureComponents components = HybridSignature.parse(hybridSig);
@@ -546,9 +736,9 @@ public class PQCProducer extends DefaultProducer {
     }
 
     private void hybridVerification(Exchange exchange)
-            throws InvalidPayloadException, InvalidKeyException, SignatureException {
-        String payload = exchange.getMessage().getMandatoryBody(String.class);
-        byte[] data = payload.getBytes();
+            throws InvalidPayloadException, InvalidKeyException, SignatureException, IOException,
+            NoSuchAlgorithmException, NoSuchProviderException {
+        byte[] data = bodyToByteArray(exchange.getMessage());
 
         byte[] hybridSig = exchange.getMessage().getHeader(PQCConstants.HYBRID_SIGNATURE, byte[].class);
         if (hybridSig == null) {
@@ -563,14 +753,22 @@ public class PQCProducer extends DefaultProducer {
             throw new IllegalStateException("PQC signer and key pair must be configured for hybrid verification operations");
         }
 
-        // Verify hybrid signature (both must pass)
-        boolean valid = HybridSignature.verify(
-                data,
-                hybridSig,
-                classicalKeyPair.getPublic(),
-                classicalSigner,
-                keyPair.getPublic(),
-                signer);
+        // Verify hybrid signature (both must pass). Same per-exchange isolation and same PQC-first lock order
+        // as hybridSignature().
+        Signature pqcSigner = signerForExchange();
+        Signature classical = classicalSignerForExchange();
+        boolean valid;
+        synchronized (pqcSigner) {
+            synchronized (classical) {
+                valid = HybridSignature.verify(
+                        data,
+                        hybridSig,
+                        classicalKeyPair.getPublic(),
+                        classical,
+                        keyPair.getPublic(),
+                        pqcSigner);
+            }
+        }
 
         exchange.getMessage().setHeader(PQCConstants.HYBRID_VERIFY, valid);
         exchange.getMessage().setHeader(PQCConstants.VERIFY, valid);
@@ -666,8 +864,10 @@ public class PQCProducer extends DefaultProducer {
             throw new IllegalArgumentException("Symmetric Algorithm needs to be specified");
         }
 
-        // Create a new SecretKeySpec with the correct algorithm
-        SecretKey restoredKey = new SecretKeySpec(hybridSecretKey.getEncoded(), getConfiguration().getSymmetricKeyAlgorithm());
+        // Create a new SecretKeySpec with the mapped JCE algorithm name (not the raw enum name)
+        SecretKey restoredKey = new SecretKeySpec(
+                hybridSecretKey.getEncoded(),
+                PQCSymmetricAlgorithms.valueOf(getConfiguration().getSymmetricKeyAlgorithm()).getAlgorithm());
 
         if (!getConfiguration().isStoreExtractedSecretKeyAsHeader()) {
             exchange.getMessage().setBody(restoredKey, SecretKey.class);
@@ -701,7 +901,14 @@ public class PQCProducer extends DefaultProducer {
             throw new IllegalArgumentException("Key ID header (" + PQCConstants.KEY_ID + ") is required for generateKeyPair");
         }
 
-        KeyPair generated = klm.generateKeyPair(algorithm, keyId);
+        String parameterSpec = getConfiguration().getParameterSpec();
+        KeyPair generated;
+        if (ObjectHelper.isNotEmpty(parameterSpec)) {
+            // Use the parameterSpec-aware overload so the key is generated at the configured NIST security level
+            generated = klm.generateKeyPair(algorithm, keyId, PQCParameterSpecResolver.resolve(algorithm, parameterSpec));
+        } else {
+            generated = klm.generateKeyPair(algorithm, keyId);
+        }
         exchange.getMessage().setHeader(PQCConstants.KEY_PAIR, generated);
     }
 
@@ -1068,6 +1275,58 @@ public class PQCProducer extends DefaultProducer {
                 return true;
             default:
                 return false;
+        }
+    }
+
+    /**
+     * Ensures both keys in the pair are Bouncy Castle key instances.
+     * <p>
+     * On JDK 25+, a JKS {@link KeyStore} may deserialise standardised PQC keys (ML-DSA, ML-KEM) into JDK-native key
+     * objects that Bouncy Castle's {@link Signature} / {@link KeyGenerator} SPI does not recognise, causing
+     * {@link InvalidKeyException} at {@code initSign} / {@code initVerify} time.
+     * <p>
+     * Re-encoding through BC's {@link KeyFactory} is a no-op for keys that are already BC instances and transparently
+     * converts JDK-native ones into the BC types the rest of the component expects.
+     */
+    private static KeyPair ensureBcKeyPair(KeyPair kp) {
+        PrivateKey priv = kp.getPrivate();
+        PublicKey pub = kp.getPublic();
+
+        boolean privIsBc = priv == null || priv.getClass().getName().startsWith("org.bouncycastle.");
+        boolean pubIsBc = pub == null || pub.getClass().getName().startsWith("org.bouncycastle.");
+        if (privIsBc && pubIsBc) {
+            return kp;
+        }
+
+        try {
+            String alg = priv != null ? priv.getAlgorithm() : pub.getAlgorithm();
+            KeyFactory kf = getBcKeyFactory(alg);
+
+            if (!privIsBc) {
+                priv = kf.generatePrivate(new PKCS8EncodedKeySpec(priv.getEncoded()));
+            }
+            if (!pubIsBc) {
+                pub = kf.generatePublic(new X509EncodedKeySpec(pub.getEncoded()));
+            }
+            return new KeyPair(pub, priv);
+        } catch (Exception e) {
+            // If conversion fails (e.g. algorithm not known to BC), return the original pair
+            // and let the caller deal with any resulting exception from the crypto operation
+            LOG.debug("Could not convert KeyPair to Bouncy Castle key types: {}", e.getMessage());
+            return kp;
+        }
+    }
+
+    /**
+     * Returns a BC {@link KeyFactory} for the given JCE algorithm name, trying the main BC provider first and falling
+     * back to the BC PQC provider.
+     */
+    private static KeyFactory getBcKeyFactory(String algorithm)
+            throws NoSuchAlgorithmException, NoSuchProviderException {
+        try {
+            return KeyFactory.getInstance(algorithm, BouncyCastleProvider.PROVIDER_NAME);
+        } catch (NoSuchAlgorithmException e) {
+            return KeyFactory.getInstance(algorithm, BouncyCastlePQCProvider.PROVIDER_NAME);
         }
     }
 

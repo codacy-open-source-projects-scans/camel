@@ -40,6 +40,8 @@ import com.azure.storage.blob.models.AppendBlobItem;
 import com.azure.storage.blob.models.AppendBlobRequestConditions;
 import com.azure.storage.blob.models.BlobDownloadHeaders;
 import com.azure.storage.blob.models.BlobHttpHeaders;
+import com.azure.storage.blob.models.BlobImmutabilityPolicy;
+import com.azure.storage.blob.models.BlobLegalHoldResult;
 import com.azure.storage.blob.models.BlobProperties;
 import com.azure.storage.blob.models.BlobRange;
 import com.azure.storage.blob.models.BlobRequestConditions;
@@ -53,6 +55,7 @@ import com.azure.storage.blob.models.PageBlobRequestConditions;
 import com.azure.storage.blob.models.PageRange;
 import com.azure.storage.blob.models.PageRangeItem;
 import com.azure.storage.blob.models.ParallelTransferOptions;
+import com.azure.storage.blob.models.RehydratePriority;
 import com.azure.storage.blob.options.BlobGetTagsOptions;
 import com.azure.storage.blob.options.BlobParallelUploadOptions;
 import com.azure.storage.blob.options.BlobSetTagsOptions;
@@ -380,6 +383,31 @@ public class BlobClientWrapper {
             options.setRequestConditions(requestConditions);
         }
         return client.getTagsWithResponse(options, timeout, Context.NONE);
+    }
+
+    public Response<BlobLegalHoldResult> setLegalHold(
+            final boolean legalHold,
+            final Duration timeout) {
+        return client.setLegalHoldWithResponse(legalHold, timeout, Context.NONE);
+    }
+
+    public Response<BlobImmutabilityPolicy> setImmutabilityPolicy(
+            final BlobImmutabilityPolicy policy,
+            final BlobRequestConditions requestConditions,
+            final Duration timeout) {
+        return client.setImmutabilityPolicyWithResponse(policy, requestConditions, timeout, Context.NONE);
+    }
+
+    public Response<Void> undelete(final Duration timeout) {
+        return client.undeleteWithResponse(timeout, Context.NONE);
+    }
+
+    public Response<Void> setAccessTier(
+            final AccessTier tier,
+            final RehydratePriority priority,
+            final String leaseId,
+            final Duration timeout) {
+        return client.setAccessTierWithResponse(tier, priority, leaseId, timeout, Context.NONE);
     }
 
     public BlobLeaseClient getLeaseClient() {

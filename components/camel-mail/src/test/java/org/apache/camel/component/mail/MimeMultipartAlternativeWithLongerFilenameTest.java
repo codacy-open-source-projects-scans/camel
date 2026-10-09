@@ -40,13 +40,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class MimeMultipartAlternativeWithLongerFilenameTest extends CamelTestSupport {
-    private static final MailboxUser ryanWithLongerFilename = Mailbox.getOrCreateUser("ryanWithLongerFilename", "secret");
+    private static final MailboxUser ryanWithLongerFilename
+            = Mailbox.getOrCreateUser("MimeMultipartAlternativeWithLongerFilenameTest-ryanWithLongerFilename", "secret");
     private Logger log = LoggerFactory.getLogger(getClass());
     private String alternativeBody = "hello world! (plain text)";
     private String htmlBody = "<html><body><h1>Hello</h1>World<img src=\"cid:myCoolLogo.jpeg\"></body></html>";
 
     private void sendMultipartEmail(boolean useInlineattachments) {
-        Mailbox.clearAll();
+        Mailbox.clearAll(ryanWithLongerFilename);
 
         // create an exchange with a normal body and attachment to be produced as email
         MailEndpoint endpoint = context.getEndpoint(ryanWithLongerFilename.uriPrefix(Protocol.smtp), MailEndpoint.class);

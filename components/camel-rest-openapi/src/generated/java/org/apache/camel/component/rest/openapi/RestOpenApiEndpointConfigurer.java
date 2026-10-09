@@ -49,11 +49,15 @@ public class RestOpenApiEndpointConfigurer extends PropertyConfigurerSupport imp
         case "missingOperation": target.setMissingOperation(property(camelContext, java.lang.String.class, value)); return true;
         case "mockincludepattern":
         case "mockIncludePattern": target.setMockIncludePattern(property(camelContext, java.lang.String.class, value)); return true;
+        case "oauthprofile":
+        case "oauthProfile": target.setOauthProfile(property(camelContext, java.lang.String.class, value)); return true;
         case "produces": target.setProduces(property(camelContext, java.lang.String.class, value)); return true;
         case "requestvalidationenabled":
         case "requestValidationEnabled": target.setRequestValidationEnabled(property(camelContext, boolean.class, value)); return true;
         case "restopenapiprocessorstrategy":
         case "restOpenapiProcessorStrategy": target.setRestOpenapiProcessorStrategy(property(camelContext, org.apache.camel.component.rest.openapi.RestOpenapiProcessorStrategy.class, value)); return true;
+        case "unmatchedrequesthandling":
+        case "unmatchedRequestHandling": target.setUnmatchedRequestHandling(property(camelContext, java.lang.String.class, value)); return true;
         default: return false;
         }
     }
@@ -87,11 +91,15 @@ public class RestOpenApiEndpointConfigurer extends PropertyConfigurerSupport imp
         case "missingOperation": return java.lang.String.class;
         case "mockincludepattern":
         case "mockIncludePattern": return java.lang.String.class;
+        case "oauthprofile":
+        case "oauthProfile": return java.lang.String.class;
         case "produces": return java.lang.String.class;
         case "requestvalidationenabled":
         case "requestValidationEnabled": return boolean.class;
         case "restopenapiprocessorstrategy":
         case "restOpenapiProcessorStrategy": return org.apache.camel.component.rest.openapi.RestOpenapiProcessorStrategy.class;
+        case "unmatchedrequesthandling":
+        case "unmatchedRequestHandling": return java.lang.String.class;
         default: return null;
         }
     }
@@ -126,11 +134,15 @@ public class RestOpenApiEndpointConfigurer extends PropertyConfigurerSupport imp
         case "missingOperation": return target.getMissingOperation();
         case "mockincludepattern":
         case "mockIncludePattern": return target.getMockIncludePattern();
+        case "oauthprofile":
+        case "oauthProfile": return target.getOauthProfile();
         case "produces": return target.getProduces();
         case "requestvalidationenabled":
         case "requestValidationEnabled": return target.isRequestValidationEnabled();
         case "restopenapiprocessorstrategy":
         case "restOpenapiProcessorStrategy": return target.getRestOpenapiProcessorStrategy();
+        case "unmatchedrequesthandling":
+        case "unmatchedRequestHandling": return target.getUnmatchedRequestHandling();
         default: return null;
         }
     }

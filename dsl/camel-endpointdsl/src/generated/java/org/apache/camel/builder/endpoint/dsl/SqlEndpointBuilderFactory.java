@@ -150,7 +150,10 @@ public interface SqlEndpointBuilderFactory {
          * in more than one rows, it throws an non-unique result exception.
          * StreamList streams the result of the query using an Iterator. This
          * can be used with the Splitter EIP in streaming mode to process the
-         * ResultSet in streaming fashion.
+         * ResultSet in streaming fashion. The body is then a ResultSetIterator
+         * and not a List: it has no size, and it can only be read once, so
+         * split it to work on the rows instead of calling size() or indexing
+         * it. Use SelectList when the whole result is wanted as a List of Map.
          * 
          * The option is a:
          * <code>org.apache.camel.component.sql.SqlOutputType</code> type.
@@ -178,7 +181,10 @@ public interface SqlEndpointBuilderFactory {
          * in more than one rows, it throws an non-unique result exception.
          * StreamList streams the result of the query using an Iterator. This
          * can be used with the Splitter EIP in streaming mode to process the
-         * ResultSet in streaming fashion.
+         * ResultSet in streaming fashion. The body is then a ResultSetIterator
+         * and not a List: it has no size, and it can only be read once, so
+         * split it to work on the rows instead of calling size() or indexing
+         * it. Use SelectList when the whole result is wanted as a List of Map.
          * 
          * The option will be converted to a
          * <code>org.apache.camel.component.sql.SqlOutputType</code> type.
@@ -1538,7 +1544,10 @@ public interface SqlEndpointBuilderFactory {
          * in more than one rows, it throws an non-unique result exception.
          * StreamList streams the result of the query using an Iterator. This
          * can be used with the Splitter EIP in streaming mode to process the
-         * ResultSet in streaming fashion.
+         * ResultSet in streaming fashion. The body is then a ResultSetIterator
+         * and not a List: it has no size, and it can only be read once, so
+         * split it to work on the rows instead of calling size() or indexing
+         * it. Use SelectList when the whole result is wanted as a List of Map.
          * 
          * The option is a:
          * <code>org.apache.camel.component.sql.SqlOutputType</code> type.
@@ -1566,7 +1575,10 @@ public interface SqlEndpointBuilderFactory {
          * in more than one rows, it throws an non-unique result exception.
          * StreamList streams the result of the query using an Iterator. This
          * can be used with the Splitter EIP in streaming mode to process the
-         * ResultSet in streaming fashion.
+         * ResultSet in streaming fashion. The body is then a ResultSetIterator
+         * and not a List: it has no size, and it can only be read once, so
+         * split it to work on the rows instead of calling size() or indexing
+         * it. Use SelectList when the whole result is wanted as a List of Map.
          * 
          * The option will be converted to a
          * <code>org.apache.camel.component.sql.SqlOutputType</code> type.
@@ -1747,6 +1759,42 @@ public interface SqlEndpointBuilderFactory {
          */
         default SqlEndpointProducerBuilder useMessageBodyForSql(String useMessageBodyForSql) {
             doSetProperty("useMessageBodyForSql", useMessageBodyForSql);
+            return this;
+        }
+        /**
+         * Whether to allow overriding the endpoint-configured SQL query with
+         * the CamelSqlQuery header. Disabled by default; enable it only when
+         * the header source is trusted, since it lets a message choose the
+         * executed SQL.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param allowQueryFromHeader the value to set
+         * @return the dsl builder
+         */
+        default SqlEndpointProducerBuilder allowQueryFromHeader(boolean allowQueryFromHeader) {
+            doSetProperty("allowQueryFromHeader", allowQueryFromHeader);
+            return this;
+        }
+        /**
+         * Whether to allow overriding the endpoint-configured SQL query with
+         * the CamelSqlQuery header. Disabled by default; enable it only when
+         * the header source is trusted, since it lets a message choose the
+         * executed SQL.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param allowQueryFromHeader the value to set
+         * @return the dsl builder
+         */
+        default SqlEndpointProducerBuilder allowQueryFromHeader(String allowQueryFromHeader) {
+            doSetProperty("allowQueryFromHeader", allowQueryFromHeader);
             return this;
         }
     }
@@ -2193,7 +2241,10 @@ public interface SqlEndpointBuilderFactory {
          * in more than one rows, it throws an non-unique result exception.
          * StreamList streams the result of the query using an Iterator. This
          * can be used with the Splitter EIP in streaming mode to process the
-         * ResultSet in streaming fashion.
+         * ResultSet in streaming fashion. The body is then a ResultSetIterator
+         * and not a List: it has no size, and it can only be read once, so
+         * split it to work on the rows instead of calling size() or indexing
+         * it. Use SelectList when the whole result is wanted as a List of Map.
          * 
          * The option is a:
          * <code>org.apache.camel.component.sql.SqlOutputType</code> type.
@@ -2221,7 +2272,10 @@ public interface SqlEndpointBuilderFactory {
          * in more than one rows, it throws an non-unique result exception.
          * StreamList streams the result of the query using an Iterator. This
          * can be used with the Splitter EIP in streaming mode to process the
-         * ResultSet in streaming fashion.
+         * ResultSet in streaming fashion. The body is then a ResultSetIterator
+         * and not a List: it has no size, and it can only be read once, so
+         * split it to work on the rows instead of calling size() or indexing
+         * it. Use SelectList when the whole result is wanted as a List of Map.
          * 
          * The option will be converted to a
          * <code>org.apache.camel.component.sql.SqlOutputType</code> type.
@@ -2625,12 +2679,14 @@ public interface SqlEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final SqlHeaderNameBuilder INSTANCE = new SqlHeaderNameBuilder();
+        public static final SqlHeaderNameBuilder INSTANCE = new SqlHeaderNameBuilder();
 
         /**
-         * Query to execute. This query takes precedence over the query
-         * specified in the endpoint URI. Note that query parameters in the
-         * header are represented by a instead of a pass:# symbol.
+         * Query to execute. This header is ignored unless the endpoint enables
+         * allowQueryFromHeader=true (disabled by default); when enabled it
+         * takes precedence over the query specified in the endpoint URI. Note
+         * that query parameters in the header are represented by a instead of a
+         * pass:# symbol.
          * 
          * The option is a: {@code String} type.
          * 

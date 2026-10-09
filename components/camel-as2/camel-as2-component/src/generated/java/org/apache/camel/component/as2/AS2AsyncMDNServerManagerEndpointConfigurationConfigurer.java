@@ -28,6 +28,7 @@ public class AS2AsyncMDNServerManagerEndpointConfigurationConfigurer extends org
         map.put("As2MessageStructure", org.apache.camel.component.as2.api.AS2MessageStructure.class);
         map.put("As2To", java.lang.String.class);
         map.put("As2Version", java.lang.String.class);
+        map.put("AsyncMdnAllowedHosts", java.lang.String.class);
         map.put("AsyncMdnPortNumber", java.lang.Integer.class);
         map.put("AttachedFileName", java.lang.String.class);
         map.put("ClientFqdn", java.lang.String.class);
@@ -58,6 +59,7 @@ public class AS2AsyncMDNServerManagerEndpointConfigurationConfigurer extends org
         map.put("Server", java.lang.String.class);
         map.put("ServerFqdn", java.lang.String.class);
         map.put("ServerPortNumber", java.lang.Integer.class);
+        map.put("SignatureVerificationRequired", boolean.class);
         map.put("SignedReceiptMicAlgorithms", java.lang.String.class);
         map.put("SigningAlgorithm", org.apache.camel.component.as2.api.AS2SignatureAlgorithm.class);
         map.put("SigningCertificateChain", java.security.cert.Certificate[].class);
@@ -88,6 +90,8 @@ public class AS2AsyncMDNServerManagerEndpointConfigurationConfigurer extends org
         case "as2To": target.setAs2To(property(camelContext, java.lang.String.class, value)); return true;
         case "as2version":
         case "as2Version": target.setAs2Version(property(camelContext, java.lang.String.class, value)); return true;
+        case "asyncmdnallowedhosts":
+        case "asyncMdnAllowedHosts": target.setAsyncMdnAllowedHosts(property(camelContext, java.lang.String.class, value)); return true;
         case "asyncmdnportnumber":
         case "asyncMdnPortNumber": target.setAsyncMdnPortNumber(property(camelContext, java.lang.Integer.class, value)); return true;
         case "attachedfilename":
@@ -145,6 +149,8 @@ public class AS2AsyncMDNServerManagerEndpointConfigurationConfigurer extends org
         case "serverFqdn": target.setServerFqdn(property(camelContext, java.lang.String.class, value)); return true;
         case "serverportnumber":
         case "serverPortNumber": target.setServerPortNumber(property(camelContext, java.lang.Integer.class, value)); return true;
+        case "signatureverificationrequired":
+        case "signatureVerificationRequired": target.setSignatureVerificationRequired(property(camelContext, boolean.class, value)); return true;
         case "signedreceiptmicalgorithms":
         case "signedReceiptMicAlgorithms": target.setSignedReceiptMicAlgorithms(property(camelContext, java.lang.String.class, value)); return true;
         case "signingalgorithm":
@@ -190,6 +196,8 @@ public class AS2AsyncMDNServerManagerEndpointConfigurationConfigurer extends org
         case "as2To": return java.lang.String.class;
         case "as2version":
         case "as2Version": return java.lang.String.class;
+        case "asyncmdnallowedhosts":
+        case "asyncMdnAllowedHosts": return java.lang.String.class;
         case "asyncmdnportnumber":
         case "asyncMdnPortNumber": return java.lang.Integer.class;
         case "attachedfilename":
@@ -247,6 +255,8 @@ public class AS2AsyncMDNServerManagerEndpointConfigurationConfigurer extends org
         case "serverFqdn": return java.lang.String.class;
         case "serverportnumber":
         case "serverPortNumber": return java.lang.Integer.class;
+        case "signatureverificationrequired":
+        case "signatureVerificationRequired": return boolean.class;
         case "signedreceiptmicalgorithms":
         case "signedReceiptMicAlgorithms": return java.lang.String.class;
         case "signingalgorithm":
@@ -288,6 +298,8 @@ public class AS2AsyncMDNServerManagerEndpointConfigurationConfigurer extends org
         case "as2To": return target.getAs2To();
         case "as2version":
         case "as2Version": return target.getAs2Version();
+        case "asyncmdnallowedhosts":
+        case "asyncMdnAllowedHosts": return target.getAsyncMdnAllowedHosts();
         case "asyncmdnportnumber":
         case "asyncMdnPortNumber": return target.getAsyncMdnPortNumber();
         case "attachedfilename":
@@ -345,6 +357,8 @@ public class AS2AsyncMDNServerManagerEndpointConfigurationConfigurer extends org
         case "serverFqdn": return target.getServerFqdn();
         case "serverportnumber":
         case "serverPortNumber": return target.getServerPortNumber();
+        case "signatureverificationrequired":
+        case "signatureVerificationRequired": return target.isSignatureVerificationRequired();
         case "signedreceiptmicalgorithms":
         case "signedReceiptMicAlgorithms": return target.getSignedReceiptMicAlgorithms();
         case "signingalgorithm":

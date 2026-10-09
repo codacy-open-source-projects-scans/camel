@@ -93,13 +93,13 @@ public class FaultToleranceReifier extends ProcessorReifier<CircuitBreakerDefini
     private void configureTimeLimiter(FaultToleranceConfigurationCommon config, FaultToleranceConfiguration target) {
         target.setTimeoutEnabled(parseBoolean(config.getTimeoutEnabled(), false));
         target.setTimeoutDuration(parseDuration(config.getTimeoutDuration(), 1000));
-        target.setTimeoutPoolSize(parseInt(config.getTimeoutPoolSize(), 10));
     }
 
     private void configureBulkhead(FaultToleranceConfigurationCommon config, FaultToleranceConfiguration target) {
         if (!parseBoolean(config.getBulkheadEnabled(), false)) {
             return;
         }
+        target.setBulkheadEnabled(true);
         target.setBulkheadMaxConcurrentCalls(parseInt(config.getBulkheadMaxConcurrentCalls(), 10));
         target.setBulkheadWaitingTaskQueue(parseInt(config.getBulkheadWaitingTaskQueue(), 10));
     }

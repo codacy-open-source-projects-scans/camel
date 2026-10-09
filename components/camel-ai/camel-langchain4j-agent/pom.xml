@@ -25,7 +25,7 @@
     <parent>
         <artifactId>camel-ai-parent</artifactId>
         <groupId>org.apache.camel</groupId>
-        <version>4.21.0-SNAPSHOT</version>
+        <version>4.23.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>camel-langchain4j-agent</artifactId>
@@ -44,6 +44,11 @@
     <dependency>
       <groupId>org.apache.camel</groupId>
       <artifactId>camel-support</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.camel</groupId>
+      <artifactId>camel-langchain4j-core</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.camel</groupId>
@@ -67,11 +72,20 @@
     </dependency>
     <dependency>
       <groupId>org.apache.camel</groupId>
-      <artifactId>camel-langchain4j-tools</artifactId>
+      <artifactId>camel-ai-tool</artifactId>
       <version>${project.version}</version>
     </dependency>
-
+    <dependency>
+      <groupId>org.apache.camel</groupId>
+      <artifactId>camel-ai-observability-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
     <!-- for testing -->
+    <dependency>
+      <groupId>org.apache.camel</groupId>
+      <artifactId>camel-jackson</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.apache.camel</groupId>
       <artifactId>camel-test-spring-junit6</artifactId>
@@ -115,6 +129,11 @@
       </dependency>
       <dependency>
           <groupId>org.apache.camel</groupId>
+          <artifactId>camel-json-validator</artifactId>
+          <scope>test</scope>
+      </dependency>
+      <dependency>
+          <groupId>org.apache.camel</groupId>
           <artifactId>camel-test-infra-ollama</artifactId>
           <version>${project.version}</version>
           <scope>test</scope>
@@ -123,6 +142,22 @@
           <groupId>org.apache.camel</groupId>
           <artifactId>camel-test-infra-mcp-everything</artifactId>
           <version>${project.version}</version>
+          <scope>test</scope>
+      </dependency>
+      <dependency>
+          <groupId>org.apache.camel</groupId>
+          <artifactId>camel-test-junit6</artifactId>
+          <scope>test</scope>
+      </dependency>
+      <dependency>
+          <groupId>org.apache.camel</groupId>
+          <artifactId>camel-ai-observability</artifactId>
+          <version>${project.version}</version>
+          <scope>test</scope>
+      </dependency>
+      <dependency>
+          <groupId>org.apache.camel</groupId>
+          <artifactId>camel-telemetry</artifactId>
           <scope>test</scope>
       </dependency>
   </dependencies>

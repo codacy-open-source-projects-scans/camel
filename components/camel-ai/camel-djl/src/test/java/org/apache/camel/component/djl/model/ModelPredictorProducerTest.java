@@ -20,6 +20,7 @@ import java.io.IOException;
 
 import ai.djl.MalformedModelException;
 import ai.djl.repository.zoo.ModelNotFoundException;
+import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.component.djl.DJLEndpoint;
 import org.apache.camel.component.djl.model.audio.CustomAudioPredictor;
 import org.apache.camel.component.djl.model.cv.CustomCvPredictor;
@@ -36,7 +37,6 @@ import org.apache.camel.component.djl.model.nlp.CustomQuestionAnswerPredictor;
 import org.apache.camel.component.djl.model.nlp.CustomWordEmbeddingPredictor;
 import org.apache.camel.component.djl.model.nlp.ZooQuestionAnswerPredictor;
 import org.apache.camel.component.djl.model.nlp.ZooSentimentAnalysisPredictor;
-import org.apache.camel.component.djl.model.nlp.ZooWordEmbeddingPredictor;
 import org.apache.camel.component.djl.model.tabular.CustomTabularPredictor;
 import org.apache.camel.component.djl.model.timeseries.CustomForecastingPredictor;
 import org.apache.camel.component.djl.model.timeseries.ZooForecastingPredictor;
@@ -46,6 +46,8 @@ import org.junit.jupiter.api.Test;
 import static org.apache.camel.component.djl.model.ModelPredictorProducer.getCustomPredictor;
 import static org.apache.camel.component.djl.model.ModelPredictorProducer.getZooPredictor;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ModelPredictorProducerTest {
 
@@ -83,16 +85,13 @@ class ModelPredictorProducerTest {
         assertInstanceOf(ZooSentimentAnalysisPredictor.class,
                 getZooPredictor(zooEndpoint("nlp/sentiment_analysis", "ai.djl.pytorch:distilbert:0.0.1")));
         // No builtin zoo model available for "nlp/token_classification"
-        assertInstanceOf(ZooWordEmbeddingPredictor.class,
-                getZooPredictor(zooEndpoint("nlp/word_embedding", "ai.djl.mxnet:glove:0.0.2")));
+        // No builtin zoo model available for "nlp/word_embedding"
         // No builtin zoo model available for "nlp/text_generation"
         // No builtin zoo model available for "nlp/machine_translation"
         // No builtin zoo model available for "nlp/multiple_choice"
         // No builtin zoo model available for "nlp/text_embedding"
 
-        // Tabular
-        // No builtin zoo model available for "tabular/linear_regression"
-        // No builtin zoo model available for "tabular/softmax_regression"
+        // Tabular: no zoo predictor exists (see testGetZooPredictorRejectsTabularApplications)
 
         // Audio
         // No builtin zoo model available for "audio"
@@ -100,6 +99,19 @@ class ModelPredictorProducerTest {
         // Time Series
         assertInstanceOf(ZooForecastingPredictor.class,
                 getZooPredictor(zooEndpoint("timeseries/forecasting", "ai.djl.pytorch:deepar:0.0.1")));
+    }
+
+    @Test
+    void testGetZooPredictorRejectsTabularApplications() {
+        // The DJL model zoo publishes no tabular regression models and tabular I/O types are
+        // model-specific, so the zoo predictor factory must reject these applications with a clear
+        // error rather than returning a no-op predictor that echoes the input as the prediction.
+        RuntimeCamelException linear = assertThrows(RuntimeCamelException.class,
+                () -> getZooPredictor(zooEndpoint("tabular/linear_regression", "any:artifact:0.0.1")));
+        assertTrue(linear.getMessage().contains("tabular/linear_regression"));
+        RuntimeCamelException softmax = assertThrows(RuntimeCamelException.class,
+                () -> getZooPredictor(zooEndpoint("tabular/softmax_regression", "any:artifact:0.0.1")));
+        assertTrue(softmax.getMessage().contains("tabular/softmax_regression"));
     }
 
     @Test

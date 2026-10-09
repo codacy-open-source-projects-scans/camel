@@ -16,22 +16,18 @@
  */
 package org.apache.camel.component.minio;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import io.minio.CopyObjectArgs;
-import io.minio.CopySource;
 import io.minio.GetObjectArgs;
 import io.minio.GetPresignedObjectUrlArgs;
+import io.minio.Http;
 import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.ObjectWriteResponse;
@@ -40,21 +36,17 @@ import io.minio.RemoveBucketArgs;
 import io.minio.RemoveObjectArgs;
 import io.minio.RemoveObjectsArgs;
 import io.minio.Result;
-import io.minio.errors.ErrorResponseException;
-import io.minio.errors.InsufficientDataException;
-import io.minio.errors.InternalException;
-import io.minio.errors.InvalidResponseException;
-import io.minio.errors.ServerException;
-import io.minio.errors.XmlParserException;
-import io.minio.http.Method;
-import io.minio.messages.Bucket;
+import io.minio.SourceObject;
+import io.minio.errors.MinioException;
 import io.minio.messages.Item;
+import io.minio.messages.ListAllMyBucketsResult;
 import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
 import org.apache.camel.WrappedFile;
 import org.apache.camel.support.DefaultProducer;
+import org.apache.camel.support.PayloadHelper;
 import org.apache.camel.util.FileUtil;
 import org.apache.camel.util.IOHelper;
 import org.slf4j.Logger;
@@ -66,6 +58,7 @@ import static org.apache.camel.util.ObjectHelper.isNotEmpty;
 /**
  * A Producer which sends messages to the Minio Simple Storage
  */
+@Deprecated(since = "4.23")
 public class MinioProducer extends DefaultProducer {
 
     private static final Logger LOG = LoggerFactory.getLogger(MinioProducer.class);
@@ -111,10 +104,10 @@ public class MinioProducer extends DefaultProducer {
                     getPartialObject(minioClient, exchange);
                     break;
                 case createDownloadLink:
-                    createPresignedUrl(minioClient, exchange, Method.GET);
+                    createPresignedUrl(minioClient, exchange, Http.Method.GET);
                     break;
                 case createUploadLink:
-                    createPresignedUrl(minioClient, exchange, Method.PUT);
+                    createPresignedUrl(minioClient, exchange, Http.Method.PUT);
                     break;
                 default:
                     throw new IllegalArgumentException("Unsupported operation");
@@ -163,18 +156,19 @@ public class MinioProducer extends DefaultProducer {
                         contentLength = filePayload.length();
                     }
                 } else {
+                    if (contentLength <= 0) {
+                        // such as a java.nio.file.Path, byte[] or stream cache
+                        contentLength = PayloadHelper.getLength(object);
+                    }
                     inputStream = exchange.getMessage().getMandatoryBody(InputStream.class);
                     if (contentLength <= 0) {
-                        contentLength = determineLengthInputStream(inputStream);
+                        contentLength = PayloadHelper.getLength(inputStream);
                         if (contentLength == -1) {
-                            // fallback to read into memory to calculate length
-                            LOG.debug(
-                                    "The content length is not defined. It needs to be determined by reading the data into memory");
-                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                            IOHelper.copyAndCloseInput(inputStream, baos);
-                            byte[] arr = baos.toByteArray();
-                            contentLength = arr.length;
-                            inputStream = new ByteArrayInputStream(arr);
+                            // fallback to copy the data to calculate the length, which uses stream caching
+                            // so big payloads are spooled to disk when spooling is enabled
+                            LOG.debug("The content length is not defined. It needs to be determined by copying the data");
+                            inputStream = PayloadHelper.cacheStream(exchange, inputStream);
+                            contentLength = PayloadHelper.getLength(inputStream);
                         }
                     }
                 }
@@ -195,10 +189,9 @@ public class MinioProducer extends DefaultProducer {
     private void doPutObject(
             Exchange exchange, String bucketName, String objectName, Map<String, String> objectMetadata,
             Map<String, String> extraHeaders, InputStream inputStream, long contentLength)
-            throws IOException, ErrorResponseException, InsufficientDataException, InternalException, InvalidKeyException,
-            InvalidResponseException, NoSuchAlgorithmException, ServerException, XmlParserException {
+            throws IOException, MinioException {
         PutObjectArgs.Builder putObjectRequest = PutObjectArgs.builder()
-                .stream(inputStream, contentLength, -1)
+                .stream(inputStream, contentLength, -1L)
                 .bucket(bucketName)
                 .object(objectName)
                 .userMetadata(objectMetadata);
@@ -259,7 +252,7 @@ public class MinioProducer extends DefaultProducer {
                 throw new IllegalArgumentException("Destination Key must be specified for copyObject Operation");
             }
 
-            CopySource.Builder copySourceBuilder = CopySource.builder()
+            SourceObject.Builder copySourceBuilder = SourceObject.builder()
                     .bucket(bucketName)
                     .object(sourceKey);
 
@@ -311,7 +304,7 @@ public class MinioProducer extends DefaultProducer {
     }
 
     private void listBuckets(MinioClient minioClient, Exchange exchange) throws Exception {
-        List<Bucket> bucketsList = minioClient.listBuckets();
+        List<ListAllMyBucketsResult.Bucket> bucketsList = minioClient.listBuckets();
         Message message = getMessageForResponse(exchange);
         //returns iterator of bucketList
         message.setBody(bucketsList.iterator());
@@ -411,7 +404,7 @@ public class MinioProducer extends DefaultProducer {
         }
     }
 
-    private void createPresignedUrl(MinioClient minioClient, Exchange exchange, Method method) throws Exception {
+    private void createPresignedUrl(MinioClient minioClient, Exchange exchange, Http.Method method) throws Exception {
         int expiry = 60 * 60;
         Integer expirationInSeconds = exchange.getIn().getHeader(MinioConstants.PRESIGNED_URL_EXPIRATION_TIME, Integer.class);
         Message message = getMessageForResponse(exchange);
@@ -524,28 +517,6 @@ public class MinioProducer extends DefaultProducer {
         }
 
         return storageClass;
-    }
-
-    private long determineLengthInputStream(InputStream is) throws IOException {
-        if (!is.markSupported()) {
-            return -1;
-        }
-        if (is instanceof ByteArrayInputStream) {
-            return is.available();
-        }
-        long size = 0;
-        try {
-            is.mark(MinioConstants.BYTE_ARRAY_LENGTH);
-            int i = is.available();
-            while (i > 0) {
-                long skip = is.skip(i);
-                size += skip;
-                i = is.available();
-            }
-        } finally {
-            is.reset();
-        }
-        return size;
     }
 
     protected MinioConfiguration getConfiguration() {

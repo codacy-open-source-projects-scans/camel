@@ -44,6 +44,8 @@ import org.apache.camel.util.CastUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.core.FormatSchema;
+import tools.jackson.core.StreamReadFeature;
+import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.core.json.JsonWriteFeature;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JacksonModule;
@@ -55,6 +57,10 @@ import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.PropertyNamingStrategy;
 import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.cfg.DatatypeFeature;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.cfg.EnumFeature;
+import tools.jackson.databind.cfg.JsonNodeFeature;
 import tools.jackson.databind.type.CollectionType;
 
 /**
@@ -411,7 +417,7 @@ public abstract class AbstractJacksonDataFormat extends ServiceSupport
      * Allows jackson to use the <tt>JMSType</tt> header as an indicator what the classname is for unmarshaling content
      * to POJO
      * <p/>
-     * By default this option is <tt>false</tt>.
+     * By default, this option is <tt>false</tt>.
      */
     public void setAllowJmsType(boolean allowJmsType) {
         this.allowJmsType = allowJmsType;
@@ -507,8 +513,11 @@ public abstract class AbstractJacksonDataFormat extends ServiceSupport
 
     /**
      * Set of features to enable on the Jackson {@link tools.jackson.databind.ObjectMapper}. The features should be a
-     * name that matches a enum from {@link tools.jackson.databind.SerializationFeature},
-     * {@link tools.jackson.databind.DeserializationFeature}, or {@link tools.jackson.databind.MapperFeature}.
+     * name that matches an enum from {@link tools.jackson.databind.SerializationFeature},
+     * {@link tools.jackson.databind.DeserializationFeature}, {@link tools.jackson.databind.MapperFeature},
+     * {@link tools.jackson.databind.cfg.DateTimeFeature}, {@link tools.jackson.databind.cfg.EnumFeature},
+     * {@link tools.jackson.databind.cfg.JsonNodeFeature}, {@link tools.jackson.core.StreamReadFeature} or
+     * {@link tools.jackson.core.StreamWriteFeature}.
      */
     public void setEnableFeatures(String enableFeatures) {
         this.enableFeatures = enableFeatures;
@@ -520,8 +529,11 @@ public abstract class AbstractJacksonDataFormat extends ServiceSupport
 
     /**
      * Set of features to disable on the Jackson {@link tools.jackson.databind.ObjectMapper}. The features should be a
-     * name that matches a enum from {@link tools.jackson.databind.SerializationFeature},
-     * {@link tools.jackson.databind.DeserializationFeature}, or {@link tools.jackson.databind.MapperFeature}.
+     * name that matches an enum from {@link tools.jackson.databind.SerializationFeature},
+     * {@link tools.jackson.databind.DeserializationFeature}, {@link tools.jackson.databind.MapperFeature},
+     * {@link tools.jackson.databind.cfg.DateTimeFeature}, {@link tools.jackson.databind.cfg.EnumFeature},
+     * {@link tools.jackson.databind.cfg.JsonNodeFeature}, {@link tools.jackson.core.StreamReadFeature} or
+     * {@link tools.jackson.core.StreamWriteFeature}.
      */
     public void setDisableFeatures(String disableFeatures) {
         this.disableFeatures = disableFeatures;
@@ -529,49 +541,97 @@ public abstract class AbstractJacksonDataFormat extends ServiceSupport
 
     public void enableFeature(SerializationFeature feature) {
         if (enableFeatures == null) {
-            enableFeatures = feature.name();
+            enableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         } else {
-            enableFeatures += "," + feature.name();
+            enableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         }
     }
 
     public void enableFeature(DeserializationFeature feature) {
         if (enableFeatures == null) {
-            enableFeatures = feature.name();
+            enableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         } else {
-            enableFeatures += "," + feature.name();
+            enableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         }
     }
 
     public void enableFeature(MapperFeature feature) {
         if (enableFeatures == null) {
-            enableFeatures = feature.name();
+            enableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         } else {
-            enableFeatures += "," + feature.name();
+            enableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        }
+    }
+
+    public void enableFeature(Enum<? extends DatatypeFeature> feature) {
+        if (enableFeatures == null) {
+            enableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        } else {
+            enableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        }
+    }
+
+    public void enableFeature(StreamReadFeature feature) {
+        if (enableFeatures == null) {
+            enableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        } else {
+            enableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        }
+    }
+
+    public void enableFeature(StreamWriteFeature feature) {
+        if (enableFeatures == null) {
+            enableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        } else {
+            enableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         }
     }
 
     public void disableFeature(SerializationFeature feature) {
         if (disableFeatures == null) {
-            disableFeatures = feature.name();
+            disableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         } else {
-            disableFeatures += "," + feature.name();
+            disableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         }
     }
 
     public void disableFeature(DeserializationFeature feature) {
         if (disableFeatures == null) {
-            disableFeatures = feature.name();
+            disableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         } else {
-            disableFeatures += "," + feature.name();
+            disableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         }
     }
 
     public void disableFeature(MapperFeature feature) {
         if (disableFeatures == null) {
-            disableFeatures = feature.name();
+            disableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         } else {
-            disableFeatures += "," + feature.name();
+            disableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        }
+    }
+
+    public void disableFeature(Enum<? extends DatatypeFeature> feature) {
+        if (disableFeatures == null) {
+            disableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        } else {
+            disableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        }
+    }
+
+    public void disableFeature(StreamReadFeature feature) {
+        if (disableFeatures == null) {
+            disableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        } else {
+            disableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        }
+    }
+
+    public void disableFeature(StreamWriteFeature feature) {
+        if (disableFeatures == null) {
+            disableFeatures = feature.getDeclaringClass().getSimpleName() + "." + feature.name();
+        } else {
+            disableFeatures += "," + feature.getDeclaringClass().getSimpleName() + "." + feature.name();
         }
     }
 
@@ -615,7 +675,7 @@ public abstract class AbstractJacksonDataFormat extends ServiceSupport
             }
 
             if (enableFeatures != null) {
-                doEnableFeaures();
+                doEnableFeatures();
             }
             if (disableFeatures != null) {
                 doDisableFeatures();
@@ -677,34 +737,181 @@ public abstract class AbstractJacksonDataFormat extends ServiceSupport
         return objectMapperFoundRegistry;
     }
 
-    private void doEnableFeaures() {
+    private boolean trySetSerializationFeature(String featureValueName, boolean state) {
+        SerializationFeature feature
+                = getCamelContext().getTypeConverter().tryConvertTo(SerializationFeature.class, featureValueName);
+        if (feature == null) {
+            return false;
+        }
+        setObjectMapper(objectMapper.rebuild().configure(feature, state).build());
+        return true;
+    }
+
+    private boolean trySetDeserializationFeature(String featureValueName, boolean state) {
+        DeserializationFeature feature
+                = getCamelContext().getTypeConverter().tryConvertTo(DeserializationFeature.class, featureValueName);
+        if (feature == null) {
+            return false;
+        }
+        setObjectMapper(objectMapper.rebuild().configure(feature, state).build());
+        return true;
+    }
+
+    private boolean trySetMapperFeature(String featureValueName, boolean state) {
+        MapperFeature feature = getCamelContext().getTypeConverter().tryConvertTo(MapperFeature.class, featureValueName);
+        if (feature == null) {
+            return false;
+        }
+        setObjectMapper(objectMapper.rebuild().configure(feature, state).build());
+        return true;
+    }
+
+    private boolean trySetDateTimeFeature(String featureValueName, boolean state) {
+        DateTimeFeature feature = getCamelContext().getTypeConverter().tryConvertTo(DateTimeFeature.class, featureValueName);
+        if (feature == null) {
+            return false;
+        }
+        setObjectMapper(objectMapper.rebuild().configure(feature, state).build());
+        return true;
+    }
+
+    private boolean trySetEnumFeature(String featureValueName, boolean state) {
+        EnumFeature feature = getCamelContext().getTypeConverter().tryConvertTo(EnumFeature.class, featureValueName);
+        if (feature == null) {
+            return false;
+        }
+        setObjectMapper(objectMapper.rebuild().configure(feature, state).build());
+        return true;
+    }
+
+    private boolean trySetJsonNodeFeature(String featureValueName, boolean state) {
+        JsonNodeFeature feature = getCamelContext().getTypeConverter().tryConvertTo(JsonNodeFeature.class, featureValueName);
+        if (feature == null) {
+            return false;
+        }
+        setObjectMapper(objectMapper.rebuild().configure(feature, state).build());
+        return true;
+    }
+
+    private boolean trySetStreamReadFeature(String featureValueName, boolean state) {
+        StreamReadFeature feature
+                = getCamelContext().getTypeConverter().tryConvertTo(StreamReadFeature.class, featureValueName);
+        if (feature == null) {
+            return false;
+        }
+        setObjectMapper(objectMapper.rebuild().configure(feature, state).build());
+        return true;
+    }
+
+    private boolean trySetStreamWriteFeature(String featureValueName, boolean state) {
+        StreamWriteFeature feature
+                = getCamelContext().getTypeConverter().tryConvertTo(StreamWriteFeature.class, featureValueName);
+        if (feature == null) {
+            return false;
+        }
+        setObjectMapper(objectMapper.rebuild().configure(feature, state).build());
+        return true;
+    }
+
+    private void doEnableFeatures() {
         Iterator<?> it = ObjectHelper.createIterator(enableFeatures);
         while (it.hasNext()) {
             String enable = it.next().toString();
-            // it can be different kind
-            SerializationFeature sf
-                    = getCamelContext().getTypeConverter().tryConvertTo(SerializationFeature.class, enable);
-            if (sf != null) {
-                ObjectMapper om = objectMapper.rebuild().enable(sf).build();
-                setObjectMapper(om);
-                continue;
+            long dotCount = enable.chars().filter(ch -> ch == '.').count();
+            if (dotCount > 1) {
+                throw new IllegalArgumentException("Enable feature: " + enable + " cannot contain more than one '.'");
             }
-            DeserializationFeature df
-                    = getCamelContext().getTypeConverter().tryConvertTo(DeserializationFeature.class, enable);
-            if (df != null) {
-                ObjectMapper om = objectMapper.rebuild().enable(df).build();
-                setObjectMapper(om);
-                continue;
+
+            String featureClassName = null;
+            String featureValueName = enable;
+
+            if (dotCount == 1) {
+                String[] parts = enable.split("\\.", 2);
+                featureClassName = parts[0];
+                featureValueName = parts[1];
             }
-            MapperFeature mf = getCamelContext().getTypeConverter().tryConvertTo(MapperFeature.class, enable);
-            if (mf != null) {
-                ObjectMapper om = objectMapper.rebuild().enable(mf).build();
-                setObjectMapper(om);
-                continue;
+
+            if (featureClassName != null) {
+                if (!switch (featureClassName) {
+                    case "SerializationFeature" -> trySetSerializationFeature(featureValueName, true);
+                    case "DeserializationFeature" -> trySetDeserializationFeature(featureValueName, true);
+                    case "MapperFeature" -> trySetMapperFeature(featureValueName, true);
+                    case "DateTimeFeature" -> trySetDateTimeFeature(featureValueName, true);
+                    case "EnumFeature" -> trySetEnumFeature(featureValueName, true);
+                    case "JsonNodeFeature" -> trySetJsonNodeFeature(featureValueName, true);
+                    case "StreamReadFeature" -> trySetStreamReadFeature(featureValueName, true);
+                    case "StreamWriteFeature" -> trySetStreamWriteFeature(featureValueName, true);
+                    default -> false;
+                }) {
+                    throw new IllegalArgumentException(
+                            "Enable feature: " + enable
+                                                       + " cannot be converted to an accepted enum of types [SerializationFeature,DeserializationFeature,MapperFeature,DateTimeFeature,EnumFeature,JsonNodeFeature,StreamReadFeature,StreamWriteFeature]");
+                }
+            } else {
+                if (!trySetSerializationFeature(featureValueName, true)
+                        && !trySetDeserializationFeature(featureValueName, true)
+                        && !trySetMapperFeature(featureValueName, true)
+                        && !trySetDateTimeFeature(featureValueName, true)
+                        && !trySetEnumFeature(featureValueName, true)
+                        && !trySetJsonNodeFeature(featureValueName, true)
+                        && !trySetStreamReadFeature(featureValueName, true)
+                        && !trySetStreamWriteFeature(featureValueName, true)) {
+                    throw new IllegalArgumentException(
+                            "Enable feature: " + featureValueName
+                                                       + " cannot be converted to an accepted enum of types [SerializationFeature,DeserializationFeature,MapperFeature,DateTimeFeature,EnumFeature,JsonNodeFeature,StreamReadFeature,StreamWriteFeature]");
+                }
             }
-            throw new IllegalArgumentException(
-                    "Enable feature: " + enable
-                                               + " cannot be converted to an accepted enum of types [SerializationFeature,DeserializationFeature,MapperFeature]");
+        }
+    }
+
+    private void doDisableFeatures() {
+        Iterator<?> it = ObjectHelper.createIterator(disableFeatures);
+        while (it.hasNext()) {
+            String disable = it.next().toString();
+            long dotCount = disable.chars().filter(ch -> ch == '.').count();
+            if (dotCount > 1) {
+                throw new IllegalArgumentException("Disable feature: " + disable + " cannot contain more than one '.'");
+            }
+
+            String featureClassName = null;
+            String featureValueName = disable;
+
+            if (dotCount == 1) {
+                String[] parts = disable.split("\\.", 2);
+                featureClassName = parts[0];
+                featureValueName = parts[1];
+            }
+
+            if (featureClassName != null) {
+                if (!switch (featureClassName) {
+                    case "SerializationFeature" -> trySetSerializationFeature(featureValueName, false);
+                    case "DeserializationFeature" -> trySetDeserializationFeature(featureValueName, false);
+                    case "MapperFeature" -> trySetMapperFeature(featureValueName, false);
+                    case "DateTimeFeature" -> trySetDateTimeFeature(featureValueName, false);
+                    case "EnumFeature" -> trySetEnumFeature(featureValueName, false);
+                    case "JsonNodeFeature" -> trySetJsonNodeFeature(featureValueName, false);
+                    case "StreamReadFeature" -> trySetStreamReadFeature(featureValueName, false);
+                    case "StreamWriteFeature" -> trySetStreamWriteFeature(featureValueName, false);
+                    default -> false;
+                }) {
+                    throw new IllegalArgumentException(
+                            "Disable feature: " + disable
+                                                       + " cannot be converted to an accepted enum of types [SerializationFeature,DeserializationFeature,MapperFeature,DateTimeFeature,EnumFeature,JsonNodeFeature,StreamReadFeature,StreamWriteFeature]");
+                }
+            } else {
+                if (!trySetSerializationFeature(featureValueName, false)
+                        && !trySetDeserializationFeature(featureValueName, false)
+                        && !trySetMapperFeature(featureValueName, false)
+                        && !trySetDateTimeFeature(featureValueName, false)
+                        && !trySetEnumFeature(featureValueName, false)
+                        && !trySetJsonNodeFeature(featureValueName, false)
+                        && !trySetStreamReadFeature(featureValueName, false)
+                        && !trySetStreamWriteFeature(featureValueName, false)) {
+                    throw new IllegalArgumentException(
+                            "Disable feature: " + featureValueName
+                                                       + " cannot be converted to an accepted enum of types [SerializationFeature,DeserializationFeature,MapperFeature,DateTimeFeature,EnumFeature,JsonNodeFeature,StreamReadFeature,StreamWriteFeature]");
+                }
+            }
         }
     }
 
@@ -775,37 +982,6 @@ public abstract class AbstractJacksonDataFormat extends ServiceSupport
                     .addModule(module)
                     .build();
             setObjectMapper(om);
-        }
-    }
-
-    private void doDisableFeatures() {
-        Iterator<?> it = ObjectHelper.createIterator(disableFeatures);
-        while (it.hasNext()) {
-            String disable = it.next().toString();
-            // it can be different kind
-            SerializationFeature sf
-                    = getCamelContext().getTypeConverter().tryConvertTo(SerializationFeature.class, disable);
-            if (sf != null) {
-                ObjectMapper om = objectMapper.rebuild().disable(sf).build();
-                setObjectMapper(om);
-                continue;
-            }
-            DeserializationFeature df
-                    = getCamelContext().getTypeConverter().tryConvertTo(DeserializationFeature.class, disable);
-            if (df != null) {
-                ObjectMapper om = objectMapper.rebuild().disable(df).build();
-                setObjectMapper(om);
-                continue;
-            }
-            MapperFeature mf = getCamelContext().getTypeConverter().tryConvertTo(MapperFeature.class, disable);
-            if (mf != null) {
-                ObjectMapper om = objectMapper.rebuild().disable(mf).build();
-                setObjectMapper(om);
-                continue;
-            }
-            throw new IllegalArgumentException(
-                    "Disable feature: " + disable
-                                               + " cannot be converted to an accepted enum of types [SerializationFeature,DeserializationFeature,MapperFeature]");
         }
     }
 

@@ -77,7 +77,8 @@ YAML::
     predicateValidator:
       type: csv:CSVOrder
       expression:
-        simple: "${body} contains '{name:XOrder}'"
+        simple:
+          expression: "${body} contains '{name:XOrder}'"
 ----
 ====
 
@@ -243,12 +244,12 @@ YAML::
 [source,yaml]
 ----
 - route:
+    inputType:
+      urn: xml:ABCOrder
+      validate: "true"
     from:
       uri: direct:abc
       steps:
-        - inputType:
-            urn: xml:ABCOrder
-            validate: "true"
         - log:
             message: "${body}"
 ----

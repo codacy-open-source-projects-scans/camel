@@ -20,6 +20,7 @@ import java.util.Properties;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.ContextTestSupport;
+import org.apache.camel.spi.PropertiesComponent;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,11 +37,11 @@ class PropertiesComponentLoadPropertiesTest extends ContextTestSupport {
     void testLoadProperties() {
         context.start();
 
-        org.apache.camel.spi.PropertiesComponent pc = context.getPropertiesComponent();
+        PropertiesComponent pc = context.getPropertiesComponent();
         Properties prop = pc.loadProperties();
 
         assertNotNull(prop);
-        assertEquals(21, prop.size());
+        assertEquals(30, prop.size());
 
         assertEquals("{{cool.b}}", prop.getProperty("cool.a"));
         assertEquals("10", prop.getProperty("myQueueSize"));

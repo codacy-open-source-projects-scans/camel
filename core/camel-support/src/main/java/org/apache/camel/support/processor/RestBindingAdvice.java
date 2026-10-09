@@ -17,6 +17,7 @@
 package org.apache.camel.support.processor;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -38,6 +39,8 @@ import org.apache.camel.support.MessageHelper;
 import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.support.service.ServiceSupport;
 import org.apache.camel.util.ObjectHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Used for Rest DSL with binding to json/xml for incoming requests and outgoing responses.
@@ -50,6 +53,8 @@ import org.apache.camel.util.ObjectHelper;
  * @see RestBindingAdviceFactory
  */
 public class RestBindingAdvice extends ServiceSupport implements CamelInternalProcessorAdvice<Map<String, Object>> {
+
+    private static final Logger LOG = LoggerFactory.getLogger(RestBindingAdvice.class);
 
     private static final String STATE_KEY_DO_MARSHAL = "doMarshal";
     private static final String STATE_KEY_ACCEPT = "accept";
@@ -78,6 +83,7 @@ public class RestBindingAdvice extends ServiceSupport implements CamelInternalPr
     private final Set<String> requiredHeaders;
     private final Map<String, String> responseCodes;
     private final Set<String> responseHeaders;
+    private Map<String, Set<String>> responseCodeHeaders;
 
     /**
      * Use {@link RestBindingAdviceFactory} to create.
@@ -334,6 +340,18 @@ public class RestBindingAdvice extends ServiceSupport implements CamelInternalPr
     }
 
     private void marshal(Exchange exchange, Map<String, Object> state) {
+        doMarshal(exchange, state);
+
+        // perform client response validation (also when the response body was not marshalled, such as when binding
+        // is off, the body is empty or binding was skipped for an error code)
+        RestClientResponseValidator.ValidationError error = doClientResponseValidation(exchange);
+        if (error != null) {
+            exchange.getMessage().setHeader(Exchange.HTTP_RESPONSE_CODE, error.statusCode());
+            exchange.getMessage().setBody(error.body());
+        }
+    }
+
+    private void doMarshal(Exchange exchange, Map<String, Object> state) {
         // only marshal if there was no exception
         if (exchange.getException() != null) {
             return;
@@ -392,6 +410,11 @@ public class RestBindingAdvice extends ServiceSupport implements CamelInternalPr
         // need to prepare exchange first
         ExchangeHelper.prepareOutToIn(exchange);
 
+        // is the body empty (no Content-Type should be set for body-less responses such as 204 No Content)
+        if (exchange.getMessage().getBody() == null) {
+            return;
+        }
+
         // ensure there is a content type header (even if binding is off)
         ensureHeaderContentType(produces, isXml, isJson, exchange);
 
@@ -402,11 +425,6 @@ public class RestBindingAdvice extends ServiceSupport implements CamelInternalPr
 
         // is there any marshaller at all
         if (jsonMarshal == null && xmlMarshal == null) {
-            return;
-        }
-
-        // is the body empty
-        if (exchange.getMessage().getBody() == null) {
             return;
         }
 
@@ -436,20 +454,10 @@ public class RestBindingAdvice extends ServiceSupport implements CamelInternalPr
                     setOutputDataType(exchange, new DataType("xml"));
 
                     if (enableNoContentResponse) {
-                        String body = MessageHelper.extractBodyAsString(exchange.getMessage()).replace("\n", "");
-                        if (ObjectHelper.isNotEmpty(body)) {
-                            int open = 0;
-                            int close = body.indexOf('>');
-                            // xml declaration
-                            if (body.startsWith("<?xml")) {
-                                open = close;
-                                close = body.indexOf('>', close + 1);
-                            }
-                            // empty root element <el/> or <el></el>
-                            if (body.length() == close + 1 || body.length() == (open + 1 + 2 * (close - open) + 1)) {
-                                exchange.getMessage().setHeader(Exchange.HTTP_RESPONSE_CODE, 204);
-                                exchange.getMessage().setBody("");
-                            }
+                        String body = MessageHelper.extractBodyAsString(exchange.getMessage());
+                        if (isEmptyXmlRootElement(body)) {
+                            exchange.getMessage().setHeader(Exchange.HTTP_RESPONSE_CODE, 204);
+                            exchange.getMessage().setBody("");
                         }
                     }
                 }
@@ -465,15 +473,38 @@ public class RestBindingAdvice extends ServiceSupport implements CamelInternalPr
                 }
             }
         } catch (Exception e) {
+            // the response marshalling happens after routing has completed, so this failure is not routed through
+            // the error handler and would otherwise be invisible. Log it so operators can diagnose why the response
+            // could not be bound (see CAMEL-24594).
+            LOG.warn("Error marshalling REST DSL response body for exchange: {} due to: {}."
+                     + " This exception is set on the exchange to fail the response.",
+                    exchange, e.getMessage(), e);
             exchange.setException(e);
         }
+    }
 
-        // perform client response validation
-        RestClientResponseValidator.ValidationError error = doClientResponseValidation(exchange);
-        if (error != null) {
-            exchange.getMessage().setHeader(Exchange.HTTP_RESPONSE_CODE, error.statusCode());
-            exchange.getMessage().setBody(error.body());
+    /**
+     * Whether the xml is only an empty root element, such as <tt>&lt;el/&gt;</tt> or <tt>&lt;el&gt;&lt;/el&gt;</tt>
+     * (after an optional xml declaration).
+     */
+    static boolean isEmptyXmlRootElement(String xml) {
+        if (ObjectHelper.isEmpty(xml)) {
+            return false;
         }
+        String body = xml.replace("\n", "");
+        int start = 0;
+        int close = body.indexOf('>');
+        // xml declaration
+        if (body.startsWith("<?xml")) {
+            start = close + 1;
+            close = body.indexOf('>', start);
+        }
+        if (close < 0) {
+            return false;
+        }
+        // <el/> or <el></el> where the end tag is one char longer than the start tag
+        int len = close - start + 1;
+        return body.length() == close + 1 || body.length() == start + 2 * len + 1;
     }
 
     private void setOutputDataType(Exchange exchange, DataType type) {
@@ -484,28 +515,39 @@ public class RestBindingAdvice extends ServiceSupport implements CamelInternalPr
     }
 
     private void ensureHeaderContentType(String contentType, boolean isXml, boolean isJson, Exchange exchange) {
-        // favor given content type
-        if (contentType != null) {
-            String type = ExchangeHelper.getContentType(exchange);
-            if (type == null) {
-                exchange.getIn().setHeader(Exchange.CONTENT_TYPE, contentType);
-            }
+        String type = ExchangeHelper.getContentType(exchange);
+        if (type != null) {
+            return;
         }
 
-        // favor json over xml
-        if (isJson) {
-            // make sure there is a content-type with json
-            String type = ExchangeHelper.getContentType(exchange);
-            if (type == null) {
-                exchange.getIn().setHeader(Exchange.CONTENT_TYPE, "application/json");
-            }
+        // the verb declares what it produces, so use one of those media types, favoring json over xml
+        String produced = contentType != null ? selectProducedMediaType(contentType, isXml, isJson) : null;
+        if (produced != null) {
+            exchange.getIn().setHeader(Exchange.CONTENT_TYPE, produced);
+        } else if (isJson) {
+            exchange.getIn().setHeader(Exchange.CONTENT_TYPE, "application/json");
         } else if (isXml) {
-            // make sure there is a content-type with xml
-            String type = ExchangeHelper.getContentType(exchange);
-            if (type == null) {
-                exchange.getIn().setHeader(Exchange.CONTENT_TYPE, "application/xml");
+            exchange.getIn().setHeader(Exchange.CONTENT_TYPE, "application/xml");
+        }
+    }
+
+    private static String selectProducedMediaType(String produces, boolean isXml, boolean isJson) {
+        String kind = isJson ? "json" : isXml ? "xml" : null;
+        String first = null;
+        for (String type : produces.split(",")) {
+            type = type.trim();
+            // a wildcard cannot be the Content-Type of a response
+            if (type.contains("*")) {
+                continue;
+            }
+            if (kind != null && type.toLowerCase(Locale.ENGLISH).contains(kind)) {
+                return type;
+            }
+            if (first == null) {
+                first = type;
             }
         }
+        return first;
     }
 
     private void setCORSHeaders(Exchange exchange) {
@@ -572,10 +614,48 @@ public class RestBindingAdvice extends ServiceSupport implements CamelInternalPr
     public RestClientResponseValidator.ValidationError doClientResponseValidation(Exchange exchange) {
         if (clientResponseValidation && clientResponseValidator != null && !exchange.isFailed()) {
             RestClientResponseValidator.ValidationContext vc = new RestClientResponseValidator.ValidationContext(
-                    consumes, produces, responseCodes, responseHeaders);
+                    consumes, produces, responseCodes, resolveResponseHeaders(exchange));
             return clientResponseValidator.validate(exchange, vc);
         }
         return null;
+    }
+
+    /**
+     * The response headers that are required on the response, which are the headers of the response message of the
+     * response code (or the default response message when the code has none)
+     */
+    private Set<String> resolveResponseHeaders(Exchange exchange) {
+        if (responseCodeHeaders == null) {
+            return responseHeaders;
+        }
+        String code = exchange.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE, "200", String.class);
+        Set<String> headers = responseCodeHeaders.get(code);
+        if (headers == null && (responseCodes == null || !responseCodes.containsKey(code))) {
+            headers = responseCodeHeaders.get("default");
+        }
+        if (responseHeaders == null || responseHeaders.isEmpty()) {
+            return headers;
+        }
+        if (headers == null) {
+            return responseHeaders;
+        }
+        Set<String> answer = new HashSet<>(responseHeaders);
+        answer.addAll(headers);
+        return answer;
+    }
+
+    /**
+     * The response headers that are required, per response code
+     */
+    public Map<String, Set<String>> getResponseCodeHeaders() {
+        return responseCodeHeaders;
+    }
+
+    /**
+     * Sets the response headers that are required, per response code
+     */
+    public void setResponseCodeHeaders(Map<String, Set<String>> responseCodeHeaders) {
+        this.responseCodeHeaders = responseCodeHeaders;
     }
 
     @Override

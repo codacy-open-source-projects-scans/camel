@@ -57,6 +57,7 @@ public class AS2EndpointConfigurer extends PropertyConfigurerSupport implements 
         map.put("ExpectContinue", boolean.class);
         map.put("LazyStartProducer", boolean.class);
         map.put("AccessToken", java.lang.String.class);
+        map.put("AsyncMdnAllowedHosts", java.lang.String.class);
         map.put("DecryptingPrivateKey", java.security.PrivateKey.class);
         map.put("EncryptingAlgorithm", org.apache.camel.component.as2.api.AS2EncryptionAlgorithm.class);
         map.put("EncryptingCertificateChain", java.security.cert.Certificate[].class);
@@ -65,6 +66,7 @@ public class AS2EndpointConfigurer extends PropertyConfigurerSupport implements 
         map.put("MdnPassword", java.lang.String.class);
         map.put("MdnUserName", java.lang.String.class);
         map.put("Password", java.lang.String.class);
+        map.put("SignatureVerificationRequired", boolean.class);
         map.put("SignedReceiptMicAlgorithms", java.lang.String.class);
         map.put("SigningAlgorithm", org.apache.camel.component.as2.api.AS2SignatureAlgorithm.class);
         map.put("SigningCertificateChain", java.security.cert.Certificate[].class);
@@ -89,6 +91,8 @@ public class AS2EndpointConfigurer extends PropertyConfigurerSupport implements 
         case "as2To": target.getConfiguration().setAs2To(property(camelContext, java.lang.String.class, value)); return true;
         case "as2version":
         case "as2Version": target.getConfiguration().setAs2Version(property(camelContext, java.lang.String.class, value)); return true;
+        case "asyncmdnallowedhosts":
+        case "asyncMdnAllowedHosts": target.getConfiguration().setAsyncMdnAllowedHosts(property(camelContext, java.lang.String.class, value)); return true;
         case "asyncmdnportnumber":
         case "asyncMdnPortNumber": target.getConfiguration().setAsyncMdnPortNumber(property(camelContext, java.lang.Integer.class, value)); return true;
         case "attachedfilename":
@@ -150,6 +154,8 @@ public class AS2EndpointConfigurer extends PropertyConfigurerSupport implements 
         case "serverFqdn": target.getConfiguration().setServerFqdn(property(camelContext, java.lang.String.class, value)); return true;
         case "serverportnumber":
         case "serverPortNumber": target.getConfiguration().setServerPortNumber(property(camelContext, java.lang.Integer.class, value)); return true;
+        case "signatureverificationrequired":
+        case "signatureVerificationRequired": target.getConfiguration().setSignatureVerificationRequired(property(camelContext, boolean.class, value)); return true;
         case "signedreceiptmicalgorithms":
         case "signedReceiptMicAlgorithms": target.getConfiguration().setSignedReceiptMicAlgorithms(property(camelContext, java.lang.String.class, value)); return true;
         case "signingalgorithm":
@@ -193,6 +199,8 @@ public class AS2EndpointConfigurer extends PropertyConfigurerSupport implements 
         case "as2To": return java.lang.String.class;
         case "as2version":
         case "as2Version": return java.lang.String.class;
+        case "asyncmdnallowedhosts":
+        case "asyncMdnAllowedHosts": return java.lang.String.class;
         case "asyncmdnportnumber":
         case "asyncMdnPortNumber": return java.lang.Integer.class;
         case "attachedfilename":
@@ -254,6 +262,8 @@ public class AS2EndpointConfigurer extends PropertyConfigurerSupport implements 
         case "serverFqdn": return java.lang.String.class;
         case "serverportnumber":
         case "serverPortNumber": return java.lang.Integer.class;
+        case "signatureverificationrequired":
+        case "signatureVerificationRequired": return boolean.class;
         case "signedreceiptmicalgorithms":
         case "signedReceiptMicAlgorithms": return java.lang.String.class;
         case "signingalgorithm":
@@ -293,6 +303,8 @@ public class AS2EndpointConfigurer extends PropertyConfigurerSupport implements 
         case "as2To": return target.getConfiguration().getAs2To();
         case "as2version":
         case "as2Version": return target.getConfiguration().getAs2Version();
+        case "asyncmdnallowedhosts":
+        case "asyncMdnAllowedHosts": return target.getConfiguration().getAsyncMdnAllowedHosts();
         case "asyncmdnportnumber":
         case "asyncMdnPortNumber": return target.getConfiguration().getAsyncMdnPortNumber();
         case "attachedfilename":
@@ -354,6 +366,8 @@ public class AS2EndpointConfigurer extends PropertyConfigurerSupport implements 
         case "serverFqdn": return target.getConfiguration().getServerFqdn();
         case "serverportnumber":
         case "serverPortNumber": return target.getConfiguration().getServerPortNumber();
+        case "signatureverificationrequired":
+        case "signatureVerificationRequired": return target.getConfiguration().isSignatureVerificationRequired();
         case "signedreceiptmicalgorithms":
         case "signedReceiptMicAlgorithms": return target.getConfiguration().getSignedReceiptMicAlgorithms();
         case "signingalgorithm":

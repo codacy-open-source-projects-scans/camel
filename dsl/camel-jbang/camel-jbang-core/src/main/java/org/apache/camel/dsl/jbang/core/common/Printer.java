@@ -101,8 +101,14 @@ public interface Printer {
         public void printf(String format, Object... args) {
         }
 
+        @Override
         public void printErr(String message) {
-            delegate.printErr(message);
+            if (delegate instanceof SystemOutPrinter) {
+                // keep stdout clean (e.g. MCP stdio JSON-RPC stream) by sending errors to stderr
+                System.err.printf("ERROR: %s%n", message);
+            } else {
+                delegate.printErr(message);
+            }
         }
     }
 }

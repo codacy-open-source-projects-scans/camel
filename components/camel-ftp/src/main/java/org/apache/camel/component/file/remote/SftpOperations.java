@@ -23,7 +23,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.Charset;
@@ -33,9 +32,9 @@ import java.nio.file.Paths;
 import java.security.KeyPair;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.Hashtable;
 import java.util.List;
 import java.util.Vector;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
@@ -57,6 +56,7 @@ import org.apache.camel.component.file.FileComponent;
 import org.apache.camel.component.file.GenericFile;
 import org.apache.camel.component.file.GenericFileEndpoint;
 import org.apache.camel.component.file.GenericFileExist;
+import org.apache.camel.component.file.GenericFileHelper;
 import org.apache.camel.component.file.GenericFileOperationFailedException;
 import org.apache.camel.spi.CamelLogger;
 import org.apache.camel.support.ResourceHelper;
@@ -132,19 +132,28 @@ public class SftpOperations implements RemoteFileOperations<SftpRemoteFile> {
                 return true;
             }
 
-            BlockingTask task = Tasks.foregroundTask()
-                    .withBudget(Budgets.iterationBudget()
-                            .withMaxIterations(Budgets.atLeastOnce(endpoint.getMaximumReconnectAttempts()))
-                            .withInterval(Duration.ofMillis(endpoint.getReconnectDelay()))
-                            .build())
-                    .build();
+            ScheduledExecutorService ses = endpoint.getCamelContext().getExecutorServiceManager()
+                    .newSingleThreadScheduledExecutor(this, "SftpReconnect");
+            try {
+                BlockingTask task = Tasks.backgroundTask()
+                        .withBudget(Budgets.iterationTimeBudget()
+                                .withMaxIterations(Budgets.atLeastOnce(endpoint.getMaximumReconnectAttempts()))
+                                .withUnlimitedDuration()
+                                .withInterval(Duration.ofMillis(endpoint.getReconnectDelay()))
+                                .build())
+                        .withScheduledExecutor(ses)
+                        .withName("SftpReconnect")
+                        .build();
 
-            TaskPayload payload = new TaskPayload(configuration);
+                TaskPayload payload = new TaskPayload(configuration);
 
-            if (!task.run(endpoint.getCamelContext(), this::tryConnect, payload)) {
-                throw new GenericFileOperationFailedException(
-                        "Cannot connect to " + configuration.remoteServerInformation(),
-                        payload.exception);
+                if (!task.run(endpoint.getCamelContext(), this::tryConnect, payload)) {
+                    throw new GenericFileOperationFailedException(
+                            "Cannot connect to " + configuration.remoteServerInformation(),
+                            payload.exception);
+                }
+            } finally {
+                endpoint.getCamelContext().getExecutorServiceManager().shutdown(ses);
             }
 
             configureBulkRequests();
@@ -228,19 +237,6 @@ public class SftpOperations implements RemoteFileOperations<SftpRemoteFile> {
         JSch.setLogger(new JSchLogger(endpoint.getConfiguration().getJschLoggingLevel()));
 
         SftpConfiguration sftpConfig = (SftpConfiguration) configuration;
-
-        if (isNotEmpty(sftpConfig.getCiphers())) {
-            LOG.debug("Using ciphers: {}", sftpConfig.getCiphers());
-            Hashtable<String, String> ciphers = new Hashtable<>();
-            ciphers.put("cipher.s2c", sftpConfig.getCiphers());
-            ciphers.put("cipher.c2s", sftpConfig.getCiphers());
-            JSch.setConfig(ciphers);
-        }
-
-        if (isNotEmpty(sftpConfig.getKeyExchangeProtocols())) {
-            LOG.debug("Using KEX: {}", sftpConfig.getKeyExchangeProtocols());
-            JSch.setConfig("kex", sftpConfig.getKeyExchangeProtocols());
-        }
 
         // Resolve certificate bytes once — used for both identity loading and key type detection
         byte[] certData = resolveCertificateBytes(sftpConfig);
@@ -332,7 +328,8 @@ public class SftpOperations implements RemoteFileOperations<SftpRemoteFile> {
         }
 
         String knownHostsFile = sftpConfig.getKnownHostsFile();
-        if (knownHostsFile == null && sftpConfig.isUseUserKnownHostsFile()) {
+        if (knownHostsFile == null && !isNotEmpty(sftpConfig.getKnownHostsUri())
+                && sftpConfig.getKnownHosts() == null && sftpConfig.isUseUserKnownHostsFile()) {
             knownHostsFile = HomeHelper.resolveHomeDir() + "/.ssh/known_hosts";
             LOG.info("Known host file not configured, using user known host file: {}", knownHostsFile);
         }
@@ -342,6 +339,17 @@ public class SftpOperations implements RemoteFileOperations<SftpRemoteFile> {
         }
 
         final Session session = jsch.getSession(configuration.getUsername(), configuration.getHost(), configuration.getPort());
+
+        if (isNotEmpty(sftpConfig.getCiphers())) {
+            LOG.debug("Using ciphers: {}", sftpConfig.getCiphers());
+            session.setConfig("cipher.s2c", sftpConfig.getCiphers());
+            session.setConfig("cipher.c2s", sftpConfig.getCiphers());
+        }
+
+        if (isNotEmpty(sftpConfig.getKeyExchangeProtocols())) {
+            LOG.debug("Using KEX: {}", sftpConfig.getKeyExchangeProtocols());
+            session.setConfig("kex", sftpConfig.getKeyExchangeProtocols());
+        }
 
         if (isNotEmpty(sftpConfig.getStrictHostKeyChecking())) {
             LOG.debug("Using StrictHostKeyChecking: {}", sftpConfig.getStrictHostKeyChecking());
@@ -1037,8 +1045,15 @@ public class SftpOperations implements RemoteFileOperations<SftpRemoteFile> {
             // use relative filename in local work directory
             String relativeName = file.getRelativeFilePath();
 
+            File localWorkDir = local;
             temp = new File(local, relativeName + ".inprogress");
             local = new File(local, relativeName);
+
+            // ensure the local work file stays within the local work directory (CAMEL-23765)
+            if (endpoint.isJailStartingDirectory()) {
+                GenericFileHelper.jailToLocalWorkDirectory(temp, localWorkDir);
+                GenericFileHelper.jailToLocalWorkDirectory(local, localWorkDir);
+            }
 
             // create directory to local work file
             local.mkdirs();
@@ -1210,7 +1225,7 @@ public class SftpOperations implements RemoteFileOperations<SftpRemoteFile> {
                 if (charset != null) {
                     // charset configured so we must convert to the desired
                     // charset so we can write with encoding
-                    is = new ByteArrayInputStream(exchange.getIn().getMandatoryBody(String.class).getBytes(charset));
+                    is = GenericFileHelper.toInputStream(exchange, charset);
                     LOG.trace("Using InputStream {} with charset {}.", is, charset);
                 } else {
                     is = exchange.getIn().getMandatoryBody(InputStream.class);
@@ -1248,7 +1263,7 @@ public class SftpOperations implements RemoteFileOperations<SftpRemoteFile> {
         } catch (SftpException e) {
             createResultHeadersFromExchange(e, exchange);
             throw new GenericFileOperationFailedException("Cannot store file: " + name, e);
-        } catch (UnsupportedEncodingException | InvalidPayloadException e) {
+        } catch (IOException | InvalidPayloadException e) {
             throw new GenericFileOperationFailedException("Cannot store file: " + name, e);
         } finally {
             IOHelper.close(is, "store: " + name, LOG);

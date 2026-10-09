@@ -94,6 +94,14 @@ public class GoogleCloudStorageConsumer extends ScheduledBatchPollingConsumer {
 
             Blob blob = getStorageClient().get(bucketName, fileName);
 
+            // okay we have some response from Google so lets mark the consumer as ready
+            forceConsumerAsReady();
+
+            if (blob == null) {
+                LOG.trace("No object found in bucket [{}] with file name [{}]", bucketName, fileName);
+                return 0;
+            }
+
             exchanges = createExchanges(blob, fileName);
         } else {
             LOG.trace("Queueing objects in bucket [{}]...", bucketName);
@@ -146,8 +154,17 @@ public class GoogleCloudStorageConsumer extends ScheduledBatchPollingConsumer {
         try {
             for (Blob blob : blobList) {
                 if (includeObject(blob)) {
-                    Exchange exchange = createExchange(blob, blob.getBlobId().getName());
-                    answer.add(exchange);
+                    String key = blob.getBlobId().getName();
+                    try {
+                        answer.add(createExchange(blob, key));
+                    } catch (IllegalArgumentException e) {
+                        // the object name is rejected as a local download path: skip this object only, so a single
+                        // object with such a name does not stop the rest of the bucket from being consumed
+                        getExceptionHandler().handleException(
+                                "Skipping object " + key + " in bucket " + getConfiguration().getBucketName()
+                                                              + " as it cannot be downloaded: " + e.getMessage(),
+                                e);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -298,7 +315,14 @@ public class GoogleCloudStorageConsumer extends ScheduledBatchPollingConsumer {
             // download as file
             if (getConfiguration().getDownloadFileName() != null) {
                 // create a dummy exchange as Exchange is needed for expression evaluation
-                String result = evaluateFileExpression(exchange, getConfiguration().getDownloadFileName(), blob.getName());
+                String result;
+                try {
+                    result = evaluateFileExpression(exchange, getConfiguration().getDownloadFileName(), blob.getName());
+                } catch (IllegalArgumentException e) {
+                    // the object is not consumed, so the exchange created for it is not routed either
+                    releaseExchange(exchange, false);
+                    throw e;
+                }
                 if (result != null) {
                     File file = new File(result);
                     blob.downloadTo(file.toPath());
@@ -352,9 +376,30 @@ public class GoogleCloudStorageConsumer extends ScheduledBatchPollingConsumer {
         // use blob as file name
         exchange.getMessage().setHeader(GoogleCloudStorageConstants.FILE_NAME, blogName);
 
+        // the local path is resolved from GoogleCloudStorageConstants.FILE_NAME set above, which carries the remote
+        // object name and is therefore untrusted input, no matter whether the token is appended here or already part
+        // of the configured downloadFileName. An absolute object name, or one with a .. segment, is rejected whatever
+        // the configuration looks like, and the resolved path is then confined:
+        // - plain directory (no expression): the object name is appended to it and the configured value itself is the
+        //   directory the download must stay within
+        // - directory followed by an expression (for example /tmp/downloads/${file:name}): the static directory
+        //   prefix before the first expression token is the directory the download must stay within
+        // - fully dynamic value with no static directory prefix (for example ${file:name}): the route author did not
+        //   configure any directory, so a relative result must stay within the working directory
+        if (blogName != null) {
+            GoogleCloudStorageFileNameHelper.assertSafeObjectName(blogName);
+        }
+
         String eval = downloadFileName;
-        if (!downloadFileName.contains("$")) {
+        final String confinementDirectory;
+        final boolean confineToDirectory;
+        if (downloadFileName.contains("$")) {
+            confinementDirectory = GoogleCloudStorageFileNameHelper.staticDirectoryPrefix(downloadFileName);
+            confineToDirectory = !confinementDirectory.isEmpty();
+        } else {
             eval = downloadFileName + "/${file:name}";
+            confinementDirectory = downloadFileName;
+            confineToDirectory = true;
         }
         Expression exp = language.createExpression(eval);
         exp.init(camelContext);
@@ -362,6 +407,13 @@ public class GoogleCloudStorageConsumer extends ScheduledBatchPollingConsumer {
         String result = exp.evaluate(exchange, String.class);
         if (exchange.getException() != null) {
             throw RuntimeCamelException.wrapRuntimeCamelException(exchange.getException());
+        }
+        if (result != null) {
+            if (confineToDirectory) {
+                GoogleCloudStorageFileNameHelper.assertWithinDirectory(confinementDirectory, result, blogName);
+            } else {
+                GoogleCloudStorageFileNameHelper.assertWithinWorkingDirectory(result, blogName);
+            }
         }
         return result;
     }

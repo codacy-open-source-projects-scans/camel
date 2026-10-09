@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -34,6 +35,7 @@ import org.apache.camel.Processor;
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.ShutdownRunningTask;
 import org.apache.camel.support.EmptyAsyncCallback;
+import org.apache.camel.support.LRUCacheFactory;
 import org.apache.camel.support.ScheduledBatchPollingConsumer;
 import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.util.CastUtils;
@@ -63,6 +65,8 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
     private final String[] includeExt;
     private final String[] excludeExt;
     private boolean retrieveFile = true;
+    // files already reported as resolving outside the starting directory (bounded)
+    private final Map<String, Boolean> skippedOutsideStartingDirectory = LRUCacheFactory.newLRUCache(1000);
 
     protected GenericFileConsumer(GenericFileEndpoint<T> endpoint, Processor processor, GenericFileOperations<T> operations,
                                   GenericFileProcessStrategy<T> processStrategy) {
@@ -284,7 +288,8 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
             String key = file.getAbsoluteFilePath();
             endpoint.getInProgressRepository().remove(key);
             // if we added eager to idempotent then we need to remove this
-            if (endpoint.isIdempotentEager() && endpoint.getIdempotentRepository() != null) {
+            if (Boolean.TRUE.equals(endpoint.isIdempotent()) && endpoint.isIdempotentEager()
+                    && endpoint.getIdempotentRepository() != null) {
                 removeExcessiveIdempotentFile(file, null);
             }
             releaseExchange(exchange, true);
@@ -311,6 +316,10 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
         for (GenericFile file : files) {
             String key = file.getAbsoluteFilePath();
             endpoint.getInProgressRepository().remove(key);
+            if (Boolean.TRUE.equals(endpoint.isIdempotent()) && endpoint.isIdempotentEager()
+                    && endpoint.getIdempotentRepository() != null) {
+                removeExcessiveIdempotentFile(file, null);
+            }
         }
     }
 
@@ -407,6 +416,13 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
         // and then the file name would be changed
         String absoluteFileName = file.getAbsoluteFilePath();
 
+        // snapshot the idempotent key now while the exchange still has pristine file headers;
+        // after routing, headers like CamelFileName may be mutated, causing key mismatch at completion time
+        if (Boolean.TRUE.equals(endpoint.isIdempotent()) && endpoint.getIdempotentKey() != null) {
+            String key = endpoint.getIdempotentKey().evaluate(exchange, String.class);
+            exchange.setProperty(Exchange.FILE_IDEMPOTENT_KEY, key);
+        }
+
         // check if we can begin processing the file
         Exception beginCause = null;
         boolean begin = false;
@@ -456,7 +472,7 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
         final String name = target.getAbsoluteFilePath();
         try {
             if (isRetrieveFile()) {
-                if (!tryRetrievingFile(exchange, name, target, absoluteFileName, file)) {
+                if (!retrieveFileOrAbort(exchange, name, target, absoluteFileName, file)) {
                     return false;
                 }
             } else {
@@ -499,6 +515,73 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
         }
 
         return true;
+    }
+
+    /**
+     * Retrieves the file, and aborts if the file could not be retrieved (or cannot be retrieved and is ignored).
+     * <p/>
+     * The read lock has already been acquired by the begin strategy, and no {@link GenericFileOnCompletion} is
+     * registered yet, so the abort must release the read lock here. The idempotent key, when it was added eagerly, is
+     * removed here as well, for the original file: the begin strategy may have pre moved the file and bound the pre
+     * moved file to the exchange (preMove), so the key cannot be derived from the exchange file later. Returning
+     * <tt>false</tt> marks the file as not started, so the file can be retried on a later poll (the same as when the
+     * read lock could not be acquired).
+     *
+     * @return <tt>true</tt> if the file was retrieved, <tt>false</tt> if the file was not retrieved and processing was
+     *         aborted
+     */
+    private boolean retrieveFileOrAbort(
+            Exchange exchange, String name, GenericFile<T> target, String absoluteFileName, GenericFile<T> file) {
+        Exception retrieveCause = null;
+        boolean retrieved = false;
+        try {
+            retrieved = tryRetrievingFile(exchange, name, target, absoluteFileName, file);
+        } catch (Exception e) {
+            retrieveCause = e;
+        }
+        if (retrieved) {
+            return true;
+        }
+
+        LOG.debug("{} cannot retrieve file: {}", endpoint, target);
+        Exception abortCause = null;
+        try {
+            processStrategy.abort(operations, endpoint, exchange, target);
+        } catch (Exception e) {
+            abortCause = e;
+        } finally {
+            // the file is no longer in progress
+            endpoint.getInProgressRepository().remove(absoluteFileName);
+            removeEagerIdempotentKey(exchange, absoluteFileName);
+        }
+        if (retrieveCause != null) {
+            String msg = "Error processing file " + file + " due to " + retrieveCause.getMessage();
+            handleException(msg, exchange, retrieveCause);
+        }
+        if (abortCause != null) {
+            String msg2 = endpoint + " cannot abort processing file: " + target + " due to: " + abortCause.getMessage();
+            handleException(msg2, exchange, abortCause);
+        }
+        return false;
+    }
+
+    /**
+     * Removes the idempotent key that was added eagerly while polling the file, so the file can be consumed again.
+     * <p/>
+     * Uses the key of the original file (as {@link GenericFileOnCompletion} does on rollback), and not the file bound
+     * to the exchange, which is the pre moved file when using preMove.
+     */
+    private void removeEagerIdempotentKey(Exchange exchange, String absoluteFileName) {
+        if (Boolean.TRUE.equals(endpoint.isIdempotent()) && endpoint.isIdempotentEager()
+                && endpoint.getIdempotentRepository() != null) {
+            String key = absoluteFileName;
+            if (endpoint.getIdempotentKey() != null) {
+                key = exchange.getProperty(Exchange.FILE_IDEMPOTENT_KEY, absoluteFileName, String.class);
+            }
+            if (key != null) {
+                endpoint.getIdempotentRepository().remove(key);
+            }
+        }
     }
 
     boolean tryRetrievingFile(
@@ -620,6 +703,19 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
             return false;
         }
 
+        // the resolved path must stay within the starting directory, as the name it was built from is
+        // reported by the remote server and is not necessarily a single path segment, and a local file
+        // can be a symbolic link
+        if (endpoint.isJailStartingDirectory() && !isWithinStartingDirectory(absoluteFilePath)) {
+            // such a file usually stays where it is and is listed again on every poll, so only warn the first time
+            if (skippedOutsideStartingDirectory.put(absoluteFilePath, Boolean.TRUE) == null) {
+                LOG.warn("Skipping file as it resolves outside the starting directory: {}", absoluteFilePath);
+            } else {
+                LOG.debug("Skipping file as it resolves outside the starting directory: {}", absoluteFilePath);
+            }
+            return false;
+        }
+
         // directory is always valid
         if (isDirectory) {
             return true;
@@ -667,6 +763,22 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
             }
         }
         return answer;
+    }
+
+    /**
+     * Strategy to determine whether the resolved path of a listed file stays within the configured starting directory.
+     * <p/>
+     * Consumers that build the path from a name supplied by a remote server must override this, as such a name is not
+     * guaranteed to be a single path segment and can otherwise navigate outside the directory being polled. The local
+     * file consumer overrides this to resolve symbolic links. The check is only consulted when
+     * {@link GenericFileEndpoint#isJailStartingDirectory()} is enabled.
+     *
+     * @param  absoluteFilePath the resolved absolute path of the listed file
+     * @return                  {@code true} if the path stays within the starting directory
+     */
+    protected boolean isWithinStartingDirectory(String absoluteFilePath) {
+        // no boundary to enforce by default
+        return true;
     }
 
     /**
@@ -898,6 +1010,7 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
     @Override
     protected void doStop() throws Exception {
         prepareOnStartup = false;
+        skippedOutsideStartingDirectory.clear();
         super.doStop();
         ServiceHelper.stopService(processStrategy);
     }

@@ -82,6 +82,8 @@ public class DebeziumMongodbComponentConfigurer extends PropertyConfigurerSuppor
         case "internalKeyConverter": getOrCreateConfiguration(target).setInternalKeyConverter(property(camelContext, java.lang.String.class, value)); return true;
         case "internalvalueconverter":
         case "internalValueConverter": getOrCreateConfiguration(target).setInternalValueConverter(property(camelContext, java.lang.String.class, value)); return true;
+        case "legacysnapshotmaxthreads":
+        case "legacySnapshotMaxThreads": getOrCreateConfiguration(target).setLegacySnapshotMaxThreads(property(camelContext, boolean.class, value)); return true;
         case "maxbatchsize":
         case "maxBatchSize": getOrCreateConfiguration(target).setMaxBatchSize(property(camelContext, int.class, value)); return true;
         case "maxqueuesize":
@@ -194,6 +196,8 @@ public class DebeziumMongodbComponentConfigurer extends PropertyConfigurerSuppor
         case "snapshotModeCustomName": getOrCreateConfiguration(target).setSnapshotModeCustomName(property(camelContext, java.lang.String.class, value)); return true;
         case "sourceinfostructmaker":
         case "sourceinfoStructMaker": getOrCreateConfiguration(target).setSourceinfoStructMaker(property(camelContext, java.lang.String.class, value)); return true;
+        case "statisticsmetricsenabled":
+        case "statisticsMetricsEnabled": getOrCreateConfiguration(target).setStatisticsMetricsEnabled(property(camelContext, boolean.class, value)); return true;
         case "streamingdelayms":
         case "streamingDelayMs": getOrCreateConfiguration(target).setStreamingDelayMs(property(camelContext, java.time.Duration.class, value).toMillis()); return true;
         case "tombstonesondelete":
@@ -263,6 +267,8 @@ public class DebeziumMongodbComponentConfigurer extends PropertyConfigurerSuppor
         case "internalKeyConverter": return java.lang.String.class;
         case "internalvalueconverter":
         case "internalValueConverter": return java.lang.String.class;
+        case "legacysnapshotmaxthreads":
+        case "legacySnapshotMaxThreads": return boolean.class;
         case "maxbatchsize":
         case "maxBatchSize": return int.class;
         case "maxqueuesize":
@@ -375,6 +381,8 @@ public class DebeziumMongodbComponentConfigurer extends PropertyConfigurerSuppor
         case "snapshotModeCustomName": return java.lang.String.class;
         case "sourceinfostructmaker":
         case "sourceinfoStructMaker": return java.lang.String.class;
+        case "statisticsmetricsenabled":
+        case "statisticsMetricsEnabled": return boolean.class;
         case "streamingdelayms":
         case "streamingDelayMs": return long.class;
         case "tombstonesondelete":
@@ -445,6 +453,8 @@ public class DebeziumMongodbComponentConfigurer extends PropertyConfigurerSuppor
         case "internalKeyConverter": return getOrCreateConfiguration(target).getInternalKeyConverter();
         case "internalvalueconverter":
         case "internalValueConverter": return getOrCreateConfiguration(target).getInternalValueConverter();
+        case "legacysnapshotmaxthreads":
+        case "legacySnapshotMaxThreads": return getOrCreateConfiguration(target).isLegacySnapshotMaxThreads();
         case "maxbatchsize":
         case "maxBatchSize": return getOrCreateConfiguration(target).getMaxBatchSize();
         case "maxqueuesize":
@@ -557,6 +567,8 @@ public class DebeziumMongodbComponentConfigurer extends PropertyConfigurerSuppor
         case "snapshotModeCustomName": return getOrCreateConfiguration(target).getSnapshotModeCustomName();
         case "sourceinfostructmaker":
         case "sourceinfoStructMaker": return getOrCreateConfiguration(target).getSourceinfoStructMaker();
+        case "statisticsmetricsenabled":
+        case "statisticsMetricsEnabled": return getOrCreateConfiguration(target).isStatisticsMetricsEnabled();
         case "streamingdelayms":
         case "streamingDelayMs": return getOrCreateConfiguration(target).getStreamingDelayMs();
         case "tombstonesondelete":

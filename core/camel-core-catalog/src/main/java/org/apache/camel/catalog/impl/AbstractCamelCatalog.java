@@ -22,7 +22,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -32,7 +31,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -46,6 +47,7 @@ import org.apache.camel.catalog.LanguageValidationResult;
 import org.apache.camel.catalog.SuggestionStrategy;
 import org.apache.camel.tooling.model.ApiMethodModel;
 import org.apache.camel.tooling.model.ApiModel;
+import org.apache.camel.tooling.model.ApiReferenceModel;
 import org.apache.camel.tooling.model.BaseModel;
 import org.apache.camel.tooling.model.BaseOptionModel;
 import org.apache.camel.tooling.model.ComponentModel;
@@ -62,6 +64,7 @@ import org.apache.camel.tooling.model.TransformerModel;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.ReflectionHelper;
 import org.apache.camel.util.StringHelper;
+import org.apache.camel.util.TimeUtils;
 import org.apache.camel.util.URISupport;
 
 import static org.apache.camel.util.StringHelper.isDashed;
@@ -72,11 +75,11 @@ import static org.apache.camel.util.StringHelper.isDashed;
 public abstract class AbstractCamelCatalog {
 
     private static final Pattern SYNTAX_PATTERN = Pattern.compile("([\\w.]+)");
-    private static final Pattern ENV_OR_SYS_PATTERN = Pattern.compile("\\{\\{(env|sys):\\w+\\}\\}");
-    private static final Pattern SYNTAX_DASH_PATTERN = Pattern.compile("([\\w.-]+)");
+    private static final Pattern ENV_OR_SYS_PATTERN = Pattern.compile("\\{\\{(env|sys):\\w+(:[^{}]*)?\\}\\}");
+    private static final String ENV_OR_SYS_WORD = "CamelEnvOrSysPlaceholder";
     private static final Pattern COMPONENT_SYNTAX_PARSER = Pattern.compile("([^\\w-]*)([\\w-]+)");
 
-    private SuggestionStrategy suggestionStrategy;
+    private SuggestionStrategy suggestionStrategy = new EditDistanceSuggestionStrategy();
     private JSonSchemaResolver jsonSchemaResolver;
 
     public String componentJSonSchema(String name) {
@@ -135,6 +138,15 @@ public abstract class AbstractCamelCatalog {
 
     public String pojoBeanJSonSchema(String name) {
         return getJSonSchemaResolver().getPojoBeanJSonSchema(name);
+    }
+
+    public ApiReferenceModel apiReferenceModel(String name) {
+        String json = apiReferenceJSonSchema(name);
+        return json != null ? JsonMapper.generateApiReferenceModel(json) : null;
+    }
+
+    public String apiReferenceJSonSchema(String name) {
+        return getJSonSchemaResolver().getApiReferenceJSonSchema(name);
     }
 
     public String devConsoleJSonSchema(String name) {
@@ -202,17 +214,23 @@ public abstract class AbstractCamelCatalog {
     }
 
     public EndpointValidationResult validateProperties(String scheme, Map<String, String> properties) {
-        boolean lenient = Boolean.getBoolean(properties.getOrDefault("lenient", "false"));
-        return validateProperties(scheme, properties, lenient, false, false);
+        // the component may be lenient
+        ComponentModel model = componentModel(scheme);
+        boolean lenient = Boolean.parseBoolean(properties.getOrDefault("lenient", "false"))
+                || model != null && model.isLenientProperties();
+        return validateProperties(scheme, model, properties, lenient, false, false);
     }
 
     private EndpointValidationResult validateProperties(
-            String scheme, Map<String, String> properties,
+            String scheme, ComponentModel model, Map<String, String> properties,
             boolean lenient, boolean consumerOnly,
             boolean producerOnly) {
         EndpointValidationResult result = new EndpointValidationResult(scheme);
 
-        ComponentModel model = componentModel(scheme);
+        if (model == null) {
+            result.addUnknownComponent(scheme);
+            return result;
+        }
         Map<String, BaseOptionModel> rows = new HashMap<>();
         model.getComponentOptions().forEach(o -> rows.put(o.getName(), o));
         // endpoint options have higher priority so overwrite component options
@@ -293,8 +311,8 @@ public abstract class AbstractCamelCatalog {
                 boolean valuePlaceholder = value.startsWith("{{") || value.startsWith("${") || value.startsWith("$simple{");
                 boolean lookup = value.startsWith("#") && value.length() > 1;
                 // we cannot evaluate multi values as strict as the others, as we don't know their expected types
-                boolean multiValue = prefix != null && originalName.startsWith(prefix)
-                        && row.isMultiValue();
+                boolean multiValue = (prefix != null && originalName.startsWith(prefix) && row.isMultiValue())
+                        || isMapEntry(row, originalName);
 
                 // default value
                 Object defaultValue = row.getDefaultValue();
@@ -332,7 +350,11 @@ public abstract class AbstractCamelCatalog {
                 }
 
                 // is reference lookup of bean (not applicable for @UriPath, enums, or multi-valued)
-                if (!multiValue && enums == null && !"path".equals(row.getKind()) && "object".equals(row.getType())) {
+                // a placeholder, the default value, or any value for an option of type Object is also valid
+                boolean defaultOrAnyValue = (defaultValue != null && value.equals(defaultValue.toString()))
+                        || "java.lang.Object".equals(row.getJavaType());
+                if (!multiValue && !valuePlaceholder && !defaultOrAnyValue && enums == null && !"path".equals(row.getKind())
+                        && "object".equals(row.getType())) {
                     // must start with # and be at least 2 characters
                     if (!value.startsWith("#") || value.length() <= 1) {
                         result.addInvalidReference(name, value);
@@ -359,8 +381,8 @@ public abstract class AbstractCamelCatalog {
 
                 // is integer
                 if (!multiValue && !valuePlaceholder && !lookup && "integer".equals(row.getType())) {
-                    // value must be an integer
-                    boolean valid = validateInteger(value);
+                    // value must be an integer (or long)
+                    boolean valid = validateInteger(value, row.getJavaType());
                     if (!valid) {
                         result.addInvalidInteger(name, value);
                     }
@@ -490,7 +512,7 @@ public abstract class AbstractCamelCatalog {
                 // only enable lenient properties if we should not ignore
                 lenient = !ignoreLenientProperties && model.isLenientProperties();
             }
-            return validateProperties(scheme, properties, lenient, consumerOnly, producerOnly);
+            return validateProperties(scheme, model, properties, lenient, consumerOnly, producerOnly);
         } catch (URISyntaxException e) {
             EndpointValidationResult result = new EndpointValidationResult(uri);
             result.addSyntaxError(e.getMessage());
@@ -527,17 +549,18 @@ public abstract class AbstractCamelCatalog {
             String[] names = fields.split(":");
 
             // grab authority part and grab username and/or password
-            String authority = u.getAuthority();
+            String authority = u.getRawAuthority();
             if (authority != null && authority.contains("@")) {
                 String username;
                 String password;
 
-                // grab unserinfo part before @
-                String userInfo = authority.substring(0, authority.indexOf('@'));
-                String[] parts = userInfo.split(":");
-                if (parts.length == 2) {
-                    username = parts[0];
-                    password = parts[1];
+                // grab userinfo part before the last @ (the password may contain @)
+                String userInfo = authority.substring(0, authority.lastIndexOf('@'));
+                int pos = userInfo.indexOf(':');
+                if (pos != -1) {
+                    // the password may contain colon
+                    username = userInfo.substring(0, pos);
+                    password = userInfo.substring(pos + 1);
                 } else {
                     // only username
                     username = userInfo;
@@ -561,13 +584,26 @@ public abstract class AbstractCamelCatalog {
         uri = StringHelper.after(uri, ":");
         String uriPath = URISupport.stripQuery(uri);
 
-        // the uri path may use {{env:xxx}} or {{sys:xxx}} placeholders so ignore those
+        // the uri path may use {{env:xxx}} or {{sys:xxx}} placeholders (with optional default value), which contains
+        // colon that would be parsed as a separator, so replace those with words and restore the placeholders afterward
         Matcher matcher = ENV_OR_SYS_PATTERN.matcher(uriPath);
-        uriPath = matcher.replaceAll("");
+        List<String> envOrSys = new ArrayList<>();
+        StringBuilder sbPath = new StringBuilder();
+        while (matcher.find()) {
+            matcher.appendReplacement(sbPath, ENV_OR_SYS_WORD + envOrSys.size() + "x");
+            envOrSys.add(matcher.group());
+        }
+        matcher.appendTail(sbPath);
+        uriPath = sbPath.toString();
 
-        // strip user info from uri path
+        // strip user info from uri path (up to the last @ in the authority as the password may contain @)
         if (!userInfoOptions.isEmpty()) {
-            uriPath = StringHelper.after(uriPath, "@", uriPath);
+            int start = uriPath.startsWith("//") ? 2 : 0;
+            int end = uriPath.indexOf('/', start);
+            int at = end != -1 ? uriPath.lastIndexOf('@', end) : uriPath.lastIndexOf('@');
+            if (at != -1) {
+                uriPath = uriPath.substring(at + 1);
+            }
         }
 
         // strip double slash in the start
@@ -585,7 +621,20 @@ public abstract class AbstractCamelCatalog {
             }
         }
         // parse the syntax and find each token between each option
-        final List<String> word2 = findTokens(syntax, scheme, uriPath);
+        // and the index of the syntax option each value belongs to (by the separator found before the value)
+        final List<Integer> positions = new ArrayList<>();
+        final List<String> word2 = findTokens(syntax, scheme, uriPath, positions);
+        if (!envOrSys.isEmpty()) {
+            word2.replaceAll(v -> {
+                for (int i = 0; i < envOrSys.size(); i++) {
+                    v = v.replace(ENV_OR_SYS_WORD + i + "x", envOrSys.get(i));
+                }
+                return v;
+            });
+        }
+        // the positions can be used when at least one separator was found and the syntax has no scheme name as option
+        boolean usePositions = positions.size() == word2.size() && positions.stream().anyMatch(p -> p > 0)
+                && positions.get(positions.size() - 1) < word.size() && SYNTAX_PATTERN.split(syntax).length <= word.size();
 
         boolean defaultValueAdded = false;
 
@@ -626,6 +675,13 @@ public abstract class AbstractCamelCatalog {
             if (allOptions) {
                 String value = it.next();
                 options.put(key, value);
+            } else if (usePositions) {
+                // optional options may be omitted in the middle of the syntax (such as ftp:host:port/directoryName)
+                // so use the separators to know which option each value belongs to
+                int pos = positions.indexOf(i);
+                if (pos != -1) {
+                    options.put(key, word2.get(pos));
+                }
             } else {
                 // we have a little problem as we do not not have all options
                 if (!option.isRequired()) {
@@ -710,13 +766,18 @@ public abstract class AbstractCamelCatalog {
         return answer;
     }
 
-    private static List<String> findTokens(String syntax, String scheme, String uriPath) {
+    private static List<String> findTokens(String syntax, String scheme, String uriPath, List<Integer> positions) {
         String[] tokens = SYNTAX_PATTERN.split(syntax);
 
         // find the position where each option start/end
         List<String> word2 = new ArrayList<>();
         int prev = 0;
         int prevPath = 0;
+        // the separator at index i in tokens is before the option at index i in the syntax
+        int current = 0;
+        // the separators found and not found
+        List<String> found = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
 
         // special for activemq/jms where the enum for destinationType causes a token issue as it includes a colon
         // for 'temp:queue' and 'temp:topic' values
@@ -726,7 +787,8 @@ public abstract class AbstractCamelCatalog {
             }
         }
 
-        for (String token : tokens) {
+        for (int i = 0; i < tokens.length; i++) {
+            String token = tokens[i];
             if (token.isEmpty()) {
                 continue;
             }
@@ -746,14 +808,25 @@ public abstract class AbstractCamelCatalog {
             if (idx > 0) {
                 String option = uriPath.substring(prev, idx);
                 word2.add(option);
+                positions.add(current);
+                current = i;
                 prev = idx + len;
                 prevPath = prev;
+                found.add(token);
+            } else {
+                skipped.add(token);
             }
         }
         // special for last or if we did not add anyone
         if (prev > 0 || word2.isEmpty()) {
             String option = uriPath.substring(prev);
             word2.add(option);
+            positions.add(current);
+        }
+        // if a similar separator was not found (such as :// vs :) then we cannot know which option the values belong to
+        boolean ambiguous = skipped.stream().anyMatch(s -> found.stream().anyMatch(f -> s.contains(f) || f.contains(s)));
+        if (ambiguous) {
+            positions.clear();
         }
         return word2;
     }
@@ -866,6 +939,60 @@ public abstract class AbstractCamelCatalog {
         return null;
     }
 
+    public boolean matchEndpointIdentity(String uri1, String uri2) {
+        if (uri1 == null || uri2 == null) {
+            return false;
+        }
+        if (uri1.equals(uri2)) {
+            return true;
+        }
+
+        String scheme1 = endpointComponentName(uri1);
+        String scheme2 = endpointComponentName(uri2);
+        if (!Objects.equals(scheme1, scheme2)) {
+            return false;
+        }
+
+        String base1 = URISupport.stripQuery(uri1);
+        String base2 = URISupport.stripQuery(uri2);
+        if (!Objects.equals(base1, base2)) {
+            return false;
+        }
+
+        ComponentModel model = componentModel(scheme1);
+        if (model == null) {
+            return true;
+        }
+
+        List<String> identityNames = model.getEndpointOptions().stream()
+                .filter(BaseOptionModel::isEndpointIdentity)
+                .map(BaseOptionModel::getName)
+                .toList();
+        if (identityNames.isEmpty()) {
+            return true;
+        }
+
+        Map<String, Object> params1;
+        Map<String, Object> params2;
+        try {
+            String q1 = URISupport.extractQuery(uri1);
+            String q2 = URISupport.extractQuery(uri2);
+            params1 = q1 != null ? URISupport.parseQuery(q1) : Map.of();
+            params2 = q2 != null ? URISupport.parseQuery(q2) : Map.of();
+        } catch (URISyntaxException e) {
+            return false;
+        }
+
+        for (String name : identityNames) {
+            Object v1 = params1.get(name);
+            Object v2 = params2.get(name);
+            if (!Objects.equals(v1, v2)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public String asEndpointUri(String scheme, Map<String, String> properties, boolean encode) {
         return doAsEndpointUri(scheme, properties, "&", encode);
     }
@@ -885,6 +1012,9 @@ public abstract class AbstractCamelCatalog {
             throw new IllegalArgumentException("Endpoint with scheme " + scheme + " has no syntax defined in the json schema");
         }
 
+        // the uri options are in the order of the properties when they have one (a LinkedHashMap), otherwise sorted
+        boolean ordered = properties instanceof LinkedHashMap || properties instanceof SortedMap;
+
         // do any properties filtering which can be needed for some special components
         properties = filterProperties(scheme, properties);
 
@@ -898,8 +1028,8 @@ public abstract class AbstractCamelCatalog {
             originalSyntax = StringHelper.after(originalSyntax, ":");
         }
 
-        // build at first according to syntax (use a tree map as we want the uri options sorted)
-        Map<String, String> copy = new TreeMap<>(properties);
+        // build at first according to syntax
+        Map<String, String> copy = ordered ? new LinkedHashMap<>(properties) : new TreeMap<>(properties);
 
         Matcher syntaxMatcher = COMPONENT_SYNTAX_PARSER.matcher(originalSyntax);
         StringBuilder sb = new StringBuilder();
@@ -936,82 +1066,35 @@ public abstract class AbstractCamelCatalog {
                 sb.append(query);
             }
         } else {
-            // TODO: revisit this and see if we can do this in another way
-            // oh darn some options is missing, so we need a complex way of building the uri
-
-            // the tokens between the options in the path
-            String[] tokens = SYNTAX_DASH_PATTERN.split(syntax);
-
-            // parse the syntax into each options
-            Matcher matcher = SYNTAX_PATTERN.matcher(originalSyntax);
-            List<String> options = new ArrayList<>();
-            while (matcher.find()) {
-                String s = matcher.group(1);
-                options.add(s);
-            }
-
-            // need to preserve {{ and }} from the syntax
-            // (we need to use words only as its provisional placeholders)
-            syntax = syntax.replace("{{", "BEGINCAMELPLACEHOLDER");
-            syntax = syntax.replace("}}", "ENDCAMELPLACEHOLDER");
-
-            // parse the syntax into each options
-            Matcher matcher2 = SYNTAX_DASH_PATTERN.matcher(syntax);
-            List<String> options2 = new ArrayList<>();
-            while (matcher2.find()) {
-                String s = matcher2.group(1);
-                s = s.replace("BEGINCAMELPLACEHOLDER", "{{");
-                s = s.replace("ENDCAMELPLACEHOLDER", "}}");
-                options2.add(s);
-            }
-
-            // build the endpoint
-            int range = 0;
+            // some options are missing, so build the uri from the syntax with only the options that are provided
+            // (use the values as-is, as they may contain separators or {{ }} placeholders)
             boolean first = true;
-            boolean hasQuestionmark = false;
-            for (int i = 0; i < options.size(); i++) {
-                String key = options.get(i);
-                String key2 = options2.get(i);
-                String token = null;
-                if (tokens.length > i) {
-                    token = tokens[i];
-                }
-
-                boolean contains = properties.containsKey(key);
-                if (!contains) {
-                    // if the key are similar we have no explicit value and can try to find a default value if the option is required
+            Matcher matcher = COMPONENT_SYNTAX_PARSER.matcher(originalSyntax);
+            while (matcher.find()) {
+                String token = matcher.group(1);
+                String key = matcher.group(2);
+                String value = null;
+                if (properties.containsKey(key)) {
+                    value = properties.get(key);
+                    if (value == null) {
+                        value = key;
+                    }
+                } else {
+                    // no explicit value so try to find a default value if the option is required
                     BaseOptionModel row = rows.get(key);
-                    if (row != null && row.isRequired()) {
-                        Object value = row.getDefaultValue();
-                        if (!CatalogHelper.isEmpty(value)) {
-                            properties.put(key, key2 = value.toString());
-                        }
+                    if (row != null && row.isRequired() && !CatalogHelper.isEmpty(row.getDefaultValue())) {
+                        value = row.getDefaultValue().toString();
                     }
                 }
-
-                // was the option provided?
-                if (properties.containsKey(key)) {
-                    if (!first && token != null) {
+                if (value != null) {
+                    if (!first) {
                         sb.append(token);
                     }
-                    hasQuestionmark |= key.contains("?") || (token != null && token.contains("?"));
-                    sb.append(key2);
+                    sb.append(value);
                     first = false;
                 }
-                range++;
             }
-            // append any extra options that was in surplus for the last
-            while (range < options2.size()) {
-                String token = null;
-                if (tokens.length > range) {
-                    token = tokens[range];
-                }
-                String key2 = options2.get(range);
-                sb.append(token);
-                sb.append(key2);
-                hasQuestionmark |= key2.contains("?") || (token != null && token.contains("?"));
-                range++;
-            }
+            boolean hasQuestionmark = sb.indexOf("?") != -1;
 
             if (!copy.isEmpty()) {
                 // wrap secret values with RAW to avoid breaking URI encoding in case of encoded values
@@ -1047,7 +1130,12 @@ public abstract class AbstractCamelCatalog {
             return val;
         }
 
-        if (option.isSecret() && !val.startsWith("#") && !val.startsWith("RAW(")) {
+        if (option.isSecret() && !val.startsWith("#") && !val.startsWith("RAW(") && !val.startsWith("RAW{")) {
+            // use RAW{} when the value contains ) as that would end RAW() (scanRaw ends at the first ")")
+            // note: a value with both ) and } cannot be safely wrapped in either form, RAW() is used
+            if (val.indexOf(')') != -1 && val.indexOf('}') == -1) {
+                return "RAW{" + val + "}";
+            }
             return "RAW(" + val + ")";
         }
 
@@ -1120,6 +1208,11 @@ public abstract class AbstractCamelCatalog {
         }
         if (loader != null) {
             int idx = key.indexOf('.');
+            if (idx == -1) {
+                // there is no option (such as camel.component.kafka=foo)
+                result.addUnknown(longKey);
+                return result;
+            }
             String name = key.substring(0, idx);
             String option = key.substring(idx + 1);
 
@@ -1203,9 +1296,15 @@ public abstract class AbstractCamelCatalog {
             // unknown option
             result.addUnknown(longKey);
             if (suggestionStrategy != null) {
-                String[] suggestions = suggestionStrategy.suggestEndpointOptions(rows.keySet(), name);
+                // suggest for the name of the unknown option (the last part of the key, or the full key when the
+                // options are named with the full key such as camel.main.xxx)
+                boolean fullKeys = rows.keySet().stream().anyMatch(k -> k.indexOf('.') != -1);
+                String unknownOption = fullKeys
+                        ? dashToCamelCase(longKey)
+                        : StringHelper.dashToCamelCase(longKey.substring(longKey.lastIndexOf('.') + 1));
+                String[] suggestions = suggestionStrategy.suggestEndpointOptions(rows.keySet(), unknownOption);
                 if (suggestions != null) {
-                    result.addUnknownSuggestions(name, suggestions);
+                    result.addUnknownSuggestions(longKey, suggestions);
                 }
             }
         } else {
@@ -1238,8 +1337,8 @@ public abstract class AbstractCamelCatalog {
 
             // is integer
             if (!optionPlaceholder && !lookup && "integer".equals(row.getType())) {
-                // value must be an integer
-                boolean valid = validateInteger(value);
+                // value must be an integer (or long)
+                boolean valid = validateInteger(value, row.getJavaType());
                 if (!valid) {
                     result.addInvalidInteger(longKey, value);
                 }
@@ -1325,16 +1424,85 @@ public abstract class AbstractCamelCatalog {
                 || key.startsWith("camel.rest.");
     }
 
+    /**
+     * Replaces property placeholders with a dummy value so the text can be parsed by the language parsers.
+     *
+     * The placeholders cannot be resolved during validation as we do not run the actual Camel application with the
+     * property placeholders setup, and the languages are parsed after the placeholders have been resolved at runtime.
+     *
+     * A placeholder that is already inside a quoted literal is replaced by <tt>{{XXX}}</tt> to <tt>~^XXX^~</tt>, and
+     * otherwise by <tt>{{XXX}}</tt> to <tt>'~XXX~'</tt>. The quotes are needed because the languages do not accept a
+     * bare unquoted literal as operand, such as in <tt>${body} >= {{threshold}}</tt>. Both dummies have the same length
+     * as the placeholder they replace, so the position reported in a parser error still points at the same location in
+     * the original text.
+     *
+     * @param  text the text
+     * @return      the text with the property placeholders replaced by a dummy value
+     * @see         #restorePropertyPlaceholders(String)
+     */
+    private static String dummyPropertyPlaceholders(String text) {
+        if (text == null || !text.contains("{{")) {
+            return text;
+        }
+
+        StringBuilder sb = new StringBuilder(text.length());
+        // the quote character we are currently inside, or 0 when not inside a quoted literal
+        char quote = 0;
+        int i = 0;
+        while (i < text.length()) {
+            char ch = text.charAt(i);
+            if (ch == '\\' && i < text.length() - 1) {
+                // escaped character, so copy as-is
+                sb.append(ch).append(text.charAt(i + 1));
+                i += 2;
+                continue;
+            }
+            if (quote == 0 && (ch == '\'' || ch == '"')) {
+                quote = ch;
+            } else if (quote == ch) {
+                quote = 0;
+            } else if (ch == '{' && i < text.length() - 1 && text.charAt(i + 1) == '{') {
+                int end = text.indexOf("}}", i + 2);
+                if (end != -1) {
+                    String key = text.substring(i + 2, end);
+                    if (quote != 0 || key.indexOf('\'') != -1) {
+                        // already inside a quoted literal, or the key has a single quote that would break the literal
+                        sb.append("~^").append(key).append("^~");
+                    } else {
+                        sb.append("'~").append(key).append("~'");
+                    }
+                    i = end + 2;
+                    continue;
+                }
+            }
+            sb.append(ch);
+            i++;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Reverses {@link #dummyPropertyPlaceholders(String)} so an error message refers to the property placeholders the
+     * user actually wrote.
+     *
+     * @param  text the text
+     * @return      the text with the dummy values replaced by the property placeholders
+     */
+    private static String restorePropertyPlaceholders(String text) {
+        if (text == null) {
+            return null;
+        }
+        // reverse ~^XXX^~ first as it may be surrounded by the quotes the other dummy also uses
+        String answer = text.replaceAll("~\\^(.+?)\\^~", "{{$1}}");
+        return answer.replaceAll("'~(.+?)~'", "{{$1}}");
+    }
+
     private LanguageValidationResult doValidateSimple(ClassLoader classLoader, String simple, boolean predicate) {
         if (classLoader == null) {
             classLoader = getClass().getClassLoader();
         }
 
-        // if there are {{ }}} property placeholders then we need to resolve them to something else
-        // as the simple parse cannot resolve them before parsing as we dont run the actual Camel application
-        // with property placeholders setup so we need to dummy this by replace the {{ }} to something else
-        // therefore we use a more unlikely character: {{XXX}} to ~^XXX^~
-        String resolved = simple.replaceAll("\\{\\{(.+)\\}\\}", "~^$1^~");
+        String resolved = dummyPropertyPlaceholders(simple);
 
         LanguageValidationResult answer = new LanguageValidationResult(simple);
 
@@ -1369,11 +1537,17 @@ public abstract class AbstractCamelCatalog {
                 cause = e;
             }
 
+            if (cause != null && cause.getMessage() != null
+                    && cause.getMessage().contains("No bean could be found in the registry")) {
+                // ${bean:name...} looks the bean up when the expression is created; there is no registry here, so
+                // the lookup cannot say anything about the syntax, which is what this validates (CAMEL-24698)
+                cause = null;
+            }
+
             if (cause != null) {
 
-                // reverse ~^XXX^~ back to {{XXX}}
-                String errMsg = cause.getMessage();
-                errMsg = errMsg.replaceAll("\\~\\^(.+)\\^\\~", "{{$1}}");
+                // reverse the dummy placeholders back to {{XXX}}
+                String errMsg = restorePropertyPlaceholders(cause.getMessage());
 
                 answer.setError(errMsg);
 
@@ -1430,11 +1604,7 @@ public abstract class AbstractCamelCatalog {
             classLoader = getClass().getClassLoader();
         }
 
-        // if there are {{ }}} property placeholders then we need to resolve them to something else
-        // as the simple parse cannot resolve them before parsing as we dont run the actual Camel application
-        // with property placeholders setup so we need to dummy this by replace the {{ }} to something else
-        // therefore we use a more unlikely character: {{XXX}} to ~^XXX^~
-        String resolved = groovy.replaceAll("\\{\\{(.+)\\}\\}", "~^$1^~");
+        String resolved = dummyPropertyPlaceholders(groovy);
 
         LanguageValidationResult answer = new LanguageValidationResult(groovy);
 
@@ -1471,9 +1641,8 @@ public abstract class AbstractCamelCatalog {
 
             if (cause != null) {
 
-                // reverse ~^XXX^~ back to {{XXX}}
-                String errMsg = cause.getMessage();
-                errMsg = errMsg.replaceAll("\\~\\^(.+)\\^\\~", "{{$1}}");
+                // reverse the dummy placeholders back to {{XXX}}
+                String errMsg = restorePropertyPlaceholders(cause.getMessage());
 
                 answer.setError(errMsg);
 
@@ -1583,8 +1752,8 @@ public abstract class AbstractCamelCatalog {
         } catch (Exception e) {
             // ignore
         }
-        // set options on the language
-        if (options != null) {
+        // set options on the language (if the language is on the classpath)
+        if (options != null && clazz != null && instance != null) {
             final Map<String, Object> fOptions = options;
             final Object fInstance = instance;
             ReflectionHelper.doWithFields(clazz, field -> {
@@ -1652,9 +1821,17 @@ public abstract class AbstractCamelCatalog {
     }
 
     private static boolean validateInteger(String value) {
+        return validateInteger(value, null);
+    }
+
+    private static boolean validateInteger(String value, String javaType) {
         boolean valid = false;
         try {
-            Integer.parseInt(value);
+            if ("long".equals(javaType) || "java.lang.Long".equals(javaType)) {
+                Long.parseLong(value);
+            } else {
+                Integer.parseInt(value);
+            }
             valid = true;
         } catch (Exception e) {
             // ignore
@@ -1663,39 +1840,26 @@ public abstract class AbstractCamelCatalog {
     }
 
     private static boolean validateDuration(String value) {
-        boolean valid = false;
+        if (value == null || value.isBlank()) {
+            return false;
+        }
         try {
-            Long.parseLong(value);
-            valid = true;
+            // same parsing as the runtime: a number of millis, a time pattern such as 5s or 1h30m, or ISO-8601 (PT5S)
+            TimeUtils.toDuration(value);
+            return true;
         } catch (Exception e) {
-            // ignore
+            return false;
         }
-        if (!valid) {
-            try {
-                if (value.startsWith("P") || value.startsWith("-P") || value.startsWith("p") || value.startsWith("-p")) {
-                    // its a duration
-                    Duration.parse(value);
-                } else {
-                    // it may be a time pattern, such as 5s for 5 seconds = 5000
-                    TimePatternConverter.toMilliSeconds(value);
-                }
-                valid = true;
-            } catch (Exception e) {
-                // ignore
-            }
-        }
-        return valid;
     }
 
     private static String stripOptionalPrefixFromName(Map<String, BaseOptionModel> rows, String name) {
         for (BaseOptionModel row : rows.values()) {
             String optionalPrefix = row.getOptionalPrefix();
             if (optionalPrefix != null && !optionalPrefix.isEmpty() && name.startsWith(optionalPrefix)) {
-                // try again
-                return stripOptionalPrefixFromName(rows, name.substring(optionalPrefix.length()));
-            } else {
-                if (name.equalsIgnoreCase(row.getName())) {
-                    break;
+                // the optional prefix only applies to the option that uses the prefix
+                String stripped = name.substring(optionalPrefix.length());
+                if (stripped.equalsIgnoreCase(row.getName())) {
+                    return stripped;
                 }
             }
         }
@@ -1709,7 +1873,22 @@ public abstract class AbstractCamelCatalog {
                 return row.getName();
             }
         }
+        int dot = name.indexOf('.');
+        if (dot > 0) {
+            BaseOptionModel row = rows.get(name.substring(0, dot));
+            if (row != null && isMapEntry(row, name)) {
+                return row.getName();
+            }
+        }
         return null;
+    }
+
+    /**
+     * Whether the name sets an entry of a Map option (userMetadata.messageId=x fills the userMetadata map) or a
+     * property of an object option (approval.comments=x sets comments on the approval bean), as property binding does.
+     */
+    private static boolean isMapEntry(BaseOptionModel row, String name) {
+        return "object".equals(row.getType()) && name.startsWith(row.getName() + ".");
     }
 
     /**

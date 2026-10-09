@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
  * Unit test for Mail header decoding/unfolding support.
  */
 public class MailMimeDecodeHeadersTest extends CamelTestSupport {
-    private static final MailboxUser plain = Mailbox.getOrCreateUser("plain", "secret");
-    private static final MailboxUser decoded = Mailbox.getOrCreateUser("decoded", "secret");
+    private static final MailboxUser plain = Mailbox.getOrCreateUser("MailMimeDecodeHeadersTest-plain", "secret");
+    private static final MailboxUser decoded = Mailbox.getOrCreateUser("MailMimeDecodeHeadersTest-decoded", "secret");
     private String nonAsciiSubject = "\uD83D\uDC2A rocks!";
     private String encodedNonAsciiSubject = "=?UTF-8?Q?=F0=9F=90=AA_rocks!?=";
 
@@ -48,7 +48,7 @@ public class MailMimeDecodeHeadersTest extends CamelTestSupport {
 
     @Test
     public void testLongMailSubject() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(plain, decoded);
 
         // The email subject is >76 chars and will get MIME folded.
         template.sendBody("direct:longSubject", "");
@@ -70,7 +70,7 @@ public class MailMimeDecodeHeadersTest extends CamelTestSupport {
 
     @Test
     public void testNonAsciiMailSubject() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(plain, decoded);
 
         // The email subject contains non-ascii characters and will be encoded.
         template.sendBody("direct:nonAsciiSubject", "");
@@ -94,11 +94,13 @@ public class MailMimeDecodeHeadersTest extends CamelTestSupport {
             public void configure() {
                 from("direct:longSubject")
                         .setHeader("subject", constant(longSubject))
-                        .to(plain.uriPrefix(Protocol.smtp), decoded.uriPrefix(Protocol.smtp));
+                        .to(plain.uriPrefix(Protocol.smtp) + "&useHeaderSubject=true",
+                                decoded.uriPrefix(Protocol.smtp) + "&useHeaderSubject=true");
 
                 from("direct:nonAsciiSubject")
                         .setHeader("subject", constant(nonAsciiSubject))
-                        .to(plain.uriPrefix(Protocol.smtp), decoded.uriPrefix(Protocol.smtp));
+                        .to(plain.uriPrefix(Protocol.smtp) + "&useHeaderSubject=true",
+                                decoded.uriPrefix(Protocol.smtp) + "&useHeaderSubject=true");
 
                 from(plain.uriPrefix(Protocol.pop3) + "&initialDelay=100&delay=100")
                         .to("mock:plain");

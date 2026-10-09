@@ -20,6 +20,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import javax.xml.transform.ErrorListener;
 import javax.xml.transform.Source;
@@ -46,6 +48,7 @@ import org.apache.camel.spi.UriPath;
 import org.apache.camel.support.ProcessorEndpoint;
 import org.apache.camel.support.ResourceHelper;
 import org.apache.camel.support.builder.ExpressionBuilder;
+import org.apache.camel.support.builder.xml.XMLConverterHelper;
 import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.util.ObjectHelper;
 import org.slf4j.Logger;
@@ -63,6 +66,7 @@ public class XsltEndpoint extends ProcessorEndpoint {
 
     private volatile boolean cacheCleared;
     private volatile XsltBuilder xslt;
+    private final Lock reloadLock = new ReentrantLock();
     private Map<String, Object> parameters;
 
     @UriPath
@@ -98,6 +102,8 @@ public class XsltEndpoint extends ProcessorEndpoint {
     private XsltMessageLogger xsltMessageLogger;
     @UriParam
     private String source;
+    @UriParam(label = "advanced", defaultValue = "10000")
+    private int xpathTotalOpLimit;
 
     public XsltEndpoint(String endpointUri, Component component) {
         super(endpointUri, component);
@@ -147,7 +153,14 @@ public class XsltEndpoint extends ProcessorEndpoint {
             }
         }
         if (!contentCache || cacheCleared) {
-            loadResource(resourceUri, xslt);
+            reloadLock.lock();
+            try {
+                if (!contentCache || cacheCleared) {
+                    loadResource(resourceUri, xslt);
+                }
+            } finally {
+                reloadLock.unlock();
+            }
         }
         super.onExchange(exchange);
     }
@@ -441,17 +454,37 @@ public class XsltEndpoint extends ProcessorEndpoint {
                         TransformerFactory.class, XsltComponent.class.getClassLoader());
                 LOG.debug("Using TransformerFactoryClass {}", factoryClass);
                 factory = injector.newInstance(factoryClass);
-
-                final TransformerFactoryConfigurationStrategy tfConfigStrategy = transformerFactoryConfigurationStrategy != null
-                        ? transformerFactoryConfigurationStrategy
-                        : ((XsltComponent) getComponent()).getTransformerFactoryConfigurationStrategy();
-                if (tfConfigStrategy != null) {
-                    tfConfigStrategy.configure(factory, this);
-                }
             }
         }
 
+        // resolve the effective xpathTotalOpLimit: endpoint value takes precedence, then component value
+        int effectiveXpathTotalOpLimit = xpathTotalOpLimit > 0
+                ? xpathTotalOpLimit
+                : ((XsltComponent) getComponent()).getXpathTotalOpLimit();
+
+        // if xpathTotalOpLimit is configured but no factory was explicitly set, create a default one
+        // so we can set the limit per-factory instance instead of using a JVM-global system property
+        if (factory == null && effectiveXpathTotalOpLimit > 0) {
+            factory = new XMLConverterHelper().createTransformerFactory();
+        }
+
         if (factory != null) {
+            final TransformerFactoryConfigurationStrategy tfConfigStrategy = transformerFactoryConfigurationStrategy != null
+                    ? transformerFactoryConfigurationStrategy
+                    : ((XsltComponent) getComponent()).getTransformerFactoryConfigurationStrategy();
+            if (tfConfigStrategy != null) {
+                tfConfigStrategy.configure(factory, this);
+            }
+
+            if (effectiveXpathTotalOpLimit > 0) {
+                try {
+                    LOG.debug("Setting jdk.xml.xpathTotalOpLimit={} on TransformerFactory", effectiveXpathTotalOpLimit);
+                    factory.setAttribute("jdk.xml.xpathTotalOpLimit", effectiveXpathTotalOpLimit);
+                } catch (IllegalArgumentException e) {
+                    LOG.debug("TransformerFactory does not support jdk.xml.xpathTotalOpLimit");
+                }
+            }
+
             LOG.debug("Using TransformerFactory {}", factory);
             xslt.setTransformerFactory(factory);
         }
@@ -514,6 +547,19 @@ public class XsltEndpoint extends ProcessorEndpoint {
      */
     public void setSource(String source) {
         this.source = source;
+    }
+
+    public int getXpathTotalOpLimit() {
+        return xpathTotalOpLimit;
+    }
+
+    /**
+     * Limits the total number of XPath operators in an XSL Stylesheet. The default (from JDK) is 10000.
+     *
+     * The limit is set per TransformerFactory instance used by this endpoint.
+     */
+    public void setXpathTotalOpLimit(int xpathTotalOpLimit) {
+        this.xpathTotalOpLimit = xpathTotalOpLimit;
     }
 
     @Override

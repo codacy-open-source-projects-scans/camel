@@ -18,6 +18,7 @@ package org.apache.camel.component.file.remote.mina.sftp;
 
 import java.io.FileOutputStream;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
@@ -65,7 +66,7 @@ public class SftpChangedReadLockIT extends SftpServerTestSupport {
 
         String content = context.getTypeConverter().convertTo(String.class, testDirectory.resolve("out/slowfile.dat").toFile());
         String[] lines = content.split(LS);
-        assertEquals(20, lines.length, "There should be 20 lines in the file");
+        assertEquals(20, lines.length, "There should be 20 lines in the file.\n" + Arrays.toString(lines));
         for (int i = 0; i < 20; i++) {
             assertEquals("Line " + i, lines[i]);
         }

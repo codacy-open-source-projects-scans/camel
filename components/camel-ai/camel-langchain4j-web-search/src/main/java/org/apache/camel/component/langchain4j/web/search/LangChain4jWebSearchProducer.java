@@ -55,6 +55,7 @@ public class LangChain4jWebSearchProducer extends DefaultProducer {
                     .geoLocation(getEndpoint().getConfiguration().getGeoLocation())
                     .startPage(getEndpoint().getConfiguration().getStartPage())
                     .startIndex(getEndpoint().getConfiguration().getStartIndex())
+                    .safeSearch(getEndpoint().getConfiguration().getSafeSearch())
                     .additionalParams(getEndpoint().getConfiguration().getAdditionalParams())
                     .build();
         }
@@ -90,8 +91,8 @@ public class LangChain4jWebSearchProducer extends DefaultProducer {
             return;
         }
 
-        // return a single object as a response
-        if (maxResults == 1) {
+        // return a single object as a response (maxResults may be null when a custom WebSearchRequest omits it)
+        if (maxResults != null && maxResults == 1) {
             switch (getEndpoint().getConfiguration().getResultType()) {
                 case LANGCHAIN4J_WEB_SEARCH_ORGANIC_RESULT -> exchange.getIn().setBody(webSearchOrganicResults.get(0));
                 case CONTENT -> exchange.getIn().setBody(webSearchOrganicResults.get(0).content());

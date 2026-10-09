@@ -9,7 +9,6 @@
 :component-header: Both producer and consumer are supported
 //Manually maintained attributes
 :group: Google
-:camel-spring-boot-name: google-mail
 
 *Since Camel {since}*
 
@@ -63,6 +62,15 @@ include::partial$component-endpoint-options.adoc[]
 include::partial$component-endpoint-headers.adoc[]
 // component options: END
 
+[NOTE]
+====
+This is an API-based component, so per-call parameters can be supplied through `Camel`-prefixed
+exchange headers in addition to the endpoint options. If the route consumes messages from untrusted
+producers, strip these internal headers at the trust boundary -- for example with
+`removeHeaders("Camel*")` -- before the message reaches this component, so that a sender cannot
+override the API call. See xref:manual::security-model.adoc[the Camel security model] for details.
+====
+
 == Data Type Transformer: update-message-labels
 
 The `google-mail:update-message-labels` data type transformer builds a `ModifyMessageRequest` from exchange variables, resolving label names to Gmail label IDs automatically.
@@ -110,17 +118,17 @@ YAML::
 - route:
     from:
       uri: "google-mail-stream:0"
-    steps:
-      - setVariable:
-          name: addLabels
-          constant: "Work"
-      - setVariable:
-          name: removeLabels
-          constant: "INBOX,UNREAD"
-      - transformDataType:
-          toType: "google-mail:update-message-labels"
-      - to:
-          uri: "google-mail:messages/modify"
+      steps:
+        - setVariable:
+            name: addLabels
+            constant: "Work"
+        - setVariable:
+            name: removeLabels
+            constant: "INBOX,UNREAD"
+        - transformDataType:
+            toType: "google-mail:update-message-labels"
+        - to:
+            uri: "google-mail:messages/modify"
 ----
 
 XML::
@@ -230,38 +238,38 @@ YAML::
 - route:
     from:
       uri: "google-mail-stream:0"
-    steps:
-      - setBody:
-          constant: "Thank you for your message. I will respond soon."
-      - transformDataType:
-          toType: "google-mail:draft"
-      - to:
-          uri: "google-mail:drafts/create"
-          parameters:
-            inBody: content
+      steps:
+        - setBody:
+            constant: "Thank you for your message. I will respond soon."
+        - transformDataType:
+            toType: "google-mail:draft"
+        - to:
+            uri: "google-mail:drafts/create"
+            parameters:
+              inBody: content
 
 # Create a new draft (no threading)
 - route:
     from:
       uri: "direct:newDraft"
-    steps:
-      - setBody:
-          constant: "This is a new draft message"
-      - setHeader:
-          name: CamelGoogleMailStreamFrom
-          constant: "sender@example.com"
-      - setHeader:
-          name: CamelGoogleMailStreamTo
-          constant: "recipient@example.com"
-      - setHeader:
-          name: CamelGoogleMailStreamSubject
-          constant: "New Draft"
-      - transformDataType:
-          toType: "google-mail:draft"
-      - to:
-          uri: "google-mail:drafts/create"
-          parameters:
-            inBody: content
+      steps:
+        - setBody:
+            constant: "This is a new draft message"
+        - setHeader:
+            name: CamelGoogleMailStreamFrom
+            constant: "sender@example.com"
+        - setHeader:
+            name: CamelGoogleMailStreamTo
+            constant: "recipient@example.com"
+        - setHeader:
+            name: CamelGoogleMailStreamSubject
+            constant: "New Draft"
+        - transformDataType:
+            toType: "google-mail:draft"
+        - to:
+            uri: "google-mail:drafts/create"
+            parameters:
+              inBody: content
 ----
 
 XML::
@@ -306,5 +314,3 @@ For more information on the endpoints and options see API documentation
 at: https://developers.google.com/gmail/api/v1/reference/[https://developers.google.com/gmail/api/v1/reference/]
 
 
-
-include::spring-boot:partial$starter.adoc[]

@@ -93,7 +93,8 @@ YAML::
 ----
 - intercept:
     steps:
-      - to: "log:hello"
+      - to:
+          uri: log:hello
 - route:
     from:
       uri: jms:queue:order
@@ -159,9 +160,12 @@ YAML::
 ----
 - intercept:
     onWhen:
-      simple: "${body} contains 'Hello'"
+      expression:
+        simple:
+          expression: "${body} contains 'Hello'"
     steps:
-      - to: "log:hello"
+      - to:
+          uri: log:hello
 - route:
     from:
       uri: jms:queue:order
@@ -255,9 +259,9 @@ XML::
   <intercept>
       <onWhen>
         <simple>${body} contains 'Hello'</simple>
-        <to uri="log:test"/>
-        <stop/> <!-- stop continue routing -->
       </onWhen>
+      <to uri="log:test"/>
+      <stop/> <!-- stop continue routing -->
   </intercept>
 
   <route>
@@ -273,9 +277,12 @@ YAML::
 ----
 - intercept:
     onWhen:
-      simple: "${body} contains 'Hello'"
+      expression:
+        simple:
+          expression: "${body} contains 'Hello'"
     steps:
-      - to: "log:test"
+      - to:
+          uri: log:test
       - stop: {}
 - route:
     from:
@@ -339,7 +346,8 @@ YAML::
 ----
 - interceptFrom:
     steps:
-      - to: "log:incoming"
+      - to:
+          uri: log:incoming
 - route:
     from:
       uri: jms:queue:order
@@ -378,7 +386,7 @@ XML::
 ----
   <interceptFrom uri="jms*">
     <to uri="log:incoming"/>
-  </intercept>
+  </interceptFrom>
 
   <route>
     <from uri="jms:queue:order"/>
@@ -398,7 +406,8 @@ YAML::
 - interceptFrom:
     uri: "jms*"
     steps:
-      - to: "log:incoming"
+      - to:
+          uri: log:incoming
 - route:
     from:
       uri: jms:queue:order
@@ -481,7 +490,8 @@ YAML::
 - interceptSendToEndpoint:
     uri: "kafka*"
     steps:
-      - to: "bean:beforeKafka"
+      - to:
+          uri: bean:beforeKafka
 - route:
     from:
       uri: jms:queue:order
@@ -539,7 +549,8 @@ YAML::
     uri: "kafka*"
     afterUri: "bean:afterKafka"
     steps:
-      - to: "bean:beforeKafka"
+      - to:
+          uri: bean:beforeKafka
 - route:
     from:
       uri: jms:queue:order
@@ -600,7 +611,8 @@ YAML::
     uri: "kafka*"
     skipSendToOriginalEndpoint: true
     steps:
-      - to: "mock:kafka"
+      - to:
+          uri: mock:kafka
 - route:
     from:
       uri: jms:queue:order
@@ -628,7 +640,7 @@ Java::
 [source,java]
 ----
 interceptSendToEndpoint("kafka*").skipSendToOriginalEndpoint()
-  .onWhen(simple("${header.biztype} == 'TEST'")
+  .onWhen(simple("${header.biztype} == 'TEST'"))
   .log("TEST message detected - is NOT send to kafka");
 
 from("jms:queue:order")
@@ -662,7 +674,9 @@ YAML::
     uri: "kafka*"
     skipSendToOriginalEndpoint: true
     onWhen:
-      simple: "${header.biztype} == 'TEST'"
+      expression:
+        simple:
+          expression: "${header.biztype} == 'TEST'"
     steps:
       - log:
           message: "TEST message detected - is NOT send to kafka"
@@ -678,6 +692,18 @@ YAML::
             uri: kafka:order
 ----
 ====
+
+=== Several routes and interceptors on the same endpoint
+
+An `interceptSendToEndpoint` in a `RouteBuilder` (or a route configuration) applies to each of its routes, and each route
+uses its own interceptor when it sends to the endpoint. The interceptor of a route is active while the route is running,
+so stopping or removing a route does not affect the other routes. When the endpoint is sent to from somewhere that has no
+interceptor of its own (such as another route or a `ProducerTemplate`), the interceptor of the first route that
+registered one is used.
+
+When several interceptors apply to the same endpoint, they run in a fixed order: first the interceptors of the route
+that is sending, and then the interceptor of the endpoint itself, such as when mocking endpoints with
+`mockEndpoints`.
 
 == Intercepting endpoints using pattern matching
 
@@ -721,7 +747,8 @@ YAML::
 - interceptSendToEndpoint:
     uri: "jms:queue:cheese"
     steps:
-      - to: "log:smelly"
+      - to:
+          uri: log:smelly
 ----
 ====
 
@@ -758,7 +785,8 @@ YAML::
 - interceptFrom:
     uri: "file:*"
     steps:
-      - to: "log:from-file"
+      - to:
+          uri: log:from-file
 ----
 ====
 
@@ -795,7 +823,8 @@ YAML::
 - interceptFrom:
     uri: "file:order/inbox/*"
     steps:
-      - to: "log:new-file-orders"
+      - to:
+          uri: log:new-file-orders
 ----
 ====
 
@@ -832,6 +861,7 @@ YAML::
 - interceptFrom:
     uri: "jms:queue:(gold|silver)"
     steps:
-      - to: "seda:handleFast"
+      - to:
+          uri: seda:handleFast
 ----
 ====

@@ -17,10 +17,12 @@
 package org.apache.camel.component.cxf.jaxrs;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Request;
+import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
 import jakarta.ws.rs.core.UriInfo;
 
@@ -42,7 +44,8 @@ import org.slf4j.LoggerFactory;
 
 public class CxfRsInvoker extends JAXRSInvoker {
     private static final Logger LOG = LoggerFactory.getLogger(CxfRsInvoker.class);
-    private static final String SUSPENED = "org.apache.camel.component.cxf.jaxrs.suspend";
+    private static final String SUSPENDED = "org.apache.camel.component.cxf.jaxrs.suspend";
+    private static final String COMPLETED = "org.apache.camel.component.cxf.jaxrs.completed";
     private final CxfRsConsumer cxfRsConsumer;
     private final CxfRsEndpoint endpoint;
 
@@ -56,18 +59,30 @@ public class CxfRsInvoker extends JAXRSInvoker {
             Exchange cxfExchange, final Object serviceObject, Method method,
             Object[] paramArray)
             throws Exception {
+        OperationResourceInfo ori = cxfExchange.get(OperationResourceInfo.class);
+        // a sub resource locator only returns the sub resource, whose method is invoked next (and checked then)
+        Continuation continuation = null;
+        if (!ori.isSubResourceLocator()) {
+            continuation = endpoint.isSynchronous() ? null : getContinuation(cxfExchange);
+            // a resumed continuation belongs to a request that is in flight and must complete
+            if ((continuation == null || continuation.isNew()) && cxfRsConsumer.isSuspendingOrSuspended()) {
+                // a suspended consumer (suspended route, graceful shutdown) does not accept new requests, like the
+                // HTTP consumers, which answer 503 (a response rather than an exception, which CXF logs with its
+                // stack trace)
+                LOG.debug("Consumer suspended, cannot service request");
+                return Response.status(Response.Status.SERVICE_UNAVAILABLE).build();
+            }
+        }
         Object response = null;
         if (endpoint.isPerformInvocation()) {
             response = super.performInvocation(cxfExchange, serviceObject, method, paramArray);
         }
         paramArray = insertExchange(method, paramArray, cxfExchange);
-        OperationResourceInfo ori = cxfExchange.get(OperationResourceInfo.class);
         if (ori.isSubResourceLocator()) {
             // don't delegate the sub resource locator call to camel processor
             return method.invoke(serviceObject, paramArray);
         }
-        Continuation continuation;
-        if (!endpoint.isSynchronous() && (continuation = getContinuation(cxfExchange)) != null) {
+        if (continuation != null) {
             LOG.trace("Calling the Camel async processors.");
             return asyncInvoke(cxfExchange, method, paramArray, continuation, response);
         } else {
@@ -91,26 +106,35 @@ public class CxfRsInvoker extends JAXRSInvoker {
                 final org.apache.camel.Exchange camelExchange = prepareExchange(cxfExchange, method, paramArray, response);
                 // we want to handle the UoW
                 cxfRsConsumer.createUoW(camelExchange);
-                // Now we don't set up the timeout value
                 LOG.trace("Suspending continuation of exchangeId: {}", camelExchange.getExchangeId());
+                // guard so exactly one of {timeout, async completion} owns the response and UoW lifecycle
+                final AtomicBoolean completed = new AtomicBoolean(false);
+                cxfExchange.put(COMPLETED, completed);
                 // The continuation could be called before the suspend is called
                 continuation.suspend(endpoint.getContinuationTimeout());
-                cxfExchange.put(SUSPENED, Boolean.TRUE);
+                cxfExchange.put(SUSPENDED, Boolean.TRUE);
                 continuation.setObject(camelExchange);
                 cxfRsConsumer.getAsyncProcessor().process(camelExchange, new AsyncCallback() {
                     public void done(boolean doneSync) {
                         // make sure the continuation resume will not be called before the suspend method in other thread
                         synchronized (continuation) {
-                            LOG.trace("Resuming continuation of exchangeId: {}", camelExchange.getExchangeId());
-                            // resume processing after both, sync and async callbacks
-                            continuation.resume();
+                            if (completed.compareAndSet(false, true)) {
+                                LOG.trace("Resuming continuation of exchangeId: {}", camelExchange.getExchangeId());
+                                // resume processing after both, sync and async callbacks
+                                continuation.resume();
+                            } else {
+                                // timeout already sent the response; close the UoW now that the worker has finished
+                                LOG.trace("Timeout already handled response for exchangeId: {}; closing UoW",
+                                        camelExchange.getExchangeId());
+                                cxfRsConsumer.doneUoW(camelExchange);
+                            }
                         }
                     }
                 });
                 return null;
             }
             if (!continuation.isTimeout() && continuation.isResumed()) {
-                cxfExchange.put(SUSPENED, Boolean.FALSE);
+                cxfExchange.put(SUSPENDED, Boolean.FALSE);
                 org.apache.camel.Exchange camelExchange = (org.apache.camel.Exchange) continuation.getObject();
                 try {
                     return returnResponse(cxfExchange, camelExchange);
@@ -120,14 +144,23 @@ public class CxfRsInvoker extends JAXRSInvoker {
                 }
             } else {
                 if (continuation.isTimeout() || !continuation.isPending()) {
-                    cxfExchange.put(SUSPENED, Boolean.FALSE);
-                    org.apache.camel.Exchange camelExchange = (org.apache.camel.Exchange) continuation.getObject();
-                    camelExchange.setException(new ExchangeTimedOutException(camelExchange, endpoint.getContinuationTimeout()));
-                    try {
-                        return returnResponse(cxfExchange, camelExchange);
-                    } catch (Exception ex) {
-                        cxfRsConsumer.doneUoW(camelExchange);
-                        throw ex;
+                    AtomicBoolean completed = (AtomicBoolean) cxfExchange.get(COMPLETED);
+                    if (completed != null && completed.compareAndSet(false, true)) {
+                        cxfExchange.put(SUSPENDED, Boolean.FALSE);
+                        org.apache.camel.Exchange camelExchange = (org.apache.camel.Exchange) continuation.getObject();
+                        camelExchange
+                                .setException(new ExchangeTimedOutException(camelExchange, endpoint.getContinuationTimeout()));
+                        try {
+                            Object result = returnResponse(cxfExchange, camelExchange);
+                            // detach so UnitOfWorkCloserInterceptor won't close UoW;
+                            // the late async callback will close it after the worker finishes
+                            cxfExchange.put(org.apache.camel.Exchange.class, null);
+                            return result;
+                        } catch (Exception ex) {
+                            cxfExchange.put(org.apache.camel.Exchange.class, null);
+                            cxfRsConsumer.doneUoW(camelExchange);
+                            throw ex;
+                        }
                     }
                 }
             }
@@ -162,7 +195,7 @@ public class CxfRsInvoker extends JAXRSInvoker {
             Exchange cxfExchange, Method method,
             Object[] paramArray, Object response) {
         ExchangePattern ep = ExchangePattern.InOut;
-        if (method.getReturnType() == Void.class) {
+        if (method.getReturnType() == Void.TYPE || method.getReturnType() == Void.class) {
             ep = ExchangePattern.InOnly;
         }
         final org.apache.camel.Exchange camelExchange = endpoint.createExchange(ep);

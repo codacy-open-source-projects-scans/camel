@@ -25,21 +25,25 @@ import java.util.Set;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Endpoint;
 import org.apache.camel.Expression;
+import org.apache.camel.NamedNode;
 import org.apache.camel.NoSuchBeanException;
 import org.apache.camel.NoSuchEndpointException;
 import org.apache.camel.Predicate;
 import org.apache.camel.Route;
+import org.apache.camel.RouteTemplateContext;
 import org.apache.camel.model.ExpressionSubElementDefinition;
+import org.apache.camel.model.RouteDefinition;
 import org.apache.camel.model.language.ExpressionDefinition;
 import org.apache.camel.reifier.language.ExpressionReifier;
 import org.apache.camel.spi.BeanRepository;
 import org.apache.camel.support.CamelContextHelper;
 import org.apache.camel.support.EndpointHelper;
+import org.apache.camel.support.PojoBeanHelper;
 import org.apache.camel.util.ObjectHelper;
 
 public abstract class AbstractReifier implements BeanRepository {
 
-    protected final org.apache.camel.Route route;
+    protected final Route route;
     protected final CamelContext camelContext;
 
     protected AbstractReifier(Route route) {
@@ -175,7 +179,10 @@ public abstract class AbstractReifier implements BeanRepository {
 
         Object obj = lookupByNameAndType(name, type);
         if (obj == null) {
-            throw new NoSuchBeanException(name, type.getName());
+            // a #class: whose class was not found: say which built-in bean was likely meant
+            // (a plain bean name that is not in the registry gets no hint as it is not a class)
+            String hint = name.startsWith("#class:") ? PojoBeanHelper.classNotFoundHint(camelContext, name, type) : null;
+            throw new NoSuchBeanException(name, type.getName(), hint);
         }
         return type.cast(obj);
     }
@@ -198,6 +205,24 @@ public abstract class AbstractReifier implements BeanRepository {
         return answer;
     }
 
+    /**
+     * Looks up a bean by name as {@link #lookupByName(String)} does; the bean may be of any type (such as a POJO that
+     * is adapted afterwards). A <tt>#class:</tt> whose class does not exist fails here, with the built-in bean of the
+     * expected type that was likely meant, instead of answering <tt>null</tt>.
+     *
+     * @param name         the bean name or <tt>#class:</tt> reference
+     * @param expectedType the type the bean is expected to be, for the error message only
+     */
+    public Object lookupByName(String name, Class<?> expectedType) {
+        Object answer = lookupByName(name);
+        if (answer == null && name != null && parseString(name).startsWith("#class:")) {
+            name = parseString(name);
+            throw new NoSuchBeanException(
+                    name, expectedType.getName(), PojoBeanHelper.classNotFoundHint(camelContext, name, expectedType));
+        }
+        return answer;
+    }
+
     public <T> T lookupByNameAndType(String name, Class<T> type) {
         if (name == null) {
             return null;
@@ -207,6 +232,19 @@ public abstract class AbstractReifier implements BeanRepository {
         T answer = null;
         if (EndpointHelper.isReferenceParameter(name)) {
             answer = EndpointHelper.resolveReferenceParameter(camelContext, name, type, false);
+        }
+        if (answer == null && route != null) {
+            // check local bean repository from route template context first
+            NamedNode routeNode = route.getRoute();
+            if (routeNode instanceof RouteDefinition routeDef) {
+                RouteTemplateContext rtc = routeDef.getRouteTemplateContext();
+                if (rtc != null) {
+                    BeanRepository localRepo = rtc.getLocalBeanRepository();
+                    if (localRepo != null) {
+                        answer = localRepo.lookupByNameAndType(name, type);
+                    }
+                }
+            }
         }
         if (answer == null) {
             // fallback to use registry which allows tooling to influence reifier that uses beans or classes

@@ -16,6 +16,7 @@
  */
 package org.apache.camel.component.platform.http.plugin;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
@@ -25,13 +26,11 @@ import java.util.Map;
 
 import javax.management.RuntimeMBeanException;
 
-import io.netty.buffer.ByteBufInputStream;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerRequest;
-import io.vertx.core.impl.Arguments;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.impl.Utils;
 import org.apache.camel.CamelContext;
@@ -41,6 +40,7 @@ import org.apache.camel.support.service.ServiceSupport;
 import org.apache.camel.util.ReflectionHelper;
 import org.jolokia.core.api.LogHandler;
 import org.jolokia.server.core.config.ConfigKey;
+import org.jolokia.server.core.config.Configuration;
 import org.jolokia.server.core.config.StaticConfiguration;
 import org.jolokia.server.core.http.HttpRequestHandler;
 import org.jolokia.server.core.restrictor.AllowAllRestrictor;
@@ -63,13 +63,15 @@ public class DefaultJolokiaPlatformHttpPlugin extends ServiceSupport implements 
     private CamelContext camelContext;
     private final JolokiaServiceManager serviceManager;
     private final LogHandler jolokiaLogHandler;
+    private final Configuration config;
+    private final Restrictor restrictor;
     private HttpRequestHandler requestHandler;
     private Handler<RoutingContext> handler;
 
     public DefaultJolokiaPlatformHttpPlugin() {
-        var config = new StaticConfiguration(ConfigKey.AGENT_ID, NetworkUtil.getAgentId(hashCode(), "vertx"));
+        config = new StaticConfiguration(ConfigKey.AGENT_ID, NetworkUtil.getAgentId(hashCode(), "vertx"));
         jolokiaLogHandler = new JolokiaLogHandler(LOG);
-        var restrictor = createRestrictor(config.getConfig(ConfigKey.POLICY_LOCATION));
+        restrictor = createRestrictor(config.getConfig(ConfigKey.POLICY_LOCATION));
 
         serviceManager = JolokiaServiceManagerFactory.createJolokiaServiceManager(
                 config,
@@ -84,7 +86,8 @@ public class DefaultJolokiaPlatformHttpPlugin extends ServiceSupport implements 
     @Override
     public void doStart() {
         var jolokiaContext = serviceManager.start();
-        requestHandler = new HttpRequestHandler(jolokiaContext);
+        requestHandler
+                = new HttpRequestHandler(jolokiaContext, restrictor, config.getSecurityDetails().isAuthenticationEnabled());
         handler = createVertxHandler();
     }
 
@@ -176,8 +179,8 @@ public class DefaultJolokiaPlatformHttpPlugin extends ServiceSupport implements 
             Object json = null;
             int status = 200;
             try {
-                ObjectHelper.invokeMethodSafe("checkAccess", requestHandler, req.scheme(), req.remoteAddress().host(),
-                        req.remoteAddress().host(), getOriginOrReferer(req));
+                requestHandler.checkAccess(req.scheme(), req.remoteAddress().host(),
+                        new String[] { req.remoteAddress().host() }, getOriginOrReferer(req), null);
                 if (req.method() == HttpMethod.GET) {
                     Method m = ReflectionHelper.findMethod(requestHandler.getClass(), "handleGetRequest", String.class,
                             String.class, Map.class);
@@ -186,8 +189,10 @@ public class DefaultJolokiaPlatformHttpPlugin extends ServiceSupport implements 
                                 getParams(req.params()));
                     }
                 } else {
-                    Arguments.require(routingContext.body() != null, "Missing body");
-                    InputStream inputStream = new ByteBufInputStream(routingContext.body().buffer().getByteBuf());
+                    if (routingContext.body() == null) {
+                        throw new IllegalArgumentException("Missing body");
+                    }
+                    InputStream inputStream = new ByteArrayInputStream(routingContext.body().buffer().getBytes());
                     Method m = ReflectionHelper.findMethod(requestHandler.getClass(), "handlePostRequest", String.class,
                             InputStream.class, String.class, Map.class);
                     if (m != null) {

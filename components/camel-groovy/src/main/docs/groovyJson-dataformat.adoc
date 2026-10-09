@@ -2,12 +2,10 @@
 :doctitle: Groovy JSon
 :shortname: groovyJson
 :artifactid: camel-groovy
-:description: Transform between JSon and java.util.Map or java.util.List objects.
+:description: Transform between JSon and java.util.Map or java.util.List objects
 :since: 4.19
-:supportlevel: Preview
+:supportlevel: Stable
 :tabs-sync-option:
-//Manually maintained attributes
-:camel-spring-boot-name: groovy
 
 *Since Camel {since}*
 
@@ -30,7 +28,7 @@ include::partial$dataformat-options.adoc[]
 This data format supports marshalling from the following Java type to JSon:
 
 - Groovy XML Node object (`groovy.util.Node`) (such as message body is from Groovy XML)
-- Jackson Node object (`com.fasterxml.jackson.databind.JsonNode`)
+- Jackson Node object (`com.fasterxml.jackson.databind.JsonNode` or `tools.jackson.databind.JsonNode`)
 - Camel JSonObject (`org.apache.camel.util.json.JsonObject`)
 - Java Map object ('java.util.Map')
 - Java List object ('java.util.List')
@@ -102,5 +100,3 @@ the download page for the latest versions).
   <version>x.x.x</version>
 </dependency>
 ----------------------------------------
-
-include::spring-boot:partial$starter.adoc[]

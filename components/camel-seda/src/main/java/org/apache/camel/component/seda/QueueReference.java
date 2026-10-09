@@ -16,6 +16,7 @@
  */
 package org.apache.camel.component.seda;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -69,6 +70,27 @@ public final class QueueReference {
         }
     }
 
+    boolean isReferenced(SedaEndpoint endpoint) {
+        lock.lock();
+        try {
+            return endpoints.contains(endpoint);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Gets a snapshot of the endpoints sharing this queue reference.
+     */
+    List<SedaEndpoint> getEndpoints() {
+        lock.lock();
+        try {
+            return new ArrayList<>(endpoints);
+        } finally {
+            lock.unlock();
+        }
+    }
+
     /**
      * Gets the reference counter
      */
@@ -101,11 +123,32 @@ public final class QueueReference {
         return queue;
     }
 
+    /**
+     * Whether any of the endpoints sharing this queue reference still have active consumers.
+     */
     public boolean hasConsumers() {
         lock.lock();
         try {
             for (SedaEndpoint endpoint : endpoints) {
                 if (!endpoint.getConsumers().isEmpty()) {
+                    return true;
+                }
+            }
+
+            return false;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Whether any of the endpoints sharing this queue reference still have active producers.
+     */
+    public boolean hasProducers() {
+        lock.lock();
+        try {
+            for (SedaEndpoint endpoint : endpoints) {
+                if (!endpoint.getProducers().isEmpty()) {
                     return true;
                 }
             }

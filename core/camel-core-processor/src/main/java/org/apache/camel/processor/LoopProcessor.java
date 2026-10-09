@@ -32,6 +32,7 @@ import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.ReactiveExecutor;
 import org.apache.camel.spi.RouteIdAware;
 import org.apache.camel.spi.ShutdownAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.ExchangeHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,12 +42,14 @@ import static org.apache.camel.processor.PipelineHelper.continueProcessing;
 /**
  * The processor which sends messages in a loop.
  */
-public class LoopProcessor extends BaseDelegateProcessorSupport implements Traceable, IdAware, RouteIdAware, ShutdownAware {
+public class LoopProcessor extends BaseDelegateProcessorSupport
+        implements Traceable, IdAware, RouteIdAware, StepIdAware, ShutdownAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(LoopProcessor.class);
 
     private String id;
     private String routeId;
+    private String stepId;
     private boolean shutdownPending;
     private final ReactiveExecutor reactiveExecutor;
     private final Expression expression;
@@ -92,7 +95,8 @@ public class LoopProcessor extends BaseDelegateProcessorSupport implements Trace
 
     @Override
     public int getPendingExchangesSize() {
-        return taskCount.intValue();
+        // the sum of the iterations left in all running loops, which can exceed an int
+        return (int) Math.max(0, Math.min(Integer.MAX_VALUE, taskCount.sum()));
     }
 
     @Override
@@ -110,6 +114,7 @@ public class LoopProcessor extends BaseDelegateProcessorSupport implements Trace
         Exchange current;
         int index;
         int count;
+        boolean pendingTasksReleased;
 
         public LoopState(Exchange exchange, AsyncCallback callback) throws NoTypeConversionAvailableException {
             this.exchange = exchange;
@@ -123,7 +128,10 @@ public class LoopProcessor extends BaseDelegateProcessorSupport implements Trace
                 String text = expression.evaluate(exchange, String.class);
                 count = ExchangeHelper.convertToMandatoryType(exchange, Integer.class, text);
                 // keep track of pending task if loop with fixed value
-                taskCount.add(count);
+                // (a zero or negative count means no iterations, so nothing is pending)
+                if (count > 0) {
+                    taskCount.add(count);
+                }
                 exchange.setProperty(ExchangePropertyKey.LOOP_SIZE, count);
             }
         }
@@ -161,13 +169,8 @@ public class LoopProcessor extends BaseDelegateProcessorSupport implements Trace
                     if (LOG.isTraceEnabled()) {
                         LOG.trace("Processing complete for exchangeId: {} >>> {}", exchange.getExchangeId(), exchange);
                     }
-                    if (!cont && expression != null) {
-                        // if we should stop due to an exception etc, then make sure to dec task count
-                        int gap = count - index;
-                        while (gap-- > 0) {
-                            taskCount.decrement();
-                        }
-                    }
+                    // if we stop early due to an exception, or break on shutdown, then make sure to dec task count
+                    releasePendingTasks();
                     callback.done(false);
                 }
             } catch (Exception e) {
@@ -180,14 +183,20 @@ public class LoopProcessor extends BaseDelegateProcessorSupport implements Trace
             if (LOG.isTraceEnabled()) {
                 LOG.trace("Processing failed for exchangeId: {} >>> {}", exchange.getExchangeId(), e.getMessage());
             }
-            if (expression != null) {
-                // if we should stop due to an exception etc, then make sure to dec task count
+            // if we should stop due to an exception etc, then make sure to dec task count
+            releasePendingTasks();
+            exchange.setException(e);
+        }
+
+        private void releasePendingTasks() {
+            // only once, as the exception handling may run after the loop has completed (e.g. the callback failed)
+            if (expression != null && !pendingTasksReleased) {
+                pendingTasksReleased = true;
                 int gap = count - index;
-                while (gap-- > 0) {
-                    taskCount.decrement();
+                if (gap > 0) {
+                    taskCount.add(-gap);
                 }
             }
-            exchange.setException(e);
         }
 
         @Override
@@ -261,6 +270,16 @@ public class LoopProcessor extends BaseDelegateProcessorSupport implements Trace
     @Override
     public void setRouteId(String routeId) {
         this.routeId = routeId;
+    }
+
+    @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
     }
 
     @Override

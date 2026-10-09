@@ -37,9 +37,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-public class ParserTest extends CamelTestSupport {
+class ParserTest extends CamelTestSupport {
 
     TemplateParser parser;
 
@@ -109,6 +110,36 @@ public class ParserTest extends CamelTestSupport {
         Template template = parser.parseTemplate("ADDNUMBERS2(INTEGER ${header.foo},INTEGER ${header.bar})");
         assertEquals(1, ((InParameter) template.getParameterList().get(0)).getValueExtractor().eval(exchange, null));
         assertEquals(3, ((InParameter) template.getParameterList().get(1)).getValueExtractor().eval(exchange, null));
+    }
+
+    @Test
+    public void simpleFunctionWithParentheses() {
+        Exchange exchange = createExchangeWithBody(42);
+        exchange.getIn().setHeader("bar", 3);
+        Template template = parser.parseTemplate(
+                "ADDNUMBERS2(INTEGER ${val(1)},VARCHAR ${bodyAs(String)},INOUT INTEGER ${val(7)} inout1,OUT INTEGER out1)");
+
+        assertEquals(4, template.getParameterList().size());
+        assertEquals("1", ((InParameter) template.getParameterList().get(0)).getValueExtractor().eval(exchange, null));
+        assertEquals("42", ((InParameter) template.getParameterList().get(1)).getValueExtractor().eval(exchange, null));
+        assertEquals("7", ((InOutParameter) template.getParameterList().get(2)).getValueExtractor().eval(exchange, null));
+        assertEquals("out1", ((OutParameter) template.getParameterList().get(3)).getOutValueMapKey());
+    }
+
+    @Test
+    public void simpleFunctionAsLastParameter() {
+        // the closing parenthesis of the function must not be confused with the end of the procedure
+        Exchange exchange = createExchangeWithBody(1);
+        Template template = parser.parseTemplate("ADDNUMBERS2(INTEGER ${val(1)} )");
+        assertEquals(1, template.getParameterList().size());
+        assertEquals("1", ((InParameter) template.getParameterList().get(0)).getValueExtractor().eval(exchange, null));
+    }
+
+    @Test
+    public void multiArgFunctionShouldFail() {
+        // the comma separates the procedure parameters, so functions with several arguments are not supported
+        assertThrows(ParseRuntimeException.class,
+                () -> parser.parseTemplate("ADDNUMBERS2(VARCHAR ${replace(a,b)})"));
     }
 
     @Test
@@ -246,12 +277,27 @@ public class ParserTest extends CamelTestSupport {
     }
 
     @Test
-    public void examplesSyntaxTest() {
-        parser.parseTemplate("SUBNUMBERS(INTEGER ${headers.num1},INTEGER ${headers.num2},OUT INTEGER resultofsub)");
-        parser.parseTemplate("MYFUNC('param1' java.sql.Types.INTEGER(10) ${header.srcValue})");
-        parser.parseTemplate("MYFUNC('param1' 100 'mytypename' ${header.srcValue})");
-        parser.parseTemplate("MYFUNC(OUT java.sql.Types.DECIMAL(10) outheader1)");
-        parser.parseTemplate("MYFUNC(OUT java.sql.Types.NUMERIC(10) 'mytype' outheader1)");
+    void examplesSyntaxTest() {
+        Template t1 = parser
+                .parseTemplate("SUBNUMBERS(INTEGER ${headers.num1},INTEGER ${headers.num2},OUT INTEGER resultofsub)");
+        assertNotNull(t1);
+        assertEquals("SUBNUMBERS", t1.getProcedureName());
+
+        Template t2 = parser.parseTemplate("MYFUNC('param1' java.sql.Types.INTEGER(10) ${header.srcValue})");
+        assertNotNull(t2);
+        assertEquals("MYFUNC", t2.getProcedureName());
+
+        Template t3 = parser.parseTemplate("MYFUNC('param1' 100 'mytypename' ${header.srcValue})");
+        assertNotNull(t3);
+        assertEquals("MYFUNC", t3.getProcedureName());
+
+        Template t4 = parser.parseTemplate("MYFUNC(OUT java.sql.Types.DECIMAL(10) outheader1)");
+        assertNotNull(t4);
+        assertEquals("MYFUNC", t4.getProcedureName());
+
+        Template t5 = parser.parseTemplate("MYFUNC(OUT java.sql.Types.NUMERIC(10) 'mytype' outheader1)");
+        assertNotNull(t5);
+        assertEquals("MYFUNC", t5.getProcedureName());
     }
 
 }

@@ -137,7 +137,7 @@ public class CxfEndpoint extends DefaultEndpoint implements AsyncEndpoint, Heade
     private static final Logger LOG = LoggerFactory.getLogger(CxfEndpoint.class);
 
     @UriParam(label = "advanced")
-    protected Bus bus;
+    protected volatile Bus bus;
     @UriParam(label = "advanced")
     protected boolean defaultBus;
     protected volatile boolean createBus;
@@ -203,6 +203,8 @@ public class CxfEndpoint extends DefaultEndpoint implements AsyncEndpoint, Heade
     private boolean skipPayloadMessagePartCheck;
     @UriParam(label = "logging")
     private boolean skipFaultLogging;
+    @UriParam(label = "consumer", defaultValue = "true")
+    private boolean muteException = true;
     @UriParam(label = "advanced")
     private boolean mergeProtocolHeaders;
     @UriParam(label = "advanced")
@@ -677,7 +679,7 @@ public class CxfEndpoint extends DefaultEndpoint implements AsyncEndpoint, Heade
 
         if (getWsdlURL() == null && getServiceClass() == null) {
             // no WSDL and serviceClass specified, set our default serviceClass
-            setServiceClass(org.apache.camel.component.cxf.jaxws.DefaultSEI.class.getName());
+            setServiceClass(DefaultSEI.class.getName());
             setDefaultOperationNamespace(CxfConstants.DISPATCH_NAMESPACE);
             setDefaultOperationName(CxfConstants.DISPATCH_DEFAULT_OPERATION_NAMESPACE);
             if (getDataFormat().equals(DataFormat.PAYLOAD)) {
@@ -729,7 +731,7 @@ public class CxfEndpoint extends DefaultEndpoint implements AsyncEndpoint, Heade
         if (getWsdlURL() == null && getServiceClass() == null) {
             // no WSDL and serviceClass specified, set our default serviceClass
             if (getDataFormat().equals(DataFormat.PAYLOAD)) {
-                setServiceClass(org.apache.camel.component.cxf.jaxws.DefaultPayloadProviderSEI.class.getName());
+                setServiceClass(DefaultPayloadProviderSEI.class.getName());
             }
         }
 
@@ -1456,6 +1458,20 @@ public class CxfEndpoint extends DefaultEndpoint implements AsyncEndpoint, Heade
      */
     public void setSkipFaultLogging(boolean skipFaultLogging) {
         this.skipFaultLogging = skipFaultLogging;
+    }
+
+    public boolean isMuteException() {
+        return muteException;
+    }
+
+    /**
+     * If enabled and an Exchange failed processing on the consumer side, and the exception is not a SOAP fault the
+     * service contract declares, the SOAP fault returned to the caller won't contain the exception's class or message.
+     * Faults the route raises deliberately - a CXF {@code Fault}, an exception annotated {@code @WebFault}, or a
+     * {@code Throwable} set as the message body - are part of the contract and are always returned in full.
+     */
+    public void setMuteException(boolean muteException) {
+        this.muteException = muteException;
     }
 
     public boolean isMergeProtocolHeaders() {

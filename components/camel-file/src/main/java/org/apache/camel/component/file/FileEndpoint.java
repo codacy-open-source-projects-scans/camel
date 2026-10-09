@@ -81,8 +81,9 @@ public class FileEndpoint extends GenericFileEndpoint<File> {
     private boolean probeContentType;
     @UriParam(label = "consumer,advanced")
     private String extendedAttributes;
-    @UriParam(label = "producer,advanced", defaultValue = "true")
-    private boolean forceWrites = true;
+    @Deprecated
+    @UriParam(label = "producer,advanced", defaultValue = "false")
+    private boolean forceWrites;
     @UriParam(label = "producer,advanced")
     private String chmod;
     @UriParam(label = "producer,advanced")
@@ -99,6 +100,16 @@ public class FileEndpoint extends GenericFileEndpoint<File> {
     public FileConsumer createConsumer(Processor processor) throws Exception {
         ObjectHelper.notNull(operations, PARAM_OPERATIONS);
         ObjectHelper.notNull(file, "file");
+
+        if (file.isFile()) {
+            // file:order.json: the file component reads the files of a directory; a regular file as the directory
+            // polled nothing and said nothing (CAMEL-24839)
+            String parent = file.getParent() != null ? file.getParent() : ".";
+            throw new IllegalArgumentException(
+                    file + " is a file, not a directory: the file component reads the files of a directory."
+                                               + " To read this one file use file:" + parent + "?fileName=" + file.getName()
+                                               + " (as from:, or with pollEnrich)");
+        }
 
         FileConsumer result = newFileConsumer(processor, operations);
 
@@ -358,6 +369,10 @@ public class FileEndpoint extends GenericFileEndpoint<File> {
         this.directoryMustExist = directoryMustExist;
     }
 
+    /**
+     * @deprecated This option has had no effect since Camel 2.20 and will be removed in a future release.
+     */
+    @Deprecated
     public boolean isForceWrites() {
         return forceWrites;
     }
@@ -365,7 +380,10 @@ public class FileEndpoint extends GenericFileEndpoint<File> {
     /**
      * Whether to force syncing, writes to the file system. You can turn this off if you do not want this level of
      * guarantee, for example, if writing to logs / audit logs etc.; this would yield better performance.
+     *
+     * @deprecated This option has had no effect since Camel 2.20 and will be removed in a future release.
      */
+    @Deprecated
     public void setForceWrites(boolean forceWrites) {
         this.forceWrites = forceWrites;
     }

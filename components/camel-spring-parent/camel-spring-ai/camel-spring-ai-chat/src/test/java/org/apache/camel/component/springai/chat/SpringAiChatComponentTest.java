@@ -16,6 +16,8 @@
  */
 package org.apache.camel.component.springai.chat;
 
+import java.util.List;
+
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.test.junit6.CamelTestSupport;
 import org.junit.jupiter.api.Test;
@@ -23,6 +25,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,8 +48,10 @@ public class SpringAiChatComponentTest extends CamelTestSupport {
         // Mock response
         AssistantMessage assistantMessage = new AssistantMessage("Hello! I'm a mock AI assistant.");
         Generation generation = new Generation(assistantMessage);
-        ChatResponse chatResponse = new ChatResponse(java.util.List.of(generation));
+        ChatResponse chatResponse = new ChatResponse(List.of(generation));
 
+        // Spring AI 2.0 requires ChatModel.getOptions() to be non-null: ChatClient mutates it per request
+        when(mockChatModel.getOptions()).thenReturn(ChatOptions.builder().build());
         when(mockChatModel.call(any(Prompt.class))).thenReturn(chatResponse);
     }
 

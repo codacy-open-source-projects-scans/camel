@@ -16,6 +16,7 @@
  */
 package org.apache.camel.http.common;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -25,6 +26,7 @@ import java.io.PrintWriter;
 import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Enumeration;
@@ -50,12 +52,12 @@ import org.apache.camel.StreamCache;
 import org.apache.camel.attachment.AttachmentMessage;
 import org.apache.camel.attachment.CamelFileDataSource;
 import org.apache.camel.converter.stream.CachedOutputStream;
+import org.apache.camel.http.base.HttpHeaderFilterStrategy;
 import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.GZIPHelper;
 import org.apache.camel.support.MessageHelper;
 import org.apache.camel.support.ObjectHelper;
-import org.apache.camel.util.FileUtil;
 import org.apache.camel.util.IOHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,10 +90,11 @@ public class DefaultHttpBinding implements HttpBinding {
     private boolean muteException;
     private boolean logException;
     private boolean allowJavaSerializedObject;
+    private String deserializationFilter;
     private boolean mapHttpMessageBody = true;
     private boolean mapHttpMessageHeaders = true;
     private boolean mapHttpMessageFormUrlEncodedBody = true;
-    private HeaderFilterStrategy headerFilterStrategy = new org.apache.camel.http.base.HttpHeaderFilterStrategy();
+    private HeaderFilterStrategy headerFilterStrategy = new HttpHeaderFilterStrategy();
     private String fileNameExtWhitelist;
 
     public DefaultHttpBinding() {
@@ -110,6 +113,7 @@ public class DefaultHttpBinding implements HttpBinding {
         this.logException = endpoint.isLogException();
         if (endpoint.getComponent() != null) {
             this.allowJavaSerializedObject = endpoint.getComponent().isAllowJavaSerializedObject();
+            this.deserializationFilter = endpoint.getComponent().getDeserializationFilter();
         }
     }
 
@@ -186,9 +190,11 @@ public class DefaultHttpBinding implements HttpBinding {
             }
         }
 
-        if (request.getCharacterEncoding() != null) {
-            headers.put(Exchange.HTTP_CHARACTER_ENCODING, request.getCharacterEncoding());
-            message.getExchange().setProperty(ExchangePropertyKey.CHARSET_NAME, request.getCharacterEncoding());
+        String characterEncoding = request.getCharacterEncoding();
+        // servlet containers may return an empty charset parameter (charset=) as an empty name, which is no charset
+        if (characterEncoding != null && !characterEncoding.isBlank()) {
+            headers.put(Exchange.HTTP_CHARACTER_ENCODING, characterEncoding);
+            message.getExchange().setProperty(ExchangePropertyKey.CHARSET_NAME, characterEncoding);
         }
 
         try {
@@ -219,7 +225,8 @@ public class DefaultHttpBinding implements HttpBinding {
                 try {
                     InputStream is
                             = message.getExchange().getContext().getTypeConverter().mandatoryConvertTo(InputStream.class, body);
-                    Object object = HttpHelper.deserializeJavaObjectFromStream(is, message.getExchange().getContext());
+                    Object object = HttpHelper.deserializeJavaObjectFromStream(is, message.getExchange().getContext(),
+                            deserializationFilter);
                     if (object != null) {
                         message.setBody(object);
                     }
@@ -272,7 +279,7 @@ public class DefaultHttpBinding implements HttpBinding {
                     && request.getContentType().startsWith(HttpConstants.CONTENT_TYPE_WWW_FORM_URLENCODED)
                     && !skipWwwFormUrlEncoding) {
                 String charset = request.getCharacterEncoding();
-                if (charset == null) {
+                if (charset == null || charset.isBlank()) {
                     charset = "UTF-8";
                 }
 
@@ -335,17 +342,7 @@ public class DefaultHttpBinding implements HttpBinding {
                     fileName = fileName.replaceAll("[\n\r\t]", "_");
                 }
                 // is the file name accepted
-                boolean accepted = true;
-                if (fileNameExtWhitelist != null) {
-                    String ext = FileUtil.onlyExt(fileName);
-                    if (ext != null) {
-                        ext = ext.toLowerCase(Locale.US);
-                        fileNameExtWhitelist = fileNameExtWhitelist.toLowerCase(Locale.US);
-                        if (!fileNameExtWhitelist.equals("*") && !fileNameExtWhitelist.contains(ext)) {
-                            accepted = false;
-                        }
-                    }
-                }
+                boolean accepted = isFileNameAccepted(fileName);
                 if (accepted) {
                     AttachmentMessage am = message.getExchange().getMessage(AttachmentMessage.class);
                     am.addAttachment(fileName, new DataHandler(new CamelFileDataSource(fileObject, fileName)));
@@ -356,6 +353,24 @@ public class DefaultHttpBinding implements HttpBinding {
                 }
             }
         }
+    }
+
+    /**
+     * Whether an uploaded file is accepted according to the configured {@link #getFileNameExtWhitelist()}.
+     * <p/>
+     * The file name extension is compared, case-insensitively, against each comma-separated entry of the whitelist
+     * exactly and not as a substring: a whitelist of "txt" must not accept an upload named "evil.x" just because
+     * "txt".contains("x"). A file is accepted when no whitelist is configured, when the whitelist is "*", or when the
+     * file name has no extension.
+     *
+     * @param  fileName the file name submitted by the client
+     * @return          true if the file is accepted
+     */
+    protected boolean isFileNameAccepted(String fileName) {
+        // one shared implementation of the whitelist check lives in camel-http-base's HttpHelper so the servlet and
+        // jetty bindings here and the camel-platform-http-vertx consumer cannot drift apart again (CAMEL-24652).
+        // Fully qualified because this package has its own HttpHelper with the same simple name.
+        return org.apache.camel.http.base.HttpHelper.isFileNameExtWhitelisted(getFileNameExtWhitelist(), fileName);
     }
 
     @Override
@@ -518,11 +533,19 @@ public class DefaultHttpBinding implements HttpBinding {
         // prefer streaming
         InputStream is = null;
         if (checkChunked(message, exchange)) {
-            is = message.getBody(InputStream.class);
+            // a String body is written in the charset of the content type
+            is = toInputStreamWithContentTypeCharset(message, contentType);
+            if (is == null) {
+                is = message.getBody(InputStream.class);
+            }
         } else {
             // try to use input stream first, so we can copy directly
             if (!isText(contentType)) {
-                is = exchange.getContext().getTypeConverter().tryConvertTo(InputStream.class, message.getBody());
+                // a String body is written in the charset of the content type
+                is = toInputStreamWithContentTypeCharset(message, contentType);
+                if (is == null) {
+                    is = exchange.getContext().getTypeConverter().tryConvertTo(InputStream.class, message.getBody());
+                }
             }
         }
 
@@ -532,9 +555,14 @@ public class DefaultHttpBinding implements HttpBinding {
                 CachedOutputStream stream = new CachedOutputStream(exchange);
                 try {
                     // copy directly from input stream to the cached output stream to get the content length
-                    int len = copyStream(is, stream, response.getBufferSize());
-                    // we need to setup the length if message is not chucked
-                    response.setContentLength(len);
+                    copyStream(is, stream, response.getBufferSize());
+                    // we need to setup the length if message is not chucked. Take it as a long from the cache, as the
+                    // int count of copyStream cannot hold the length of a response of 2 GiB or more. This assumes
+                    // that a spoolCipher is a stream or 8-bit cipher (as documented), as the length of a spool file
+                    // written with a padded block cipher is larger than the body
+                    StreamCache cache = stream.newStreamCache();
+                    long len = cache.length();
+                    response.setContentLengthLong(len);
                     OutputStream current = stream.getCurrentStream();
                     if (current instanceof ByteArrayOutputStream bos) {
                         if (LOG.isDebugEnabled()) {
@@ -544,9 +572,9 @@ public class DefaultHttpBinding implements HttpBinding {
                     } else {
                         if (LOG.isDebugEnabled()) {
                             LOG.debug("Streaming response in non-chunked mode with content-length {} and buffer size: {}", len,
-                                    len);
+                                    response.getBufferSize());
                         }
-                        copyStream(stream.getInputStream(), os, len);
+                        copyStream((InputStream) cache, os, response.getBufferSize());
                     }
                 } finally {
                     IOHelper.close(is, os);
@@ -559,10 +587,14 @@ public class DefaultHttpBinding implements HttpBinding {
             }
         } else {
             // not convertable as a stream so fallback as a String
+            // a String body is written in the charset of the content type, other bodies are converted to a String
+            // with the charset of the exchange and written in that charset
+            Charset contentTypeCharset = message.getBody() instanceof String ? getContentTypeCharset(contentType) : null;
             String data = message.getBody(String.class);
             if (data != null) {
                 // set content length and encoding before we write data
-                String charset = ExchangeHelper.getCharsetName(exchange, true);
+                String charset = contentTypeCharset != null
+                        ? contentTypeCharset.name() : ExchangeHelper.getCharsetName(exchange, true);
                 final int dataByteLength = data.getBytes(charset).length;
                 response.setCharacterEncoding(charset);
                 response.setContentLength(dataByteLength);
@@ -577,6 +609,45 @@ public class DefaultHttpBinding implements HttpBinding {
                 }
             }
         }
+    }
+
+    /**
+     * Converts a String body with the charset that the content type declares, so the bytes match the Content-Type
+     * header. Returns <tt>null</tt> when the body is not a String or no supported charset is declared, and the body is
+     * then converted with the type converter (the charset of the exchange).
+     */
+    private static InputStream toInputStreamWithContentTypeCharset(Message message, String contentType) {
+        if (message.getBody() instanceof String text) {
+            Charset charset = getContentTypeCharset(contentType);
+            if (charset != null) {
+                return new ByteArrayInputStream(text.getBytes(charset));
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the charset that the content type declares, or <tt>null</tt> when it declares none or one that is not
+     * supported.
+     */
+    private static Charset getContentTypeCharset(String contentType) {
+        if (contentType != null) {
+            for (String part : contentType.split(";")) {
+                part = part.trim();
+                // the parameter name is case-insensitive (RFC 9110, section 5.6.6)
+                if (part.regionMatches(true, 0, "charset=", 0, 8)) {
+                    String charset = IOHelper.normalizeCharset(part.substring(8));
+                    try {
+                        return Charset.forName(charset);
+                    } catch (IllegalArgumentException e) {
+                        // unsupported or illegal charset name: keep the charset of the exchange
+                        LOG.debug("Cannot use charset {} of the content type: {}", charset, e.getMessage());
+                        return null;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     protected boolean checkChunked(Message message, Exchange exchange) {
@@ -703,6 +774,16 @@ public class DefaultHttpBinding implements HttpBinding {
     @Override
     public void setAllowJavaSerializedObject(boolean allowJavaSerializedObject) {
         this.allowJavaSerializedObject = allowJavaSerializedObject;
+    }
+
+    @Override
+    public String getDeserializationFilter() {
+        return deserializationFilter;
+    }
+
+    @Override
+    public void setDeserializationFilter(String deserializationFilter) {
+        this.deserializationFilter = deserializationFilter;
     }
 
     @Override

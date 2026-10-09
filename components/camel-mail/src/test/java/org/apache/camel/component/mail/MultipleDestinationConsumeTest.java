@@ -43,15 +43,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class MultipleDestinationConsumeTest extends CamelTestSupport {
-    private static final MailboxUser james = Mailbox.getOrCreateUser("james", "secret");
-    private static final MailboxUser bar = Mailbox.getOrCreateUser("bar", "secret");
+    private static final MailboxUser james = Mailbox.getOrCreateUser("MultipleDestinationConsumeTest-james", "secret");
+    private static final MailboxUser bar = Mailbox.getOrCreateUser("MultipleDestinationConsumeTest-bar", "secret");
     private Logger log = LoggerFactory.getLogger(getClass());
     private String body = "hello world!\r\n";
     private Session mailSession;
 
     @Test
     public void testSendAndReceiveMails() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(james, bar);
 
         MockEndpoint resultEndpoint = getMockEndpoint("mock:result");
         resultEndpoint.expectedMinimumMessageCount(1);
@@ -104,7 +104,7 @@ public class MultipleDestinationConsumeTest extends CamelTestSupport {
     }
 
     @Override
-    public void doPreSetup() throws Exception {
+    public void setupResources() throws Exception {
         mailSession = Mailbox.getSmtpSession();
     }
 

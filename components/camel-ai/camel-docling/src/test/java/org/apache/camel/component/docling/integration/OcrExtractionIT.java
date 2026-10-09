@@ -35,7 +35,7 @@ import org.apache.camel.test.infra.docling.services.DoclingService;
 import org.apache.camel.test.infra.docling.services.DoclingServiceFactory;
 import org.apache.camel.test.junit6.CamelTestSupport;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +48,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * This test demonstrates how to use Docling's OCR capabilities to extract text from images containing text content.
  */
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Too much resources on GitHub Actions")
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Too much resources on GitHub Actions")
 class OcrExtractionIT extends CamelTestSupport {
 
     private static final Logger LOG = LoggerFactory.getLogger(OcrExtractionIT.class);
@@ -58,7 +58,7 @@ class OcrExtractionIT extends CamelTestSupport {
     private static final String TEST_TEXT_LINE3 = "OCR Test Document";
 
     @RegisterExtension
-    static DoclingService doclingService = DoclingServiceFactory.createService();
+    static DoclingService doclingService = DoclingServiceFactory.createSingletonService();
 
     @Override
     protected CamelContext createCamelContext() throws Exception {
@@ -175,13 +175,15 @@ class OcrExtractionIT extends CamelTestSupport {
         boolean foundFirst = resultLower.contains("first");
         boolean foundSecond = resultLower.contains("second");
 
-        assertTrue(foundFirst && foundSecond,
-                "OCR should extract at least some of the expected text. Got: " + result);
+        assertThat(foundFirst && foundSecond)
+                .as("OCR should extract at least some of the expected text. Got: %s", result)
+                .isTrue();
 
-        // TODO: footer is not found by the ocr by Camel docling
-        //        boolean foundFooter = resultLower.contains("footer");
-        //        assertTrue(foundFooter,
-        //                "OCR should extract at least some of the expected text from the footer. Got: " + result);
+        // Docling recognizes the footer but classifies it as page furniture, which the default body export excludes.
+        boolean foundFooter = resultLower.contains("footer");
+        assertThat(foundFooter)
+                .as("Footer text should be excluded from the default body export. Got: %s", result)
+                .isFalse();
 
         LOG.info("OCR extraction with multiple text blocks result:\n{}", result);
         LOG.info("Successfully extracted text from image with multiple text blocks");
@@ -304,19 +306,19 @@ class OcrExtractionIT extends CamelTestSupport {
             public void configure() throws Exception {
                 // OCR text extraction route
                 from("direct:ocr-extract-text")
-                        .to("docling:ocr?operation=EXTRACT_TEXT&enableOCR=true&ocrLanguage=en");
+                        .to("docling:ocr?allowFilePathSource=true&operation=EXTRACT_TEXT&enableOCR=true&ocrLanguage=en");
 
                 // OCR to Markdown conversion
                 from("direct:ocr-convert-markdown")
-                        .to("docling:ocr?operation=CONVERT_TO_MARKDOWN&enableOCR=true&ocrLanguage=en");
+                        .to("docling:ocr?allowFilePathSource=true&operation=CONVERT_TO_MARKDOWN&enableOCR=true&ocrLanguage=en");
 
                 // OCR to JSON conversion
                 from("direct:ocr-convert-json")
-                        .to("docling:ocr?operation=CONVERT_TO_JSON&enableOCR=true&ocrLanguage=en");
+                        .to("docling:ocr?allowFilePathSource=true&operation=CONVERT_TO_JSON&enableOCR=true&ocrLanguage=en");
 
                 // OCR with async mode
                 from("direct:ocr-async-extract")
-                        .to("docling:ocr?operation=EXTRACT_TEXT&enableOCR=true&ocrLanguage=en&useAsyncMode=true&asyncPollInterval=1000&asyncTimeout=180000");
+                        .to("docling:ocr?allowFilePathSource=true&operation=EXTRACT_TEXT&enableOCR=true&ocrLanguage=en&useAsyncMode=true&asyncPollInterval=1000&asyncTimeout=180000");
             }
         };
     }

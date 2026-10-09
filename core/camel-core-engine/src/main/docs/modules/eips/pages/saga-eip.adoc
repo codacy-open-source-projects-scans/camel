@@ -1,7 +1,7 @@
 = Saga EIP
 :doctitle: Saga
 :shortname: saga
-:description: Enables Sagas on the route
+:description: Defines a Saga (long-running action) that coordinates distributed services toward a consistent outcome. Unlike XA transactions, Sagas use compensating actions for rollback and work across heterogeneous services.
 :since: 
 :supportlevel: Stable
 :tabs-sync-option:
@@ -357,7 +357,9 @@ periodically retry to execute the compensating action up to a certain limit.
 This means that *any compensating action must be idempotent*,
 so it should take into account that it may be triggered multiple times and should not fail in any case.
 
-If compensation cannot be done after all retries, a manual intervention process should be triggered by the Saga implementation.
+If compensation cannot be done after all retries, a manual intervention process should be triggered.
+The in-memory Saga service logs a warning, marks the Saga as failed, and keeps the exception that caused the compensation
+on the exchange, with the compensation failure added to it as a suppressed exception.
 
 [NOTE]
 ====
@@ -673,10 +675,9 @@ Notice the listing below is not using the `Long-Running-Action` header at all.
         - saga:
             propagation: SUPPORTS
             option:
-              key: CreditId
-              expression:
-                simple:
-                  expression: "${body}"
+              - key: CreditId
+                expression:
+                  simple: "${body}"
             compensation: direct:creditRefund
         - bean:
             ref: creditService
@@ -711,7 +712,9 @@ Sagas are long-running actions, but this does not mean that they should not have
 
 [NOTE]
 ====
-The Saga EIP implementation may have a default timeout set on all Sagas that don't specify it explicitly
+There is no default timeout on Sagas.
+If no timeout is specified, a Saga may remain open indefinitely in the case of failure.
+Always set an explicit timeout, especially when using `MANUAL` completion mode.
 ====
 
 When the timeout expires, the Saga EIP will decide to *cancel the Saga* (and compensate all participants), unless a different decision has been taken before.

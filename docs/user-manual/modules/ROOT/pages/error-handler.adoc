@@ -76,15 +76,20 @@ or in Spring XML DSL:
 
 === No Error Handler
 
-The no error handler is to be used for disabling error handling in Java DSL:
+The no error handler is to be used for disabling error handling.
 
+[tabs]
+====
+
+Java::
++
 [source,java]
 ----
 errorHandler(noErrorHandler());
 ----
 
-And in Spring XML DSL:
-
+Spring XML::
++
 [source,xml]
 ----
 <camel:errorHandler id="noErrorHandler" type="NoErrorHandler"/>
@@ -93,6 +98,7 @@ And in Spring XML DSL:
   ...
 </camel:camelContext>
 ----
+====
 
 === TransactionErrorHandler
 
@@ -185,6 +191,7 @@ The error handler is scoped as either:
 
 The following example shows how you can register a global error handler for the `RouteBuilder`:
 
+._Java-only: RouteBuilder with global error handler_
 [source,java]
 ----
 RouteBuilder builder = new RouteBuilder() {
@@ -200,6 +207,7 @@ RouteBuilder builder = new RouteBuilder() {
 The following example shows how you can register a route specific error
 handler:
 
+._Java-only: RouteBuilder with route-specific error handler_
 [source,java]
 ----
 RouteBuilder builder = new RouteBuilder() {
@@ -311,13 +319,13 @@ YAML::
         redeliveryPolicy:
           maximumRedeliveries: 3
           redeliveryDelay: 250
-    steps:
-      - process:
-          ref: myFailureProcessor
-      - to:
-          uri: mock:result
     from:
       uri: direct:in
+      steps:
+        - process:
+            ref: myFailureProcessor
+        - to:
+            uri: mock:result
 ----
 ====
 
@@ -459,23 +467,24 @@ YAML::
 +
 [source,yaml]
 ----
+- onException:
+    # in case of io exception then try to redeliver up till 2 times
+    # (do not use any delay due faster unit testing)
+    exception:
+      - java.io.IOException
+    redeliveryPolicy:
+      maximumRedeliveries: 2
+      redeliveryDelay: 0
 - route:
     from:
       uri: direct:start
       steps:
-        - onException:
-            exception:
-              - java.io.IOException
-        - redeliveryPolicy:
-            maximumRedeliveries: 2
-            redeliveryDelay: 0
         - to:
             uri: mock:a
         - to:
             uri: direct:sub
         - to:
             uri: mock:c
-
 - route:
     errorHandler:
       noErrorHandler: {}

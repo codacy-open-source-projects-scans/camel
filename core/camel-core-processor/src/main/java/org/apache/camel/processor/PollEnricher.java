@@ -18,6 +18,7 @@ package org.apache.camel.processor;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.camel.AggregationStrategy;
 import org.apache.camel.AsyncCallback;
@@ -39,15 +40,20 @@ import org.apache.camel.spi.EndpointUtilizationStatistics;
 import org.apache.camel.spi.ExceptionHandler;
 import org.apache.camel.spi.HeadersMapFactory;
 import org.apache.camel.spi.IdAware;
+import org.apache.camel.spi.NormalizedEndpointUri;
 import org.apache.camel.spi.OptimisedComponentResolver;
 import org.apache.camel.spi.PollDynamicAware;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.BridgeExceptionHandlerToErrorHandler;
 import org.apache.camel.support.DefaultConsumer;
 import org.apache.camel.support.EndpointHelper;
 import org.apache.camel.support.EventDrivenPollingConsumer;
 import org.apache.camel.support.ExchangeHelper;
+import org.apache.camel.support.NormalizedUri;
+import org.apache.camel.support.UnitOfWorkHelper;
 import org.apache.camel.support.cache.DefaultConsumerCache;
+import org.apache.camel.support.cache.EmptyConsumerCache;
 import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.util.URISupport;
 import org.slf4j.Logger;
@@ -66,7 +72,7 @@ import static org.apache.camel.support.ExchangeHelper.copyResultsPreservePattern
  * @see PollProcessor
  * @see Enricher
  */
-public class PollEnricher extends BaseProcessorSupport implements IdAware, RouteIdAware, CamelContextAware {
+public class PollEnricher extends BaseProcessorSupport implements IdAware, RouteIdAware, StepIdAware, CamelContextAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(PollEnricher.class);
 
@@ -77,6 +83,7 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
     private HeadersMapFactory headersMapFactory;
     private String id;
     private String routeId;
+    private String stepId;
     private String variableReceive;
     private AggregationStrategy aggregationStrategy;
     private final Expression expression;
@@ -85,6 +92,7 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
     private boolean aggregateOnException;
     private int cacheSize;
     private boolean ignoreInvalidEndpoint;
+    private Set<String> allowedSchemes;
     private boolean autoStartupComponents = true;
     private boolean allowOptimisedComponents = true;
 
@@ -141,6 +149,16 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
     @Override
     public void setRouteId(String routeId) {
         this.routeId = routeId;
+    }
+
+    @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
     }
 
     public PollDynamicAware getDynamicAware() {
@@ -219,6 +237,10 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
         this.ignoreInvalidEndpoint = ignoreInvalidEndpoint;
     }
 
+    public void setAllowedSchemes(String allowedSchemes) {
+        this.allowedSchemes = ProcessorHelper.parseAllowedSchemes(allowedSchemes);
+    }
+
     public boolean isAutoStartupComponents() {
         return autoStartupComponents;
     }
@@ -284,6 +306,15 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
             }
             Object targetRecipient = staticUri != null ? staticUri : recipient;
             targetRecipient = prepareRecipient(exchange, targetRecipient);
+            // enforce the optional allowed-schemes allow-list; must throw before the ignoreInvalidEndpoint
+            // catch so that a disallowed scheme is always a hard boundary (CAMEL-24298)
+            try {
+                ProcessorHelper.checkAllowedSchemes(allowedSchemes, targetRecipient);
+            } catch (ResolveEndpointFailedException e) {
+                exchange.setException(e);
+                callback.done(true);
+                return true;
+            }
             if (targetRecipient == null) {
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Poll dynamic evaluated as null so cannot poll from any endpoint");
@@ -357,10 +388,10 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
             }
         }
 
-        // remember current redelivery stats
-        Object redelivered = exchange.getIn().getHeader(Exchange.REDELIVERED);
-        Object redeliveryCounter = exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER);
-        Object redeliveryMaxCounter = exchange.getIn().getHeader(Exchange.REDELIVERY_MAX_COUNTER);
+        // remember current redelivery stats from internal state
+        // (headers may have been stripped by removeHeaders("*"))
+        int savedRedeliveryCounter = exchange.getExchangeExtension().getRedeliveryCounter();
+        int savedRedeliveryMaxCounter = exchange.getExchangeExtension().getRedeliveryMaxCounter();
 
         // if we are bridging error handler and failed then remember the caused exception
         Throwable cause = null;
@@ -379,6 +410,7 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
                 originalHeaders = headersMapFactory.newMap(exchange.getMessage().getHeaders());
             } catch (Exception throwable) {
                 exchange.setException(throwable);
+                doneResourceAsFailed(resourceExchange, throwable);
                 callback.done(true);
                 return true;
             }
@@ -389,6 +421,8 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
                 // copy resource exchange onto original exchange (preserving pattern)
                 // and preserve redelivery headers
                 copyResultsPreservePattern(exchange, resourceExchange);
+                // the resource failed, so release it as failed now (such as rolling back a polled file)
+                doneResourceAsFailed(resourceExchange, null);
             } else {
                 prepareResult(exchange);
 
@@ -406,11 +440,10 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
                     }
                     // copy aggregation result onto original exchange (preserving pattern)
                     copyResultsPreservePattern(exchange, aggregatedExchange);
-                    // handover any synchronization
-                    if (resourceExchange != null) {
-                        resourceExchange.getExchangeExtension().handoverCompletions(exchange);
-                    }
                 }
+                // the resource has been aggregated (or discarded by the aggregation strategy), so handover any
+                // synchronization to complete together with the exchange (such as committing a polled file)
+                handoverCompletions(resourceExchange, exchange);
             }
 
             // if we failed then restore caused exception
@@ -420,15 +453,15 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
                 // remove the exhausted marker as we want to be able to perform redeliveries with the error handler
                 exchange.getExchangeExtension().setRedeliveryExhausted(false);
 
-                // preserve the redelivery stats
-                if (redelivered != null) {
-                    exchange.getMessage().setHeader(Exchange.REDELIVERED, redelivered);
+                // preserve the redelivery stats from internal state
+                if (savedRedeliveryCounter >= 0) {
+                    exchange.getMessage().setHeader(Exchange.REDELIVERY_COUNTER, savedRedeliveryCounter);
+                    exchange.getMessage().setHeader(Exchange.REDELIVERED, savedRedeliveryCounter > 0);
+                    exchange.getExchangeExtension().setRedeliveryCounter(savedRedeliveryCounter);
                 }
-                if (redeliveryCounter != null) {
-                    exchange.getMessage().setHeader(Exchange.REDELIVERY_COUNTER, redeliveryCounter);
-                }
-                if (redeliveryMaxCounter != null) {
-                    exchange.getMessage().setHeader(Exchange.REDELIVERY_MAX_COUNTER, redeliveryMaxCounter);
+                if (savedRedeliveryMaxCounter >= 0) {
+                    exchange.getMessage().setHeader(Exchange.REDELIVERY_MAX_COUNTER, savedRedeliveryMaxCounter);
+                    exchange.getExchangeExtension().setRedeliveryMaxCounter(savedRedeliveryMaxCounter);
                 }
             }
 
@@ -437,12 +470,31 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
 
         } catch (Exception e) {
             exchange.setException(new CamelExchangeException("Error occurred during aggregation", exchange, e));
+            // the resource was not aggregated, so release it as failed now (such as rolling back a polled file),
+            // and not together with the exchange, which may still complete successfully (such as by redelivery)
+            doneResourceAsFailed(resourceExchange, e);
             callback.done(true);
             return true;
         }
 
         callback.done(true);
         return true;
+    }
+
+    private static void handoverCompletions(Exchange resourceExchange, Exchange exchange) {
+        if (resourceExchange != null) {
+            resourceExchange.getExchangeExtension().handoverCompletions(exchange);
+        }
+    }
+
+    private static void doneResourceAsFailed(Exchange resourceExchange, Exception cause) {
+        if (resourceExchange != null) {
+            if (cause != null && resourceExchange.getException() == null) {
+                resourceExchange.setException(cause);
+            }
+            UnitOfWorkHelper.doneSynchronizations(resourceExchange,
+                    resourceExchange.getExchangeExtension().handoverCompletions());
+        }
     }
 
     private static boolean isBridgeErrorHandler(PollingConsumer consumer) {
@@ -463,7 +515,27 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
     }
 
     protected static Object prepareRecipient(Exchange exchange, Object recipient) throws NoTypeConversionAvailableException {
-        return ProcessorHelper.prepareRecipient(exchange, recipient);
+        if (recipient instanceof Endpoint || recipient instanceof NormalizedEndpointUri) {
+            return recipient;
+        } else if (recipient instanceof String string) {
+            // trim strings as end users might have added spaces between separators
+            recipient = string.trim();
+        }
+        if (recipient != null) {
+            CamelContext ecc = exchange.getContext();
+            String uri;
+            if (recipient instanceof String string) {
+                uri = string;
+            } else {
+                // convert to a string type we can work with
+                uri = ecc.getTypeConverter().mandatoryConvertTo(String.class, exchange, recipient);
+            }
+            // optimize and normalize endpoint without re-resolving property placeholders on the
+            // per-message evaluated recipient, matching toD and enrich (CAMEL-24282 / CAMEL-24414).
+            // pollEnrich resolves its static uri at build time, so the placeholder belongs there.
+            return NormalizedUri.newNormalizedUri(uri, false);
+        }
+        return null;
     }
 
     protected static Endpoint getExistingEndpoint(Exchange exchange, Object recipient) {
@@ -532,9 +604,14 @@ public class PollEnricher extends BaseProcessorSupport implements IdAware, Route
     @Override
     protected void doBuild() throws Exception {
         if (consumerCache == null) {
-            // create consumer cache if we use dynamic expressions for computing the endpoints to poll
-            consumerCache = new DefaultConsumerCache(this, camelContext, cacheSize);
-            LOG.debug("PollEnrich {} using ConsumerCache with cacheSize={}", this, cacheSize);
+            if (cacheSize < 0) {
+                consumerCache = new EmptyConsumerCache(this, camelContext);
+                LOG.debug("PollEnrich {} is not using ConsumerCache", this);
+            } else {
+                // create consumer cache if we use dynamic expressions for computing the endpoints to poll
+                consumerCache = new DefaultConsumerCache(this, camelContext, cacheSize);
+                LOG.debug("PollEnrich {} using ConsumerCache with cacheSize={}", this, cacheSize);
+            }
         }
         if (aggregationStrategy == null) {
             aggregationStrategy = new CopyAggregationStrategy();

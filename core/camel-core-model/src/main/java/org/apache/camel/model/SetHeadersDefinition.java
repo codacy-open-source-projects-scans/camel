@@ -16,6 +16,7 @@
  */
 package org.apache.camel.model;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -28,13 +29,13 @@ import jakarta.xml.bind.annotation.XmlElementRef;
 import jakarta.xml.bind.annotation.XmlRootElement;
 
 import org.apache.camel.Expression;
-import org.apache.camel.builder.ExpressionBuilder;
 import org.apache.camel.spi.Metadata;
 
 /**
  * Allows setting multiple headers on the message at the same time.
  */
-@Metadata(label = "eip,transformation")
+@Metadata(label = "eip,messaging,transformation",
+          description = "Sets multiple message headers at once, each computed by its own expression")
 @XmlRootElement(name = "setHeaders")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class SetHeadersDefinition extends ProcessorDefinition<SetHeadersDefinition> {
@@ -43,7 +44,8 @@ public class SetHeadersDefinition extends ProcessorDefinition<SetHeadersDefiniti
      * This is provided to support XML and YAML DSL
      */
     @XmlElementRef(name = "headers")
-    private List<SetHeaderDefinition> headers = new java.util.ArrayList<>();
+    @Metadata(description = "The headers to set on the message.")
+    private List<SetHeaderDefinition> headers = new ArrayList<>();
 
     public SetHeadersDefinition() {
     }
@@ -82,8 +84,8 @@ public class SetHeadersDefinition extends ProcessorDefinition<SetHeadersDefiniti
             throw new IllegalArgumentException("Keys must be Strings");
         }
         if (!(value instanceof Expression)) {
-            // Assume it's a constant of some kind
-            value = ExpressionBuilder.constantExpression(value);
+            // a constant: as the constant language when it is a plain value, so every DSL can write it
+            value = ExpressionNodeHelper.toConstantExpression(value);
         }
         headers.add(new SetHeaderDefinition((String) key, (Expression) value));
     }

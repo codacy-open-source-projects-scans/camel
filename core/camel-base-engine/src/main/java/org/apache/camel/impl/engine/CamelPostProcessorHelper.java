@@ -28,6 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.apache.camel.BeanConfigInject;
 import org.apache.camel.BeanInject;
@@ -279,40 +280,41 @@ public class CamelPostProcessorHelper implements CamelContextAware {
 
     public Object getInjectionPropertyValue(
             Class<?> type, Type genericType, String propertyName, String propertyDefaultValue, String separator) {
+        String key;
+        String prefix = PropertiesComponent.PREFIX_TOKEN;
+        String suffix = PropertiesComponent.SUFFIX_TOKEN;
+        if (!propertyName.contains(prefix)) {
+            // must enclose the property name with prefix/suffix to have it resolved
+            key = prefix + propertyName + suffix;
+        } else {
+            // key has already prefix/suffix so use it as-is as it may be a compound key
+            key = propertyName;
+        }
+
+        String value;
         try {
-            String key;
-            String prefix = PropertiesComponent.PREFIX_TOKEN;
-            String suffix = PropertiesComponent.SUFFIX_TOKEN;
-            if (!propertyName.contains(prefix)) {
-                // must enclose the property name with prefix/suffix to have it resolved
-                key = prefix + propertyName + suffix;
-            } else {
-                // key has already prefix/suffix so use it as-is as it may be a compound key
-                key = propertyName;
-            }
-            String value = getCamelContext().resolvePropertyPlaceholders(key);
-            if (value != null) {
-                if (separator != null && !separator.isBlank()) {
-                    Object values = convertValueUsingSeparator(camelContext, type, genericType, value, separator);
-                    return getCamelContext().getTypeConverter().mandatoryConvertTo(type, values);
-                }
-                return getCamelContext().getTypeConverter().mandatoryConvertTo(type, value);
-            } else {
-                return null;
-            }
+            value = getCamelContext().resolvePropertyPlaceholders(key);
         } catch (Exception e) {
+            // the property could not be resolved (such as not existing), so use the default value if any
             if (ObjectHelper.isNotEmpty(propertyDefaultValue)) {
-                try {
-                    if (separator != null && !separator.isBlank()) {
-                        Object values
-                                = convertValueUsingSeparator(camelContext, type, genericType, propertyDefaultValue, separator);
-                        return getCamelContext().getTypeConverter().mandatoryConvertTo(type, values);
-                    }
-                    return getCamelContext().getTypeConverter().mandatoryConvertTo(type, propertyDefaultValue);
-                } catch (Exception e2) {
-                    throw RuntimeCamelException.wrapRuntimeCamelException(e2);
-                }
+                value = propertyDefaultValue;
+            } else {
+                throw RuntimeCamelException.wrapRuntimeCamelException(e);
             }
+        }
+        if (value == null) {
+            return null;
+        }
+
+        // a value that cannot be converted to the type is an error (the default value is not used instead, as that
+        // would hide a mistake in the configured value)
+        try {
+            if (separator != null && !separator.isBlank()) {
+                Object values = convertValueUsingSeparator(camelContext, type, genericType, value, separator);
+                return getCamelContext().getTypeConverter().mandatoryConvertTo(type, values);
+            }
+            return getCamelContext().getTypeConverter().mandatoryConvertTo(type, value);
+        } catch (Exception e) {
             throw RuntimeCamelException.wrapRuntimeCamelException(e);
         }
     }
@@ -332,6 +334,11 @@ public class CamelPostProcessorHelper implements CamelContextAware {
         }
     }
 
+    private static String[] splitUsingSeparator(String value, String separator) {
+        // the separator is a plain string, not a regular expression
+        return value.split(Pattern.quote(separator));
+    }
+
     private static Map<String, Object> convertMapUsingSeparator(
             CamelContext camelContext, Type genericType, String value, String separator)
             throws NoTypeConversionAvailableException {
@@ -347,7 +354,7 @@ public class CamelPostProcessorHelper implements CamelContextAware {
             }
         }
         Map<String, Object> values = new LinkedHashMap<>();
-        String[] arr = value.split(separator);
+        String[] arr = splitUsingSeparator(value, separator);
         for (String s : arr) {
             String v = s.trim(); // trim values as user may have whitespace noise
             if (v.contains("=")) {
@@ -374,7 +381,7 @@ public class CamelPostProcessorHelper implements CamelContextAware {
         }
         boolean set = type.isAssignableFrom(Set.class);
         Collection<Object> values = set ? new LinkedHashSet<>() : new ArrayList<>();
-        String[] arr = value.split(separator);
+        String[] arr = splitUsingSeparator(value, separator);
         for (String s : arr) {
             String v = s.trim(); // trim values as user may have whitespace noise
             values.add(camelContext.getTypeConverter().mandatoryConvertTo(ct, v));
@@ -384,7 +391,7 @@ public class CamelPostProcessorHelper implements CamelContextAware {
 
     private static Object[] convertArrayUsingSeparator(CamelContext camelContext, Class<?> type, String value, String separator)
             throws NoTypeConversionAvailableException {
-        String[] arr = value.split(separator);
+        String[] arr = splitUsingSeparator(value, separator);
         Object[] values = new Object[arr.length];
         Class<?> ct = type.getComponentType();
         for (int i = 0; i < arr.length; i++) {

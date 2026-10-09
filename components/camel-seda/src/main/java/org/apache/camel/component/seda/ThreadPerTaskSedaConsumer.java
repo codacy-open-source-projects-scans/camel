@@ -16,6 +16,7 @@
  */
 package org.apache.camel.component.seda;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -69,6 +70,18 @@ public class ThreadPerTaskSedaConsumer extends SedaConsumer {
     }
 
     @Override
+    protected void doStart() throws Exception {
+        super.doStart();
+        // SedaConsumer.doStart() creates the latch with concurrentConsumers count,
+        // but ThreadPerTaskSedaConsumer uses a single coordinator thread that polls
+        // the queue and dispatches each exchange to the task executor.
+        // The concurrentConsumers value is used here as a concurrency limit for the
+        // task executor (via a Semaphore), not as the number of polling threads.
+        // Override the latch to match the actual coordinator thread count (1).
+        latch = new CountDownLatch(1);
+    }
+
+    @Override
     protected void setupTasks() {
         // Create task executor - uses virtual threads when enabled
         taskExecutor = getEndpoint().getCamelContext().getExecutorServiceManager()
@@ -115,9 +128,27 @@ public class ThreadPerTaskSedaConsumer extends SedaConsumer {
 
     @Override
     protected void processPolledExchange(Exchange exchange) {
+        // count the task when it is dispatched (not when it starts running), so a graceful shutdown
+        // also waits for polled exchanges whose task has not started yet
+        activeTasks.increment();
+        boolean dispatched = false;
+        try {
+            dispatch(exchange);
+            dispatched = true;
+        } finally {
+            if (!dispatched) {
+                // the task was not dispatched (e.g. rejected), so it will never run and undo the count itself
+                activeTasks.decrement();
+                if (concurrencyLimiter != null) {
+                    concurrencyLimiter.release();
+                }
+            }
+        }
+    }
+
+    private void dispatch(Exchange exchange) {
         // Dispatch to task executor for processing
         taskExecutor.execute(() -> {
-            activeTasks.increment();
             try {
                 // Prepare the exchange
                 Exchange prepared = prepareExchange(exchange);

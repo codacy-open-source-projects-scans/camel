@@ -22,6 +22,15 @@
 
     <modelVersion>4.0.0</modelVersion>
 
+[#if ParentGroupId??]
+    <parent>
+        <groupId>[=ParentGroupId]</groupId>
+        <artifactId>[=ParentArtifactId]</artifactId>
+        <version>[=ParentVersion]</version>
+        <relativePath/>
+    </parent>
+
+[/#if]
     <groupId>[=GroupId]</groupId>
     <artifactId>[=ArtifactId]</artifactId>
     <version>[=Version]</version>
@@ -34,20 +43,19 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.group-id>[=QuarkusGroupId]</quarkus.platform.group-id>
-        <quarkus.platform.artifact-id>[=QuarkusArtifactId]</quarkus.platform.artifact-id>
         <quarkus.platform.version>[=QuarkusVersion]</quarkus.platform.version>
 [#if BuildProperties?has_content]
 [=BuildProperties]
 [/#if]
         <skipITs>true</skipITs>
-        <surefire-plugin.version>3.5.5</surefire-plugin.version>
+        <surefire-plugin.version>3.5.6</surefire-plugin.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
                 <groupId>${quarkus.platform.group-id}</groupId>
-                <artifactId>${quarkus.platform.artifact-id}</artifactId>
+                <artifactId>quarkus-bom</artifactId>
                 <version>${quarkus.platform.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
@@ -128,7 +136,11 @@
 
         <dependency>
             <groupId>io.quarkus</groupId>
+[#if UseQuarkusJunit]
+            <artifactId>quarkus-junit</artifactId>
+[#else]
             <artifactId>quarkus-junit5</artifactId>
+[/#if]
             <scope>test</scope>
         </dependency>
     </dependencies>

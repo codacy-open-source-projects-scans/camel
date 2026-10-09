@@ -238,6 +238,8 @@ public class BindyFixedLengthFactory extends BindyAbstractFactory implements Bin
                 //token = token.trim();
             }
 
+            boolean fieldContinueParseOnFailure = shouldContinueOnFailure(dataField.continueParseOnFailure());
+
             // Check mandatory field
             if (dataField.required()) {
 
@@ -279,7 +281,7 @@ public class BindyFixedLengthFactory extends BindyAbstractFactory implements Bin
             }
             if (!token.isEmpty()) {
                 try {
-                    value = format.parse(token);
+                    value = parseField(format, token, fieldContinueParseOnFailure, field.getType(), dataField.defaultValue());
                 } catch (FormatException ie) {
                     throw new IllegalArgumentException(ie.getMessage() + ", position: " + offset + ", line: " + line, ie);
                 } catch (Exception e) {
@@ -483,8 +485,13 @@ public class BindyFixedLengthFactory extends BindyAbstractFactory implements Bin
 
                         StringBuilder temp = new StringBuilder();
 
+                        // count the length the same way as unmarshal does (code points, or graphemes with
+                        // countGrapheme), not in UTF-16 chars
+                        UnicodeHelper unicodeResult = new UnicodeHelper(result, unicodeMethod());
+                        int resultLength = unicodeResult.length();
+
                         // Check if we must pad
-                        if (result.length() < fieldLength) {
+                        if (resultLength < fieldLength) {
 
                             // No padding defined for the field
                             if (padCharField == 0) {
@@ -495,13 +502,13 @@ public class BindyFixedLengthFactory extends BindyAbstractFactory implements Bin
                             }
 
                             if (align.contains("R")) {
-                                temp.append(generatePaddingChars(padChar, fieldLength, result.length()));
+                                temp.append(generatePaddingChars(padChar, fieldLength, resultLength));
                                 temp.append(result);
                             } else if (align.contains("L")) {
                                 temp.append(result);
-                                temp.append(generatePaddingChars(padChar, fieldLength, result.length()));
+                                temp.append(generatePaddingChars(padChar, fieldLength, resultLength));
                             } else if (align.contains("B")) {
-                                temp.append(generatePaddingChars(padChar, fieldLength, result.length()));
+                                temp.append(generatePaddingChars(padChar, fieldLength, resultLength));
                                 temp.append(result);
                             } else {
                                 throw new IllegalArgumentException(
@@ -510,16 +517,16 @@ public class BindyFixedLengthFactory extends BindyAbstractFactory implements Bin
                             }
 
                             result = temp.toString();
-                        } else if (result.length() > fieldLength) {
+                        } else if (resultLength > fieldLength) {
                             // we are bigger than allowed
 
                             // is clipped enabled? if so clip the field
                             if (datafield.clip()) {
-                                result = result.substring(0, fieldLength);
+                                result = unicodeResult.substring(0, fieldLength);
                             } else {
                                 throw new IllegalArgumentException(
                                         "Length for the " + field.getName()
-                                                                   + " must not be larger than allowed, was: " + result.length()
+                                                                   + " must not be larger than allowed, was: " + resultLength
                                                                    + ", allowed: " + fieldLength);
                             }
                         }
@@ -550,6 +557,13 @@ public class BindyFixedLengthFactory extends BindyAbstractFactory implements Bin
 
         }
 
+    }
+
+    /**
+     * How the length of a field is counted, on unmarshal and on marshal.
+     */
+    public UnicodeHelper.Method unicodeMethod() {
+        return countGrapheme ? UnicodeHelper.Method.GRAPHEME : UnicodeHelper.Method.CODEPOINTS;
     }
 
     private String generatePaddingChars(char pad, int lengthField, int lengthString) {
@@ -623,21 +637,24 @@ public class BindyFixedLengthFactory extends BindyAbstractFactory implements Bin
 
                 countGrapheme = fixedLengthRecord.countGrapheme();
                 LOG.debug("Enable grapheme counting instead of codepoints: {}", countGrapheme);
+
+                continueParseOnFailure = fixedLengthRecord.continueParseOnFailure();
+                LOG.debug("Continue parse on failure: {}", continueParseOnFailure);
             }
         }
 
         if (hasHeader && isHeader) {
-            throw new java.lang.IllegalArgumentException(
+            throw new IllegalArgumentException(
                     "Record can not be configured with both 'isHeader=true' and 'hasHeader=true'");
         }
 
         if (hasFooter && isFooter) {
-            throw new java.lang.IllegalArgumentException(
+            throw new IllegalArgumentException(
                     "Record can not be configured with both 'isFooter=true' and 'hasFooter=true'");
         }
 
         if ((isHeader || isFooter) && (skipHeader || skipFooter)) {
-            throw new java.lang.IllegalArgumentException(
+            throw new IllegalArgumentException(
                     "skipHeader and/or skipFooter can not be configured on a record where 'isHeader=true' or 'isFooter=true'");
         }
 

@@ -25,11 +25,14 @@ import org.apache.camel.CamelContextAware;
 import org.apache.camel.DisabledAware;
 import org.apache.camel.Exchange;
 import org.apache.camel.Message;
+import org.apache.camel.NoTypeConversionAvailableException;
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.Traceable;
 import org.apache.camel.spi.DataFormat;
+import org.apache.camel.spi.DataFormatName;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.AsyncProcessorSupport;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.service.ServiceHelper;
@@ -41,10 +44,11 @@ import org.apache.camel.util.ObjectHelper;
  * format</a>
  */
 public class UnmarshalProcessor extends AsyncProcessorSupport
-        implements Traceable, CamelContextAware, IdAware, RouteIdAware, DisabledAware {
+        implements Traceable, CamelContextAware, IdAware, RouteIdAware, StepIdAware, DisabledAware {
 
     private String id;
     private String routeId;
+    private String stepId;
     private CamelContext camelContext;
     private boolean disabled;
     private final DataFormat dataFormat;
@@ -67,10 +71,11 @@ public class UnmarshalProcessor extends AsyncProcessorSupport
 
         InputStream stream = null;
         Object result = null;
+        Object body = null;
         try {
             final Message in = exchange.getIn();
             final Object originalBody = in.getBody();
-            Object body = originalBody;
+            body = originalBody;
             if (variableSend != null) {
                 body = ExchangeHelper.getVariable(exchange, variableSend);
             }
@@ -116,7 +121,7 @@ public class UnmarshalProcessor extends AsyncProcessorSupport
         } catch (Exception e) {
             // remove OUT message, as an exception occurred
             exchange.setOut(null);
-            exchange.setException(e);
+            exchange.setException(body == null ? nullBodyException(e) : e);
         } finally {
             // The Iterator will close the stream itself
             if (!(result instanceof Iterator)) {
@@ -125,6 +130,25 @@ public class UnmarshalProcessor extends AsyncProcessorSupport
         }
         callback.done(true);
         return true;
+    }
+
+    /**
+     * A null body fails in the type converter, whose message only says that null cannot become an InputStream. Say what
+     * it means here: there is nothing to unmarshal, and allowNullBody skips it. The exception type stays the same, so
+     * an onException for it still matches.
+     */
+    private Exception nullBodyException(Exception e) {
+        if (!(e instanceof NoTypeConversionAvailableException ntc) || ntc.getValue() != null) {
+            return e;
+        }
+        String name
+                = dataFormat instanceof DataFormatName dfn ? dfn.getDataFormatName() : dataFormat.getClass().getSimpleName();
+        String what = variableSend != null ? "the variable " + variableSend : "the message body";
+        String message = "Cannot unmarshal using " + name + ": " + what + " is null, so there is nothing to unmarshal. "
+                         + "Set " + what + " first, or set allowNullBody=true to skip a null body.";
+        NoTypeConversionAvailableException answer = new NoTypeConversionAvailableException(message, null, ntc.getToType());
+        answer.initCause(e);
+        return answer;
     }
 
     @Override
@@ -155,6 +179,16 @@ public class UnmarshalProcessor extends AsyncProcessorSupport
     @Override
     public void setRouteId(String routeId) {
         this.routeId = routeId;
+    }
+
+    @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
     }
 
     @Override

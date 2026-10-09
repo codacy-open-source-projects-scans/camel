@@ -26,6 +26,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.health.HealthCheckHelper;
 import org.apache.camel.health.WritableHealthCheckRepository;
 import org.apache.camel.support.DefaultProducer;
@@ -154,12 +155,15 @@ public class AWS2EC2Producer extends DefaultProducer {
                 try {
                     result = ec2Client.runInstances(runInstancesRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Run Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Run Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 LOG.trace("Creating and running instances requests performing");
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createAndRunInstances operation requires RunInstancesRequest in POJO mode");
             }
         } else {
             RunInstancesRequest.Builder builder = RunInstancesRequest.builder();
@@ -226,7 +230,7 @@ public class AWS2EC2Producer extends DefaultProducer {
             try {
                 result = ec2Client.runInstances(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Run Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Run Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             LOG.trace("Creating and running instances with ami [{}] and instance type {}", ami, instanceType);
@@ -245,12 +249,15 @@ public class AWS2EC2Producer extends DefaultProducer {
                 try {
                     result = ec2Client.startInstances(startInstancesRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Start Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Start Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 LOG.trace("Starting instances with Ids [{}] ", startInstancesRequest.instanceIds());
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "startInstances operation requires StartInstancesRequest in POJO mode");
             }
         } else {
             StartInstancesRequest.Builder builder = StartInstancesRequest.builder();
@@ -264,7 +271,7 @@ public class AWS2EC2Producer extends DefaultProducer {
             try {
                 result = ec2Client.startInstances(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Start Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Start Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
 
@@ -287,12 +294,15 @@ public class AWS2EC2Producer extends DefaultProducer {
                 try {
                     result = ec2Client.stopInstances(stopInstancesRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Stop Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Stop Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 LOG.trace("Stopping instances with Ids [{}] ", stopInstancesRequest.instanceIds());
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "stopInstances operation requires StopInstancesRequest in POJO mode");
             }
         } else {
             StopInstancesRequest.Builder builder = StopInstancesRequest.builder();
@@ -306,7 +316,7 @@ public class AWS2EC2Producer extends DefaultProducer {
             try {
                 result = ec2Client.stopInstances(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Stop Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Stop Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
 
@@ -329,12 +339,15 @@ public class AWS2EC2Producer extends DefaultProducer {
                 try {
                     result = ec2Client.terminateInstances(terminateInstancesRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Terminate Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Terminate Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 LOG.trace("Terminating instances with Ids [{}] ", terminateInstancesRequest.instanceIds());
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "terminateInstances operation requires TerminateInstancesRequest in POJO mode");
             }
         } else {
             TerminateInstancesRequest.Builder builder = TerminateInstancesRequest.builder();
@@ -348,7 +361,7 @@ public class AWS2EC2Producer extends DefaultProducer {
             try {
                 result = ec2Client.terminateInstances(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Terminate Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Terminate Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
 
@@ -431,9 +444,12 @@ public class AWS2EC2Producer extends DefaultProducer {
                     LOG.trace("Rebooting instances with Ids [{}] ", rebootInstancesRequest.instanceIds());
                     ec2Client.rebootInstances(rebootInstancesRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Reboot Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Reboot Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
+            } else {
+                throw new IllegalArgumentException(
+                        "rebootInstances operation requires RebootInstancesRequest in POJO mode");
             }
         } else {
             RebootInstancesRequest.Builder builder = RebootInstancesRequest.builder();
@@ -450,7 +466,7 @@ public class AWS2EC2Producer extends DefaultProducer {
 
                 ec2Client.rebootInstances(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Reboot Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Reboot Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
         }
@@ -466,12 +482,15 @@ public class AWS2EC2Producer extends DefaultProducer {
                 try {
                     result = ec2Client.monitorInstances(monitorInstancesRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Monitor Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Monitor Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 LOG.trace("Start Monitoring instances with Ids [{}] ", monitorInstancesRequest.instanceIds());
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "monitorInstances operation requires MonitorInstancesRequest in POJO mode");
             }
         } else {
             MonitorInstancesRequest.Builder builder = MonitorInstancesRequest.builder();
@@ -485,7 +504,7 @@ public class AWS2EC2Producer extends DefaultProducer {
             try {
                 result = ec2Client.monitorInstances(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Monitor Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Monitor Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
 
@@ -508,12 +527,15 @@ public class AWS2EC2Producer extends DefaultProducer {
                 try {
                     result = ec2Client.unmonitorInstances(unmonitorInstancesRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Unmonitor Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Unmonitor Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 LOG.trace("Stop Monitoring instances with Ids [{}] ", unmonitorInstancesRequest.instanceIds());
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "unmonitorInstances operation requires UnmonitorInstancesRequest in POJO mode");
             }
         } else {
             UnmonitorInstancesRequest.Builder builder = UnmonitorInstancesRequest.builder();
@@ -527,7 +549,7 @@ public class AWS2EC2Producer extends DefaultProducer {
             try {
                 result = ec2Client.unmonitorInstances(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Unmonitor Instances command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Unmonitor Instances command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
 
@@ -550,12 +572,15 @@ public class AWS2EC2Producer extends DefaultProducer {
                 try {
                     result = ec2Client.createTags(createTagsRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create tags command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create tags command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 LOG.trace("Created tags [{}] ", createTagsRequest.tags());
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createTags operation requires CreateTagsRequest in POJO mode");
             }
         } else {
             Collection<Tag> tags;
@@ -576,7 +601,7 @@ public class AWS2EC2Producer extends DefaultProducer {
             try {
                 result = ec2Client.createTags(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create tags command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create tags command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
 
@@ -599,12 +624,15 @@ public class AWS2EC2Producer extends DefaultProducer {
                 try {
                     result = ec2Client.deleteTags(deleteTagsRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete tags command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete tags command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 LOG.trace("Delete tags [{}]  ", deleteTagsRequest.tags());
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteTags operation requires DeleteTagsRequest in POJO mode");
             }
         } else {
             Collection<Tag> tags;
@@ -625,7 +653,7 @@ public class AWS2EC2Producer extends DefaultProducer {
             try {
                 result = ec2Client.deleteTags(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete tags command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete tags command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
 
@@ -674,7 +702,7 @@ public class AWS2EC2Producer extends DefaultProducer {
                 try {
                     result = pojoExecutor.apply(requestClass.cast(payload));
                 } catch (AwsServiceException ase) {
-                    LOG.trace("{} command returned the error code {}", operationName, ase.awsErrorDetails().errorCode());
+                    LOG.trace("{} command returned the error code {}", operationName, AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 LOG.trace("{} request performing", operationName);
@@ -688,7 +716,7 @@ public class AWS2EC2Producer extends DefaultProducer {
             try {
                 result = headerExecutor.get();
             } catch (AwsServiceException ase) {
-                LOG.trace("{} command returned the error code {}", operationName, ase.awsErrorDetails().errorCode());
+                LOG.trace("{} command returned the error code {}", operationName, AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
         }

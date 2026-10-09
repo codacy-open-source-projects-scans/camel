@@ -25,6 +25,8 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.sax.SAXSource;
 import javax.xml.transform.stream.StreamSource;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
 import org.apache.camel.Exchange;
@@ -58,14 +60,27 @@ public class XmlSourceHandlerFactoryImpl implements SourceHandlerFactory {
 
     @Override
     public Source getSource(Exchange exchange, Expression source) throws Exception {
-        // only convert to input stream if really needed
-        if (isInputStreamNeeded(exchange)) {
-            InputStream is = exchange.getIn().getBody(InputStream.class);
-            return getSource(exchange, is);
+        Object body;
+        if (source != null) {
+            body = source.evaluate(exchange, Object.class);
+        } else if (isInputStreamNeeded(exchange)) {
+            // only convert to input stream if really needed
+            body = exchange.getIn().getBody(InputStream.class);
         } else {
-            Object body = source != null ? source.evaluate(exchange, Object.class) : exchange.getMessage().getBody();
-            return getSource(exchange, body);
+            body = exchange.getMessage().getBody();
         }
+
+        Source answer = getSource(exchange, body);
+        // Normalize after dispatch: a subclass may obtain a DOMSource while requesting another Source type.
+        // Explicit Sources, including source-expression results, keep their chosen context node.
+        if (!(body instanceof Source) && answer instanceof DOMSource domSource
+                && domSource.getNode() instanceof Element element) {
+            Document document = element.getOwnerDocument();
+            if (document != null && element == document.getDocumentElement()) {
+                return new DOMSource(document, domSource.getSystemId());
+            }
+        }
+        return answer;
     }
 
     /**
@@ -141,6 +156,13 @@ public class XmlSourceHandlerFactoryImpl implements SourceHandlerFactory {
 
         if (source == null) {
             if (isFailOnNullBody()) {
+                if (body == null) {
+                    // a timer alone, or a to: file: that wrote instead of read: nothing to transform
+                    throw new ExpectedBodyTypeException(
+                            exchange, Source.class,
+                            "the xslt step got no message body to transform: read the XML before the step with"
+                                                    + " poll: file:..., pollEnrich or a from: consumer, or set it with setBody");
+                }
                 throw new ExpectedBodyTypeException(exchange, Source.class);
             } else {
                 try {

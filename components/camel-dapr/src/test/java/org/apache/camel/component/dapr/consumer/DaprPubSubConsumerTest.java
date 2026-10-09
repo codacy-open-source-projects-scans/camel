@@ -18,6 +18,7 @@ package org.apache.camel.component.dapr.consumer;
 
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.concurrent.CompletableFuture;
 
 import io.dapr.client.DaprClientBuilder;
 import io.dapr.client.DaprPreviewClient;
@@ -33,21 +34,27 @@ import org.apache.camel.ExtendedCamelContext;
 import org.apache.camel.component.dapr.DaprConfiguration;
 import org.apache.camel.component.dapr.DaprConstants;
 import org.apache.camel.component.dapr.DaprEndpoint;
+import org.apache.camel.component.dapr.DaprHeaderFilterStrategy;
 import org.apache.camel.spi.ExchangeFactory;
 import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.test.junit6.CamelTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import reactor.core.publisher.Mono;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -78,6 +85,7 @@ public class DaprPubSubConsumerTest extends CamelTestSupport {
                 .thenAnswer(inv -> DefaultExchange.newFromEndpoint(inv.getArgument(0)));
         when(endpoint.getCamelContext()).thenReturn(context);
         when(endpoint.getConfiguration()).thenReturn(configuration);
+        when(endpoint.getHeaderFilterStrategy()).thenReturn(new DaprHeaderFilterStrategy());
         when(configuration.getPubSubName()).thenReturn("testPubSub");
         when(configuration.getTopic()).thenReturn("testTopic");
         when(configuration.getPreviewClient()).thenReturn(mockClient);
@@ -122,7 +130,12 @@ public class DaprPubSubConsumerTest extends CamelTestSupport {
         when(cloudEvent.getTraceParent()).thenReturn(traceParent);
         when(cloudEvent.getTraceState()).thenReturn(traceState);
 
-        listenerCaptor.getValue().onEvent(cloudEvent).block();
+        doAnswer(inv -> {
+            inv.getArgument(1, AsyncCallback.class).done(true);
+            return true;
+        }).when(processor).process(any(Exchange.class), any(AsyncCallback.class));
+
+        assertEquals(SubscriptionListener.Status.SUCCESS, listenerCaptor.getValue().onEvent(cloudEvent).block());
 
         verify(processor).process(exchangeCaptor.capture(), callbackCaptor.capture());
 
@@ -131,8 +144,8 @@ public class DaprPubSubConsumerTest extends CamelTestSupport {
 
         String body = new String(exchange.getIn().getBody(byte[].class), StandardCharsets.UTF_8);
         assertEquals(payload, body);
-        assertEquals(pubSubName, exchange.getIn().getHeader(DaprConstants.PUBSUB_NAME));
-        assertEquals(topic, exchange.getIn().getHeader(DaprConstants.TOPIC));
+        assertNull(exchange.getIn().getHeader(DaprConstants.PUBSUB_NAME));
+        assertNull(exchange.getIn().getHeader(DaprConstants.TOPIC));
         assertEquals(id, exchange.getIn().getHeader(DaprConstants.ID));
         assertEquals(ver, exchange.getIn().getHeader(DaprConstants.SPECIFIC_VERSION));
         assertArrayEquals(payload.getBytes(), (byte[]) exchange.getIn().getHeader(DaprConstants.BINARY_DATA));
@@ -143,6 +156,81 @@ public class DaprPubSubConsumerTest extends CamelTestSupport {
 
         consumer.doStop();
         verify(mockSubscription).close();
-        verify(mockClient).close();
+        // the client is configured, not created by the consumer: it is not closed
+        verify(mockClient, never()).close();
+    }
+
+    @Test
+    void testFailedExchangeIsRedelivered() throws Exception {
+        consumer.doStart();
+
+        doAnswer(inv -> {
+            inv.getArgument(0, Exchange.class).setException(new IllegalStateException("Forced"));
+            inv.getArgument(1, AsyncCallback.class).done(true);
+            return true;
+        }).when(processor).process(any(Exchange.class), any(AsyncCallback.class));
+
+        SubscriptionListener.Status status = listenerCaptor.getValue().onEvent(newCloudEvent()).block();
+
+        // a failed exchange must not acknowledge the event, Dapr would drop it
+        assertEquals(SubscriptionListener.Status.RETRY, status);
+    }
+
+    @Test
+    void testRollbackOnlyExchangeIsRedelivered() throws Exception {
+        consumer.doStart();
+
+        doAnswer(inv -> {
+            // a rollback without an exception, as markRollbackOnly() does
+            inv.getArgument(0, Exchange.class).setRollbackOnly(true);
+            inv.getArgument(1, AsyncCallback.class).done(true);
+            return true;
+        }).when(processor).process(any(Exchange.class), any(AsyncCallback.class));
+
+        SubscriptionListener.Status status = listenerCaptor.getValue().onEvent(newCloudEvent()).block();
+
+        assertEquals(SubscriptionListener.Status.RETRY, status);
+    }
+
+    @Test
+    void testRollbackOnlyLastExchangeIsRedelivered() throws Exception {
+        consumer.doStart();
+
+        doAnswer(inv -> {
+            // a rollback without an exception, as markRollbackOnlyLast() does
+            inv.getArgument(0, Exchange.class).setRollbackOnlyLast(true);
+            inv.getArgument(1, AsyncCallback.class).done(true);
+            return true;
+        }).when(processor).process(any(Exchange.class), any(AsyncCallback.class));
+
+        SubscriptionListener.Status status = listenerCaptor.getValue().onEvent(newCloudEvent()).block();
+
+        assertEquals(SubscriptionListener.Status.RETRY, status);
+    }
+
+    @Test
+    void testEventIsAcknowledgedWhenTheExchangeIsDone() throws Exception {
+        consumer.doStart();
+
+        // the route continues asynchronously: the callback is called later
+        doReturn(false).when(processor).process(any(Exchange.class), any(AsyncCallback.class));
+
+        Mono<SubscriptionListener.Status> result = listenerCaptor.getValue().onEvent(newCloudEvent());
+        CompletableFuture<SubscriptionListener.Status> status = result.toFuture();
+
+        verify(processor).process(exchangeCaptor.capture(), callbackCaptor.capture());
+        assertFalse(status.isDone(), "The event must not be acknowledged before the exchange is done");
+
+        exchangeCaptor.getValue().setException(new IllegalStateException("Forced"));
+        callbackCaptor.getValue().done(false);
+
+        assertEquals(SubscriptionListener.Status.RETRY, status.get());
+    }
+
+    private static CloudEvent<byte[]> newCloudEvent() {
+        CloudEvent<byte[]> cloudEvent = mock(CloudEvent.class);
+        when(cloudEvent.getData()).thenReturn("testBody".getBytes());
+        when(cloudEvent.getId()).thenReturn("myId");
+        return cloudEvent;
     }
 }

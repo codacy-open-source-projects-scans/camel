@@ -42,7 +42,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 public class Base extends CamelTestSupport {
 
     @RegisterExtension
-    public AzureService service = AzureStorageDataLakeServiceFactory.createService();
+    public AzureService service = AzureStorageDataLakeServiceFactory.createSingletonService();
 
     protected DataLakeServiceClient serviceClient;
     protected DataLakeConfiguration configuration;
@@ -71,7 +71,7 @@ public class Base extends CamelTestSupport {
 
     @BeforeAll
     void initProperties() {
-        fileSystemName = RandomStringUtils.randomAlphabetic(5).toLowerCase(Locale.ROOT);
+        fileSystemName = RandomStringUtils.secure().nextAlphabetic(5).toLowerCase(Locale.ROOT);
 
         configuration = new DataLakeConfiguration();
         configuration.setSharedKeyCredential(new StorageSharedKeyCredential(

@@ -18,5 +18,9 @@ package org.apache.camel.component.aws2.bedrock.agentruntime;
 
 public enum BedrockAgentRuntimeOperations {
 
-    retrieveAndGenerate
+    retrieveAndGenerate,
+    invokeFlow,
+    invokeAgent,
+    invokeInlineAgent,
+    retrieve
 }

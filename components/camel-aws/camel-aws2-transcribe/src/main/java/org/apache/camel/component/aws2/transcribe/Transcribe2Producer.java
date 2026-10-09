@@ -16,10 +16,16 @@
  */
 package org.apache.camel.component.aws2.transcribe;
 
+import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+
 import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.support.DefaultProducer;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.URISupport;
@@ -146,11 +152,14 @@ public class Transcribe2Producer extends DefaultProducer {
                 try {
                     result = transcribeClient.startTranscriptionJob(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Start Transcription Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Start Transcription Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "startTranscriptionJob operation requires StartTranscriptionJobRequest in POJO mode");
             }
         } else {
             StartTranscriptionJobRequest.Builder builder = StartTranscriptionJobRequest.builder();
@@ -174,7 +183,7 @@ public class Transcribe2Producer extends DefaultProducer {
             try {
                 result = transcribeClient.startTranscriptionJob(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Start Transcription Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Start Transcription Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -190,11 +199,14 @@ public class Transcribe2Producer extends DefaultProducer {
                 try {
                     result = transcribeClient.getTranscriptionJob(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Transcription Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Transcription Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getTranscriptionJob operation requires GetTranscriptionJobRequest in POJO mode");
             }
         } else {
             GetTranscriptionJobRequest.Builder builder = GetTranscriptionJobRequest.builder();
@@ -206,7 +218,7 @@ public class Transcribe2Producer extends DefaultProducer {
             try {
                 result = transcribeClient.getTranscriptionJob(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Transcription Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Transcription Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -222,11 +234,14 @@ public class Transcribe2Producer extends DefaultProducer {
                 try {
                     result = transcribeClient.listTranscriptionJobs(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Transcription Jobs command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Transcription Jobs command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listTranscriptionJobs operation requires ListTranscriptionJobsRequest in POJO mode");
             }
         } else {
             ListTranscriptionJobsRequest.Builder builder = ListTranscriptionJobsRequest.builder();
@@ -242,7 +257,7 @@ public class Transcribe2Producer extends DefaultProducer {
             try {
                 result = transcribeClient.listTranscriptionJobs(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Transcription Jobs command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Transcription Jobs command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -257,9 +272,12 @@ public class Transcribe2Producer extends DefaultProducer {
                 try {
                     transcribeClient.deleteTranscriptionJob(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete Transcription Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete Transcription Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteTranscriptionJob operation requires DeleteTranscriptionJobRequest in POJO mode");
             }
         } else {
             DeleteTranscriptionJobRequest.Builder builder = DeleteTranscriptionJobRequest.builder();
@@ -270,7 +288,7 @@ public class Transcribe2Producer extends DefaultProducer {
             try {
                 transcribeClient.deleteTranscriptionJob(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete Transcription Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete Transcription Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
         }
@@ -285,11 +303,14 @@ public class Transcribe2Producer extends DefaultProducer {
                 try {
                     result = transcribeClient.createVocabulary(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create Vocabulary command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create Vocabulary command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createVocabulary operation requires CreateVocabularyRequest in POJO mode");
             }
         } else {
             CreateVocabularyRequest.Builder builder = CreateVocabularyRequest.builder();
@@ -309,7 +330,7 @@ public class Transcribe2Producer extends DefaultProducer {
             try {
                 result = transcribeClient.createVocabulary(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create Vocabulary command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create Vocabulary command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -325,11 +346,14 @@ public class Transcribe2Producer extends DefaultProducer {
                 try {
                     result = transcribeClient.getVocabulary(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Vocabulary command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Vocabulary command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getVocabulary operation requires GetVocabularyRequest in POJO mode");
             }
         } else {
             GetVocabularyRequest.Builder builder = GetVocabularyRequest.builder();
@@ -341,7 +365,7 @@ public class Transcribe2Producer extends DefaultProducer {
             try {
                 result = transcribeClient.getVocabulary(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Vocabulary command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Vocabulary command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -357,11 +381,14 @@ public class Transcribe2Producer extends DefaultProducer {
                 try {
                     result = transcribeClient.listVocabularies(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Vocabularies command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Vocabularies command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listVocabularies operation requires ListVocabulariesRequest in POJO mode");
             }
         } else {
             ListVocabulariesRequest.Builder builder = ListVocabulariesRequest.builder();
@@ -373,7 +400,7 @@ public class Transcribe2Producer extends DefaultProducer {
             try {
                 result = transcribeClient.listVocabularies(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Vocabularies command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Vocabularies command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -389,11 +416,14 @@ public class Transcribe2Producer extends DefaultProducer {
                 try {
                     result = transcribeClient.updateVocabulary(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Update Vocabulary command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Update Vocabulary command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "updateVocabulary operation requires UpdateVocabularyRequest in POJO mode");
             }
         } else {
             UpdateVocabularyRequest.Builder builder = UpdateVocabularyRequest.builder();
@@ -409,7 +439,7 @@ public class Transcribe2Producer extends DefaultProducer {
             try {
                 result = transcribeClient.updateVocabulary(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Update Vocabulary command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Update Vocabulary command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -424,9 +454,12 @@ public class Transcribe2Producer extends DefaultProducer {
                 try {
                     transcribeClient.deleteVocabulary(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete Vocabulary command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete Vocabulary command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteVocabulary operation requires DeleteVocabularyRequest in POJO mode");
             }
         } else {
             DeleteVocabularyRequest.Builder builder = DeleteVocabularyRequest.builder();
@@ -437,94 +470,474 @@ public class Transcribe2Producer extends DefaultProducer {
             try {
                 transcribeClient.deleteVocabulary(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete Vocabulary command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete Vocabulary command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
         }
     }
 
-    private void createVocabularyFilter(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for create vocabulary filter
+    private void createVocabularyFilter(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof CreateVocabularyFilterRequest req) {
+                setResponse(exchange, execute("Create Vocabulary Filter", () -> transcribeClient.createVocabularyFilter(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "createVocabularyFilter operation requires CreateVocabularyFilterRequest in POJO mode");
+            }
+        } else {
+            CreateVocabularyFilterRequest.Builder builder = CreateVocabularyFilterRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_FILTER_NAME, builder::vocabularyFilterName);
+            applyIfPresent(exchange, Transcribe2Constants.LANGUAGE_CODE, builder::languageCode);
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_FILE_URI, builder::vocabularyFilterFileUri);
+            applyIfPresent(exchange, Transcribe2Constants.DATA_ACCESS_ROLE_ARN, builder::dataAccessRoleArn);
+            List<String> words = exchange.getIn().getHeader(Transcribe2Constants.VOCABULARY_PHRASES, List.class);
+            if (ObjectHelper.isNotEmpty(words)) {
+                builder.words(words);
+            }
+            setResponse(exchange,
+                    execute("Create Vocabulary Filter", () -> transcribeClient.createVocabularyFilter(builder.build())));
+        }
     }
 
-    private void getVocabularyFilter(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for get vocabulary filter
+    private void getVocabularyFilter(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof GetVocabularyFilterRequest req) {
+                setResponse(exchange, execute("Get Vocabulary Filter", () -> transcribeClient.getVocabularyFilter(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "getVocabularyFilter operation requires GetVocabularyFilterRequest in POJO mode");
+            }
+        } else {
+            GetVocabularyFilterRequest.Builder builder = GetVocabularyFilterRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_FILTER_NAME, builder::vocabularyFilterName);
+            setResponse(exchange,
+                    execute("Get Vocabulary Filter", () -> transcribeClient.getVocabularyFilter(builder.build())));
+        }
     }
 
-    private void listVocabularyFilters(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for list vocabulary filters
+    private void listVocabularyFilters(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof ListVocabularyFiltersRequest req) {
+                setResponse(exchange, execute("List Vocabulary Filters", () -> transcribeClient.listVocabularyFilters(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "listVocabularyFilters operation requires ListVocabularyFiltersRequest in POJO mode");
+            }
+        } else {
+            ListVocabularyFiltersRequest.Builder builder = ListVocabularyFiltersRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.JOB_NAME_CONTAINS, builder::nameContains);
+            applyIfPresent(exchange, Transcribe2Constants.NEXT_TOKEN, builder::nextToken);
+            applyMaxResults(exchange, builder::maxResults);
+            setResponse(exchange,
+                    execute("List Vocabulary Filters", () -> transcribeClient.listVocabularyFilters(builder.build())));
+        }
     }
 
-    private void updateVocabularyFilter(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for update vocabulary filter
+    private void updateVocabularyFilter(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof UpdateVocabularyFilterRequest req) {
+                setResponse(exchange, execute("Update Vocabulary Filter", () -> transcribeClient.updateVocabularyFilter(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "updateVocabularyFilter operation requires UpdateVocabularyFilterRequest in POJO mode");
+            }
+        } else {
+            UpdateVocabularyFilterRequest.Builder builder = UpdateVocabularyFilterRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_FILTER_NAME, builder::vocabularyFilterName);
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_FILE_URI, builder::vocabularyFilterFileUri);
+            applyIfPresent(exchange, Transcribe2Constants.DATA_ACCESS_ROLE_ARN, builder::dataAccessRoleArn);
+            List<String> words = exchange.getIn().getHeader(Transcribe2Constants.VOCABULARY_PHRASES, List.class);
+            if (ObjectHelper.isNotEmpty(words)) {
+                builder.words(words);
+            }
+            setResponse(exchange,
+                    execute("Update Vocabulary Filter", () -> transcribeClient.updateVocabularyFilter(builder.build())));
+        }
     }
 
-    private void deleteVocabularyFilter(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for delete vocabulary filter
+    private void deleteVocabularyFilter(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof DeleteVocabularyFilterRequest req) {
+                setResponse(exchange, execute("Delete Vocabulary Filter", () -> transcribeClient.deleteVocabularyFilter(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteVocabularyFilter operation requires DeleteVocabularyFilterRequest in POJO mode");
+            }
+        } else {
+            DeleteVocabularyFilterRequest.Builder builder = DeleteVocabularyFilterRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_FILTER_NAME, builder::vocabularyFilterName);
+            setResponse(exchange,
+                    execute("Delete Vocabulary Filter", () -> transcribeClient.deleteVocabularyFilter(builder.build())));
+        }
     }
 
-    private void createLanguageModel(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for create language model
+    private void createLanguageModel(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof CreateLanguageModelRequest req) {
+                setResponse(exchange, execute("Create Language Model", () -> transcribeClient.createLanguageModel(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "createLanguageModel operation requires CreateLanguageModelRequest in POJO mode");
+            }
+        } else {
+            CreateLanguageModelRequest.Builder builder = CreateLanguageModelRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.LANGUAGE_MODEL_NAME, builder::modelName);
+            applyIfPresent(exchange, Transcribe2Constants.LANGUAGE_CODE, builder::languageCode);
+            applyIfPresent(exchange, Transcribe2Constants.BASE_MODEL_NAME, builder::baseModelName);
+            String s3Uri = exchange.getIn().getHeader(Transcribe2Constants.INPUT_DATA_S3_URI, String.class);
+            String roleArn = exchange.getIn().getHeader(Transcribe2Constants.DATA_ACCESS_ROLE_ARN, String.class);
+            if (ObjectHelper.isNotEmpty(s3Uri) || ObjectHelper.isNotEmpty(roleArn)) {
+                builder.inputDataConfig(InputDataConfig.builder().s3Uri(s3Uri).dataAccessRoleArn(roleArn).build());
+            }
+            setResponse(exchange,
+                    execute("Create Language Model", () -> transcribeClient.createLanguageModel(builder.build())));
+        }
     }
 
-    private void describeLanguageModel(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for describe language model
+    private void describeLanguageModel(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof DescribeLanguageModelRequest req) {
+                setResponse(exchange, execute("Describe Language Model", () -> transcribeClient.describeLanguageModel(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "describeLanguageModel operation requires DescribeLanguageModelRequest in POJO mode");
+            }
+        } else {
+            DescribeLanguageModelRequest.Builder builder = DescribeLanguageModelRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.LANGUAGE_MODEL_NAME, builder::modelName);
+            setResponse(exchange,
+                    execute("Describe Language Model", () -> transcribeClient.describeLanguageModel(builder.build())));
+        }
     }
 
-    private void listLanguageModels(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for list language models
+    private void listLanguageModels(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof ListLanguageModelsRequest req) {
+                setResponse(exchange, execute("List Language Models", () -> transcribeClient.listLanguageModels(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "listLanguageModels operation requires ListLanguageModelsRequest in POJO mode");
+            }
+        } else {
+            ListLanguageModelsRequest.Builder builder = ListLanguageModelsRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.JOB_NAME_CONTAINS, builder::nameContains);
+            applyIfPresent(exchange, Transcribe2Constants.STATUS, builder::statusEquals);
+            applyIfPresent(exchange, Transcribe2Constants.NEXT_TOKEN, builder::nextToken);
+            applyMaxResults(exchange, builder::maxResults);
+            setResponse(exchange, execute("List Language Models", () -> transcribeClient.listLanguageModels(builder.build())));
+        }
     }
 
-    private void deleteLanguageModel(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for delete language model
+    private void deleteLanguageModel(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof DeleteLanguageModelRequest req) {
+                setResponse(exchange, execute("Delete Language Model", () -> transcribeClient.deleteLanguageModel(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteLanguageModel operation requires DeleteLanguageModelRequest in POJO mode");
+            }
+        } else {
+            DeleteLanguageModelRequest.Builder builder = DeleteLanguageModelRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.LANGUAGE_MODEL_NAME, builder::modelName);
+            setResponse(exchange,
+                    execute("Delete Language Model", () -> transcribeClient.deleteLanguageModel(builder.build())));
+        }
     }
 
-    private void createMedicalVocabulary(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for create medical vocabulary
+    private void createMedicalVocabulary(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof CreateMedicalVocabularyRequest req) {
+                setResponse(exchange,
+                        execute("Create Medical Vocabulary", () -> transcribeClient.createMedicalVocabulary(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "createMedicalVocabulary operation requires CreateMedicalVocabularyRequest in POJO mode");
+            }
+        } else {
+            CreateMedicalVocabularyRequest.Builder builder = CreateMedicalVocabularyRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_NAME, builder::vocabularyName);
+            applyIfPresent(exchange, Transcribe2Constants.LANGUAGE_CODE, builder::languageCode);
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_FILE_URI, builder::vocabularyFileUri);
+            setResponse(exchange,
+                    execute("Create Medical Vocabulary", () -> transcribeClient.createMedicalVocabulary(builder.build())));
+        }
     }
 
-    private void getMedicalVocabulary(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for get medical vocabulary
+    private void getMedicalVocabulary(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof GetMedicalVocabularyRequest req) {
+                setResponse(exchange, execute("Get Medical Vocabulary", () -> transcribeClient.getMedicalVocabulary(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "getMedicalVocabulary operation requires GetMedicalVocabularyRequest in POJO mode");
+            }
+        } else {
+            GetMedicalVocabularyRequest.Builder builder = GetMedicalVocabularyRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_NAME, builder::vocabularyName);
+            setResponse(exchange,
+                    execute("Get Medical Vocabulary", () -> transcribeClient.getMedicalVocabulary(builder.build())));
+        }
     }
 
-    private void listMedicalVocabularies(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for list medical vocabularies
+    private void listMedicalVocabularies(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof ListMedicalVocabulariesRequest req) {
+                setResponse(exchange,
+                        execute("List Medical Vocabularies", () -> transcribeClient.listMedicalVocabularies(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "listMedicalVocabularies operation requires ListMedicalVocabulariesRequest in POJO mode");
+            }
+        } else {
+            ListMedicalVocabulariesRequest.Builder builder = ListMedicalVocabulariesRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.JOB_NAME_CONTAINS, builder::nameContains);
+            applyIfPresent(exchange, Transcribe2Constants.STATUS, builder::stateEquals);
+            applyIfPresent(exchange, Transcribe2Constants.NEXT_TOKEN, builder::nextToken);
+            applyMaxResults(exchange, builder::maxResults);
+            setResponse(exchange,
+                    execute("List Medical Vocabularies", () -> transcribeClient.listMedicalVocabularies(builder.build())));
+        }
     }
 
-    private void updateMedicalVocabulary(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for update medical vocabulary
+    private void updateMedicalVocabulary(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof UpdateMedicalVocabularyRequest req) {
+                setResponse(exchange,
+                        execute("Update Medical Vocabulary", () -> transcribeClient.updateMedicalVocabulary(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "updateMedicalVocabulary operation requires UpdateMedicalVocabularyRequest in POJO mode");
+            }
+        } else {
+            UpdateMedicalVocabularyRequest.Builder builder = UpdateMedicalVocabularyRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_NAME, builder::vocabularyName);
+            applyIfPresent(exchange, Transcribe2Constants.LANGUAGE_CODE, builder::languageCode);
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_FILE_URI, builder::vocabularyFileUri);
+            setResponse(exchange,
+                    execute("Update Medical Vocabulary", () -> transcribeClient.updateMedicalVocabulary(builder.build())));
+        }
     }
 
-    private void deleteMedicalVocabulary(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for delete medical vocabulary
+    private void deleteMedicalVocabulary(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof DeleteMedicalVocabularyRequest req) {
+                setResponse(exchange,
+                        execute("Delete Medical Vocabulary", () -> transcribeClient.deleteMedicalVocabulary(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteMedicalVocabulary operation requires DeleteMedicalVocabularyRequest in POJO mode");
+            }
+        } else {
+            DeleteMedicalVocabularyRequest.Builder builder = DeleteMedicalVocabularyRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.VOCABULARY_NAME, builder::vocabularyName);
+            setResponse(exchange,
+                    execute("Delete Medical Vocabulary", () -> transcribeClient.deleteMedicalVocabulary(builder.build())));
+        }
     }
 
-    private void startMedicalTranscriptionJob(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for start medical transcription job
+    private void startMedicalTranscriptionJob(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof StartMedicalTranscriptionJobRequest req) {
+                setResponse(exchange,
+                        execute("Start Medical Transcription Job",
+                                () -> transcribeClient.startMedicalTranscriptionJob(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "startMedicalTranscriptionJob operation requires StartMedicalTranscriptionJobRequest in POJO mode");
+            }
+        } else {
+            StartMedicalTranscriptionJobRequest.Builder builder = StartMedicalTranscriptionJobRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.MEDICAL_TRANSCRIPTION_JOB_NAME,
+                    builder::medicalTranscriptionJobName);
+            applyIfPresent(exchange, Transcribe2Constants.LANGUAGE_CODE, builder::languageCode);
+            applyIfPresent(exchange, Transcribe2Constants.MEDIA_FORMAT, builder::mediaFormat);
+            applyIfPresent(exchange, Transcribe2Constants.OUTPUT_BUCKET_NAME, builder::outputBucketName);
+            applyIfPresent(exchange, Transcribe2Constants.SPECIALTY, builder::specialty);
+            applyIfPresent(exchange, Transcribe2Constants.TYPE, builder::type);
+            String mediaUri = exchange.getIn().getHeader(Transcribe2Constants.MEDIA_URI, String.class);
+            if (ObjectHelper.isNotEmpty(mediaUri)) {
+                builder.media(Media.builder().mediaFileUri(mediaUri).build());
+            }
+            setResponse(exchange, execute("Start Medical Transcription Job",
+                    () -> transcribeClient.startMedicalTranscriptionJob(builder.build())));
+        }
     }
 
-    private void getMedicalTranscriptionJob(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for get medical transcription job
+    private void getMedicalTranscriptionJob(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof GetMedicalTranscriptionJobRequest req) {
+                setResponse(exchange,
+                        execute("Get Medical Transcription Job", () -> transcribeClient.getMedicalTranscriptionJob(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "getMedicalTranscriptionJob operation requires GetMedicalTranscriptionJobRequest in POJO mode");
+            }
+        } else {
+            GetMedicalTranscriptionJobRequest.Builder builder = GetMedicalTranscriptionJobRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.MEDICAL_TRANSCRIPTION_JOB_NAME,
+                    builder::medicalTranscriptionJobName);
+            setResponse(exchange, execute("Get Medical Transcription Job",
+                    () -> transcribeClient.getMedicalTranscriptionJob(builder.build())));
+        }
     }
 
-    private void listMedicalTranscriptionJobs(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for list medical transcription jobs
+    private void listMedicalTranscriptionJobs(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof ListMedicalTranscriptionJobsRequest req) {
+                setResponse(exchange,
+                        execute("List Medical Transcription Jobs", () -> transcribeClient.listMedicalTranscriptionJobs(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "listMedicalTranscriptionJobs operation requires ListMedicalTranscriptionJobsRequest in POJO mode");
+            }
+        } else {
+            ListMedicalTranscriptionJobsRequest.Builder builder = ListMedicalTranscriptionJobsRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.JOB_NAME_CONTAINS, builder::jobNameContains);
+            applyIfPresent(exchange, Transcribe2Constants.STATUS, builder::status);
+            applyIfPresent(exchange, Transcribe2Constants.NEXT_TOKEN, builder::nextToken);
+            applyMaxResults(exchange, builder::maxResults);
+            setResponse(exchange, execute("List Medical Transcription Jobs",
+                    () -> transcribeClient.listMedicalTranscriptionJobs(builder.build())));
+        }
     }
 
-    private void deleteMedicalTranscriptionJob(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for delete medical transcription job
+    private void deleteMedicalTranscriptionJob(TranscribeClient transcribeClient, Exchange exchange)
+            throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof DeleteMedicalTranscriptionJobRequest req) {
+                setResponse(exchange, execute("Delete Medical Transcription Job",
+                        () -> transcribeClient.deleteMedicalTranscriptionJob(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteMedicalTranscriptionJob operation requires DeleteMedicalTranscriptionJobRequest in POJO mode");
+            }
+        } else {
+            DeleteMedicalTranscriptionJobRequest.Builder builder = DeleteMedicalTranscriptionJobRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.MEDICAL_TRANSCRIPTION_JOB_NAME,
+                    builder::medicalTranscriptionJobName);
+            setResponse(exchange, execute("Delete Medical Transcription Job",
+                    () -> transcribeClient.deleteMedicalTranscriptionJob(builder.build())));
+        }
     }
 
-    private void tagResource(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for tag resource
+    private void tagResource(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof TagResourceRequest req) {
+                setResponse(exchange, execute("Tag Resource", () -> transcribeClient.tagResource(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "tagResource operation requires TagResourceRequest in POJO mode");
+            }
+        } else {
+            TagResourceRequest.Builder builder = TagResourceRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.RESOURCE_ARN, builder::resourceArn);
+            Map<String, String> tags = exchange.getIn().getHeader(Transcribe2Constants.TAGS, Map.class);
+            if (ObjectHelper.isNotEmpty(tags)) {
+                builder.tags(tags.entrySet().stream()
+                        .map(e -> Tag.builder().key(e.getKey()).value(e.getValue()).build())
+                        .toList());
+            }
+            setResponse(exchange, execute("Tag Resource", () -> transcribeClient.tagResource(builder.build())));
+        }
     }
 
-    private void untagResource(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for untag resource
+    private void untagResource(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof UntagResourceRequest req) {
+                setResponse(exchange, execute("Untag Resource", () -> transcribeClient.untagResource(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "untagResource operation requires UntagResourceRequest in POJO mode");
+            }
+        } else {
+            UntagResourceRequest.Builder builder = UntagResourceRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.RESOURCE_ARN, builder::resourceArn);
+            List<String> tagKeys = exchange.getIn().getHeader(Transcribe2Constants.TAG_KEYS, List.class);
+            if (ObjectHelper.isNotEmpty(tagKeys)) {
+                builder.tagKeys(tagKeys);
+            }
+            setResponse(exchange, execute("Untag Resource", () -> transcribeClient.untagResource(builder.build())));
+        }
     }
 
-    private void listTagsForResource(TranscribeClient transcribeClient, Exchange exchange) {
-        // Implementation for list tags for resource
+    private void listTagsForResource(TranscribeClient transcribeClient, Exchange exchange) throws InvalidPayloadException {
+        if (getConfiguration().isPojoRequest()) {
+            Object payload = exchange.getIn().getMandatoryBody();
+            if (payload instanceof ListTagsForResourceRequest req) {
+                setResponse(exchange, execute("List Tags For Resource", () -> transcribeClient.listTagsForResource(req)));
+            } else {
+                throw new IllegalArgumentException(
+                        "listTagsForResource operation requires ListTagsForResourceRequest in POJO mode");
+            }
+        } else {
+            ListTagsForResourceRequest.Builder builder = ListTagsForResourceRequest.builder();
+            applyIfPresent(exchange, Transcribe2Constants.RESOURCE_ARN, builder::resourceArn);
+            setResponse(exchange,
+                    execute("List Tags For Resource", () -> transcribeClient.listTagsForResource(builder.build())));
+        }
+    }
+
+    /**
+     * Sets the given header value on the builder when the header is present.
+     */
+    private void applyIfPresent(Exchange exchange, String header, Consumer<String> setter) {
+        String value = exchange.getIn().getHeader(header, String.class);
+        if (ObjectHelper.isNotEmpty(value)) {
+            setter.accept(value);
+        }
+    }
+
+    private void applyMaxResults(Exchange exchange, Consumer<Integer> setter) {
+        Integer maxResults = exchange.getIn().getHeader(Transcribe2Constants.MAX_RESULTS, Integer.class);
+        if (ObjectHelper.isNotEmpty(maxResults)) {
+            setter.accept(maxResults);
+        }
+    }
+
+    /**
+     * Runs an AWS Transcribe call, logging and rethrowing the service error code like the other operations.
+     */
+    private <T> T execute(String operationName, Supplier<T> call) {
+        try {
+            return call.get();
+        } catch (AwsServiceException ase) {
+            LOG.trace("{} command returned the error code {}", operationName, AwsExceptionUtil.errorCode(ase));
+            throw ase;
+        }
+    }
+
+    private void setResponse(Exchange exchange, Object result) {
+        getMessageForResponse(exchange).setBody(result);
     }
 
     protected Transcribe2Configuration getConfiguration() {

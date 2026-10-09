@@ -23,12 +23,17 @@ import java.util.Map;
 import org.apache.camel.ContextTestSupport;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePattern;
+import org.apache.camel.ExchangePropertyKey;
+import org.apache.camel.Message;
 import org.apache.camel.NoSuchBeanException;
 import org.apache.camel.NoSuchHeaderException;
 import org.apache.camel.NoSuchPropertyException;
 import org.apache.camel.converter.stream.InputStreamCache;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.processor.DefaultClaimCheckRepository;
+import org.apache.camel.spi.ClaimCheckRepository;
 import org.apache.camel.support.DefaultExchange;
+import org.apache.camel.support.DefaultMessage;
 import org.apache.camel.support.ExchangeHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -247,6 +252,73 @@ public class ExchangeHelperTest extends ContextTestSupport {
         exchange.getMessage().setBody(null);
         String third = ExchangeHelper.getBodyAndResetStreamCache(exchange, String.class);
         assertNull(third);
+    }
+
+    @Test
+    public void testReplaceMessageOutOnlyWithNoExistingOutKeepsInAttached() {
+        // simulates what TransformProcessor does when transform is the last step of a route:
+        // replace the message as OUT, even though there is no OUT message yet, so the current
+        // IN message is what exchange.getMessage() (aliased here as "old") actually returns
+        assertFalse(exchange.hasOut());
+        Message in = exchange.getIn();
+
+        Message replacement = new DefaultMessage(exchange.getContext());
+        ExchangeHelper.replaceMessage(exchange, replacement, true);
+
+        assertSame(replacement, exchange.getOut());
+        assertSame(in, exchange.getIn());
+        // the IN message must remain attached to the exchange, otherwise anything that calls
+        // exchange.getIn().getExchange() afterwards (e.g. the backlog tracer) hits an NPE
+        assertNotNull(exchange.getIn().getExchange());
+    }
+
+    @Test
+    public void testReplaceMessageOutOnlyWithExistingOutDetachesOldOut() {
+        Message firstOut = new DefaultMessage(exchange.getContext());
+        exchange.setOut(firstOut);
+
+        Message replacement = new DefaultMessage(exchange.getContext());
+        ExchangeHelper.replaceMessage(exchange, replacement, true);
+
+        assertSame(replacement, exchange.getOut());
+        assertNull(firstOut.getExchange());
+    }
+
+    @Test
+    public void testReplaceMessageInOnlyWithNoExistingOutDoesNotCreateOut() {
+        // simulates what SetBodyProcessor and ConvertBodyProcessor do: replace the IN message in place
+        assertFalse(exchange.hasOut());
+        Message in = exchange.getIn();
+
+        Message replacement = new DefaultMessage(exchange.getContext());
+        replacement.setBody("new");
+        ExchangeHelper.replaceMessage(exchange, replacement, false);
+
+        assertSame(replacement, exchange.getIn());
+        // must not lazily create an OUT message, otherwise exchange.getMessage() would return an empty OUT
+        assertFalse(exchange.hasOut());
+        assertEquals("new", exchange.getMessage().getBody(String.class));
+        // the old IN message is no longer referenced by the exchange and must be detached
+        assertNull(in.getExchange());
+    }
+
+    @Test
+    public void testCopyExchangeWithPropertiesDoesNotShareClaimCheckRepository() {
+        DefaultClaimCheckRepository repo = new DefaultClaimCheckRepository();
+        Exchange stored = new DefaultExchange(context);
+        repo.add("original", stored);
+        exchange.setProperty(ExchangePropertyKey.CLAIM_CHECK_REPOSITORY, repo);
+
+        Exchange copy = ExchangeHelper.copyExchangeWithProperties(exchange, context);
+
+        ClaimCheckRepository copyRepo
+                = copy.getProperty(ExchangePropertyKey.CLAIM_CHECK_REPOSITORY, ClaimCheckRepository.class);
+        assertNotSame(repo, copyRepo, "The copy should get its own claim check repository");
+        assertSame(stored, copyRepo.get("original"), "The copy should get the claim checks of the exchange");
+
+        copyRepo.add("part", new DefaultExchange(context));
+        assertFalse(repo.contains("part"), "A claim check stored by the copy should not be visible to the exchange");
+        assertSame(repo, exchange.getProperty(ExchangePropertyKey.CLAIM_CHECK_REPOSITORY));
     }
 
     @Override

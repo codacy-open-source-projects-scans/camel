@@ -20,6 +20,7 @@ import java.security.GeneralSecurityException;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
@@ -27,6 +28,7 @@ import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocketFactory;
 
 import org.apache.camel.RuntimeCamelException;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,9 +36,9 @@ public class SSLContextServerParameters extends BaseSSLContextParameters {
 
     private static final Logger LOG = LoggerFactory.getLogger(SSLContextServerParameters.class);
 
-    protected String clientAuthentication;
+    protected @Nullable String clientAuthentication;
 
-    public String getClientAuthentication() {
+    public @Nullable String getClientAuthentication() {
         return clientAuthentication;
     }
 
@@ -46,7 +48,7 @@ public class SSLContextServerParameters extends BaseSSLContextParameters {
      *
      * @param value the desired configuration options or {@code null} to use the defaults
      */
-    public void setClientAuthentication(String value) {
+    public void setClientAuthentication(@Nullable String value) {
         this.clientAuthentication = value;
     }
 
@@ -82,8 +84,12 @@ public class SSLContextServerParameters extends BaseSSLContextParameters {
 
         if (this.getClientAuthentication() != null) {
 
+            String clientAuthStr = this.parsePropertyValue(this.getClientAuthentication());
+            if (clientAuthStr == null) {
+                clientAuthStr = this.getClientAuthentication();
+            }
             final ClientAuthentication clientAuthValue
-                    = ClientAuthentication.valueOf(this.parsePropertyValue(this.getClientAuthentication()));
+                    = ClientAuthentication.valueOf(clientAuthStr.toUpperCase(Locale.ENGLISH));
 
             Configurer<SSLEngine> sslEngineConfigurer = new Configurer<>() {
                 @Override
@@ -121,8 +127,12 @@ public class SSLContextServerParameters extends BaseSSLContextParameters {
 
         if (this.getClientAuthentication() != null) {
 
+            String clientAuthStr = this.parsePropertyValue(this.getClientAuthentication());
+            if (clientAuthStr == null) {
+                clientAuthStr = this.getClientAuthentication();
+            }
             final ClientAuthentication clientAuthValue
-                    = ClientAuthentication.valueOf(this.parsePropertyValue(this.getClientAuthentication()));
+                    = ClientAuthentication.valueOf(clientAuthStr.toUpperCase(Locale.ENGLISH));
 
             Configurer<SSLServerSocket> sslServerSocketConfigurer = new Configurer<>() {
                 @Override

@@ -16,6 +16,7 @@
  */
 package org.apache.camel.model;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -28,20 +29,21 @@ import jakarta.xml.bind.annotation.XmlElementRef;
 import jakarta.xml.bind.annotation.XmlRootElement;
 
 import org.apache.camel.Expression;
-import org.apache.camel.builder.ExpressionBuilder;
 import org.apache.camel.spi.Metadata;
 
 /**
  * Allows setting multiple variables at the same time.
  */
-@Metadata(label = "eip,transformation")
+@Metadata(label = "eip,messaging,transformation",
+          description = "Sets multiple variables at once, each computed by its own expression")
 @XmlRootElement(name = "setVariables")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class SetVariablesDefinition extends ProcessorDefinition<SetVariablesDefinition> {
 
     /** This is provided to support XML and YAML DSL */
     @XmlElementRef(name = "variables")
-    private List<SetVariableDefinition> variables = new java.util.ArrayList<>();
+    @Metadata(description = "The variables to set on the exchange.")
+    private List<SetVariableDefinition> variables = new ArrayList<>();
 
     public SetVariablesDefinition() {
     }
@@ -80,8 +82,8 @@ public class SetVariablesDefinition extends ProcessorDefinition<SetVariablesDefi
             throw new IllegalArgumentException("Keys must be Strings");
         }
         if (!(value instanceof Expression)) {
-            // Assume it's a constant of some kind
-            value = ExpressionBuilder.constantExpression(value);
+            // a constant: as the constant language when it is a plain value, so every DSL can write it
+            value = ExpressionNodeHelper.toConstantExpression(value);
         }
         variables.add(new SetVariableDefinition((String) key, (Expression) value));
     }

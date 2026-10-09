@@ -63,6 +63,7 @@ import org.apache.camel.spi.ManagementNameStrategy;
 import org.apache.camel.spi.ManagementStrategy;
 import org.apache.camel.spi.ManagementStrategyFactory;
 import org.apache.camel.spi.MessageHistoryFactory;
+import org.apache.camel.spi.MessageSizeStrategy;
 import org.apache.camel.spi.NormalizedEndpointUri;
 import org.apache.camel.spi.PluginManager;
 import org.apache.camel.spi.ProcessorExchangeFactory;
@@ -127,6 +128,7 @@ class DefaultCamelContextExtension implements ExtendedCamelContext {
     private volatile ClassResolver classResolver;
     private volatile MessageHistoryFactory messageHistoryFactory;
     private volatile StreamCachingStrategy streamCachingStrategy;
+    private volatile MessageSizeStrategy messageSizeStrategy;
     private volatile InflightRepository inflightRepository;
     private volatile ErrorRegistry errorRegistry;
     private volatile UuidGenerator uuidGenerator;
@@ -267,7 +269,8 @@ class DefaultCamelContextExtension implements ExtendedCamelContext {
 
     @Override
     public Endpoint getEndpoint(NormalizedEndpointUri uri) {
-        return camelContext.doGetEndpoint(uri.getUri(), null, true, false);
+        String rawUri = uri instanceof NormalizedUri nu ? nu.getRawUri() : null;
+        return camelContext.doGetEndpoint(uri.getUri(), rawUri, null, true, false);
     }
 
     @Override
@@ -277,12 +280,14 @@ class DefaultCamelContextExtension implements ExtendedCamelContext {
 
     @Override
     public Endpoint getPrototypeEndpoint(NormalizedEndpointUri uri) {
-        return camelContext.doGetEndpoint(uri.getUri(), null, true, true);
+        String rawUri = uri instanceof NormalizedUri nu ? nu.getRawUri() : null;
+        return camelContext.doGetEndpoint(uri.getUri(), rawUri, null, true, true);
     }
 
     @Override
     public Endpoint getEndpoint(NormalizedEndpointUri uri, Map<String, Object> parameters) {
-        return camelContext.doGetEndpoint(uri.getUri(), parameters, true, false);
+        String rawUri = uri instanceof NormalizedUri nu ? nu.getRawUri() : null;
+        return camelContext.doGetEndpoint(uri.getUri(), rawUri, parameters, true, false);
     }
 
     @Override
@@ -651,7 +656,7 @@ class DefaultCamelContextExtension implements ExtendedCamelContext {
     @Override
     public void setAdditionalSensitiveKeywords(String additionalSensitiveKeywords) {
         this.additionalSensitiveKeywords = additionalSensitiveKeywords;
-        // re-configure sensitive keywords asap so they take effect immediately
+        // add the keywords to the ones used when sanitizing uris, they apply to the whole JVM and cannot be removed
         URISupport.addSanitizeKeywords(additionalSensitiveKeywords);
     }
 
@@ -776,7 +781,10 @@ class DefaultCamelContextExtension implements ExtendedCamelContext {
             lock.lock();
             try {
                 if (restRegistryFactory == null) {
-                    setRestRegistryFactory(camelContext.createRestRegistryFactory());
+                    RestRegistryFactory factory = camelContext.createRestRegistryFactory();
+                    if (factory != null) {
+                        setRestRegistryFactory(factory);
+                    }
                 }
             } finally {
                 lock.unlock();
@@ -843,6 +851,20 @@ class DefaultCamelContextExtension implements ExtendedCamelContext {
         this.messageHistoryFactory = camelContext.getInternalServiceManager().addService(camelContext, messageHistoryFactory);
     }
 
+    /**
+     * Registers the internal services that were stopped when the CamelContext was stopped, so they are started again on
+     * a restart, and stopped when the CamelContext stops again. This includes the internal services of the
+     * CamelContext, the context plugins that are services, a custom debugger, and the services added with
+     * {@link org.apache.camel.CamelContext#addService(Object)}.
+     * <p/>
+     * The injector is not included as it is created again on restart (the type converters are not registered as
+     * internal services), and the services that are not stopped with the CamelContext (such as the executor service
+     * manager) are still registered.
+     */
+    void reRegisterServices() {
+        camelContext.getInternalServiceManager().restoreStoppedServices(camelContext, Injector.class::isInstance);
+    }
+
     StreamCachingStrategy getStreamCachingStrategy() {
         if (streamCachingStrategy == null) {
             lock.lock();
@@ -860,6 +882,25 @@ class DefaultCamelContextExtension implements ExtendedCamelContext {
     void setStreamCachingStrategy(StreamCachingStrategy streamCachingStrategy) {
         this.streamCachingStrategy
                 = camelContext.getInternalServiceManager().addService(camelContext, streamCachingStrategy, true, false, true);
+    }
+
+    MessageSizeStrategy getMessageSizeStrategy() {
+        if (messageSizeStrategy == null) {
+            lock.lock();
+            try {
+                if (messageSizeStrategy == null) {
+                    setMessageSizeStrategy(camelContext.createMessageSizeStrategy());
+                }
+            } finally {
+                lock.unlock();
+            }
+        }
+        return messageSizeStrategy;
+    }
+
+    void setMessageSizeStrategy(MessageSizeStrategy messageSizeStrategy) {
+        this.messageSizeStrategy
+                = camelContext.getInternalServiceManager().addService(camelContext, messageSizeStrategy, true, false, true);
     }
 
     InflightRepository getInflightRepository() {

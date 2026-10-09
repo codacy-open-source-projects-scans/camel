@@ -36,7 +36,7 @@ public class MiloClientEndpointConfigurer extends PropertyConfigurerSupport impl
         case "clientid":
         case "clientId": target.getConfiguration().setClientId(property(camelContext, java.lang.String.class, value)); return true;
         case "datachangefilterdeadbandtype":
-        case "dataChangeFilterDeadbandType": target.getMonitorFilterConfiguration().setDataChangeFilterDeadbandType(property(camelContext, org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger.class, value)); return true;
+        case "dataChangeFilterDeadbandType": target.getMonitorFilterConfiguration().setDataChangeFilterDeadbandType(property(camelContext, java.lang.Integer.class, value)); return true;
         case "datachangefilterdeadbandvalue":
         case "dataChangeFilterDeadbandValue": target.getMonitorFilterConfiguration().setDataChangeFilterDeadbandValue(property(camelContext, java.lang.Double.class, value)); return true;
         case "datachangefiltertrigger":
@@ -77,8 +77,11 @@ public class MiloClientEndpointConfigurer extends PropertyConfigurerSupport impl
         case "overrideHost": target.getConfiguration().setOverrideHost(property(camelContext, boolean.class, value)); return true;
         case "overrideport":
         case "overridePort": target.getConfiguration().setOverridePort(property(camelContext, boolean.class, value)); return true;
+        case "password": target.getConfiguration().setPassword(property(camelContext, java.lang.String.class, value)); return true;
         case "producturi":
         case "productUri": target.getConfiguration().setProductUri(property(camelContext, java.lang.String.class, value)); return true;
+        case "queuesize":
+        case "queueSize": target.setQueueSize(property(camelContext, java.lang.Integer.class, value)); return true;
         case "requesttimeout":
         case "requestTimeout": target.getConfiguration().setRequestTimeout(property(camelContext, java.lang.Long.class, value)); return true;
         case "requestedpublishinginterval":
@@ -89,6 +92,7 @@ public class MiloClientEndpointConfigurer extends PropertyConfigurerSupport impl
         case "sessionName": target.getConfiguration().setSessionName(property(camelContext, java.lang.String.class, value)); return true;
         case "sessiontimeout":
         case "sessionTimeout": target.getConfiguration().setSessionTimeout(property(camelContext, java.lang.Long.class, value)); return true;
+        case "username": target.getConfiguration().setUsername(property(camelContext, java.lang.String.class, value)); return true;
         default: return false;
         }
     }
@@ -109,7 +113,7 @@ public class MiloClientEndpointConfigurer extends PropertyConfigurerSupport impl
         case "clientid":
         case "clientId": return java.lang.String.class;
         case "datachangefilterdeadbandtype":
-        case "dataChangeFilterDeadbandType": return org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger.class;
+        case "dataChangeFilterDeadbandType": return java.lang.Integer.class;
         case "datachangefilterdeadbandvalue":
         case "dataChangeFilterDeadbandValue": return java.lang.Double.class;
         case "datachangefiltertrigger":
@@ -150,8 +154,11 @@ public class MiloClientEndpointConfigurer extends PropertyConfigurerSupport impl
         case "overrideHost": return boolean.class;
         case "overrideport":
         case "overridePort": return boolean.class;
+        case "password": return java.lang.String.class;
         case "producturi":
         case "productUri": return java.lang.String.class;
+        case "queuesize":
+        case "queueSize": return java.lang.Integer.class;
         case "requesttimeout":
         case "requestTimeout": return java.lang.Long.class;
         case "requestedpublishinginterval":
@@ -162,6 +169,7 @@ public class MiloClientEndpointConfigurer extends PropertyConfigurerSupport impl
         case "sessionName": return java.lang.String.class;
         case "sessiontimeout":
         case "sessionTimeout": return java.lang.Long.class;
+        case "username": return java.lang.String.class;
         default: return null;
         }
     }
@@ -224,8 +232,11 @@ public class MiloClientEndpointConfigurer extends PropertyConfigurerSupport impl
         case "overrideHost": return target.getConfiguration().isOverrideHost();
         case "overrideport":
         case "overridePort": return target.getConfiguration().isOverridePort();
+        case "password": return target.getConfiguration().getPassword();
         case "producturi":
         case "productUri": return target.getConfiguration().getProductUri();
+        case "queuesize":
+        case "queueSize": return target.getQueueSize();
         case "requesttimeout":
         case "requestTimeout": return target.getConfiguration().getRequestTimeout();
         case "requestedpublishinginterval":
@@ -236,6 +247,7 @@ public class MiloClientEndpointConfigurer extends PropertyConfigurerSupport impl
         case "sessionName": return target.getConfiguration().getSessionName();
         case "sessiontimeout":
         case "sessionTimeout": return target.getConfiguration().getSessionTimeout();
+        case "username": return target.getConfiguration().getUsername();
         default: return null;
         }
     }

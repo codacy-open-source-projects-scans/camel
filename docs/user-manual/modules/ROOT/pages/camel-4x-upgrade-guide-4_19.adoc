@@ -13,6 +13,15 @@ See the xref:camel-upgrade-recipes-tool.adoc[documentation] page for details.
 
 == Upgrading Camel 4.18 to 4.19
 
+=== Spring Boot
+
+This is our first release that supports Spring Boot v4.
+
+IMPORTANT: Spring Boot v3 is no longer supported.
+
+This also means Spring Framework v6 is also no longer supported.
+The Camel Spring component relies on Spring Framework v7 and what else Spring Boot v4 came with.
+
 === camel-bom
 
 The `camel-test` module has been removed from `camel-bom`. This module was included by mistake, as since Camel 4, this is
@@ -97,7 +106,15 @@ In YAML DSL the changes are even simpler as the endpoint is moved from `uri` to 
               uri: mock:compensation
             completion:
               uri: mock:completion
-            key: myOptionKey2
+            option:
+              - key: myOptionKey
+                expression:
+                  constant:
+                    expression: myOptionValue
+              - key: myOptionKey2
+                expression:
+                  constant:
+                    expression: myOptionValue2
         - choice:
             when:
               - expression:
@@ -146,7 +163,15 @@ After:
             sagaService: mySagaService
             compensation: mock:compensation
             completion: mock:completion
-            key: myOptionKey2
+            option:
+              - key: myOptionKey
+                expression:
+                  constant:
+                    expression: myOptionValue
+              - key: myOptionKey2
+                expression:
+                  constant:
+                    expression: myOptionValue2
         - choice:
             when:
               - expression:
@@ -314,9 +339,9 @@ After:
 </dependency>
 ----
 
-You will also need to change any imports of classes in `org.apache.camel.test.junit5.*` to `import org.apache.camel.test.junit6.*`.
+You will also need to change any imports of classes in `+org.apache.camel.test.junit5.*+` to `+import org.apache.camel.test.junit6.*+`.
 
-Similarly, for camel-test-main-junit5 you would need to change any imports of classes in `org.apache.camel.test.main.junit5.*` to `org.apache.camel.test.main.junit6.*`, and the dependency in your pom.xml would change from:
+Similarly, for camel-test-main-junit5 you would need to change any imports of classes in `+org.apache.camel.test.main.junit5.*+` to `+org.apache.camel.test.main.junit6.*+`, and the dependency in your pom.xml would change from:
 
 Before:
 [source,xml]
@@ -340,7 +365,7 @@ After:
 </dependency>
 ----
 
-Finally, for camel-test-spring-junit5 any imports would change from `org.apache.camel.test.spring.junit5.*` to `import org.apache.camel.test.spring.junit6.*` and the dependency change would be :
+Finally, for camel-test-spring-junit5 any imports would change from `+org.apache.camel.test.spring.junit5.*+` to `+import org.apache.camel.test.spring.junit6.*+` and the dependency change would be :
 
 Before:
 [source,xml]

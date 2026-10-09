@@ -24,6 +24,7 @@ import org.apache.camel.Traceable;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.InterceptableProcessor;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.ExchangeHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,12 +33,13 @@ import org.slf4j.LoggerFactory;
  * Processor to handle do finally supporting asynchronous routing engine
  */
 public class FinallyProcessor extends BaseDelegateProcessorSupport
-        implements Traceable, IdAware, RouteIdAware, InterceptableProcessor {
+        implements Traceable, IdAware, RouteIdAware, StepIdAware, InterceptableProcessor {
 
     private static final Logger LOG = LoggerFactory.getLogger(FinallyProcessor.class);
 
     private String id;
     private String routeId;
+    private String stepId;
 
     public FinallyProcessor(Processor processor) {
         super(processor);
@@ -55,11 +57,6 @@ public class FinallyProcessor extends BaseDelegateProcessorSupport
             if (exchange.getProperty(ExchangePropertyKey.FAILURE_ENDPOINT) == null) {
                 exchange.setProperty(ExchangePropertyKey.FAILURE_ENDPOINT,
                         exchange.getProperty(ExchangePropertyKey.TO_ENDPOINT));
-            }
-            // and store the route id so we know in which route we failed
-            String routeId = ExchangeHelper.getAtRouteId(exchange);
-            if (routeId != null) {
-                exchange.setProperty(ExchangePropertyKey.FAILURE_ROUTE_ID, routeId);
             }
         }
 
@@ -98,6 +95,16 @@ public class FinallyProcessor extends BaseDelegateProcessorSupport
     }
 
     @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
+    @Override
     public boolean canIntercept() {
         return false;
     }
@@ -118,9 +125,20 @@ public class FinallyProcessor extends BaseDelegateProcessorSupport
         public void done(boolean doneSync) {
             try {
                 if (exception == null) {
-                    exchange.removeProperty(ExchangePropertyKey.FAILURE_ENDPOINT);
-                    exchange.removeProperty(ExchangePropertyKey.FAILURE_ROUTE_ID);
+                    // only clear the failure details when the doFinally did not fail
+                    // (the doTry restores the failure details of an earlier failure)
+                    if (exchange.getException() == null) {
+                        exchange.removeProperty(ExchangePropertyKey.FAILURE_ENDPOINT);
+                        exchange.removeProperty(ExchangePropertyKey.FAILURE_ROUTE_ID);
+                        exchange.removeProperty(ExchangePropertyKey.FAILURE_NODE_ID);
+                        exchange.removeProperty(ExchangePropertyKey.FAILURE_LOCATION);
+                    }
                 } else {
+                    // the original exception is kept, and an exception from the doFinally is added as suppressed
+                    Exception finallyException = exchange.getException();
+                    if (finallyException != null && finallyException != exception) {
+                        exception.addSuppressed(finallyException);
+                    }
                     // set exception back on exchange
                     exchange.setException(exception);
                     exchange.setProperty(ExchangePropertyKey.EXCEPTION_CAUGHT, exception);

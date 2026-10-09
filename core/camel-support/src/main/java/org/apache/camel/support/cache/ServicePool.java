@@ -19,6 +19,7 @@ package org.apache.camel.support.cache;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,8 +27,11 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Function;
 
+import org.apache.camel.CamelContext;
 import org.apache.camel.Endpoint;
+import org.apache.camel.EndpointAware;
 import org.apache.camel.NonManagedService;
+import org.apache.camel.Route;
 import org.apache.camel.Service;
 import org.apache.camel.support.LRUCache;
 import org.apache.camel.support.LRUCacheFactory;
@@ -92,14 +96,14 @@ abstract class ServicePool<S extends Service> extends ServiceSupport implements 
                 // the pool is growing too large, so we need to stop (stop will remove itself from pool)
                 p.stop();
             }
-        } else {
+        } else if (e.isSingletonProducer()) {
             // service no longer in a pool (such as being released twice, or can happen during shutdown of Camel etc)
-            ServicePool.stop(s);
-            try {
-                e.getCamelContext().removeService(s);
-            } catch (Exception ex) {
-                LOG.debug("Error removing service: {}. This exception is ignored.", s, ex);
-            }
+            stopAndRemove(s);
+        } else {
+            // no pool for this endpoint (for example it was stopped, which stopped its idle services, or the
+            // endpoint of the service is not the instance used as the pool key): do not stop the service here, as it
+            // may be in use or idle in a live pool; a service in use is stopped when it is released without a pool
+            LOG.trace("Evicted service: {} is no longer in a pool", s);
         }
     }
 
@@ -130,6 +134,18 @@ abstract class ServicePool<S extends Service> extends ServiceSupport implements 
         Pool<S> p = pool.get(endpoint);
         if (p != null) {
             p.release(s);
+        } else {
+            // the pool was evicted while this service was in use
+            stopAndRemove(s);
+        }
+    }
+
+    private void stopAndRemove(S s) {
+        ServicePool.stop(s);
+        try {
+            getEndpoint.apply(s).getCamelContext().removeService(s);
+        } catch (Exception e) {
+            LOG.debug("Error removing service: {}. This exception is ignored.", s, e);
         }
     }
 
@@ -176,6 +192,32 @@ abstract class ServicePool<S extends Service> extends ServiceSupport implements 
         }
         singlePoolEvicted.values().forEach(Pool::stop);
         singlePoolEvicted.clear();
+    }
+
+    /**
+     * Whether the endpoint is (still) in use, and must therefore not be stopped when its producer is evicted: an
+     * endpoint that is static in the endpoint registry (resolved when the routes were setup), that a route is consuming
+     * from, or that another producer (or polling consumer) is still using, such as the producer cache of a toD in
+     * another route or of a ProducerTemplate, as the pooled services are added to CamelContext.
+     * <p>
+     * This is intentionally broad: any {@link EndpointAware} service on the context that uses the endpoint keeps it
+     * started, not only the producers and polling consumers pooled by a {@code ServicePool}, as stopping an endpoint
+     * that is still in use is worse than keeping one started.
+     */
+    private static boolean isEndpointInUse(Endpoint endpoint) {
+        CamelContext context = endpoint.getCamelContext();
+        if (context == null) {
+            return false;
+        }
+        if (context.getEndpointRegistry().isStatic(endpoint.getEndpointUri())) {
+            return true;
+        }
+        for (Route route : context.getRoutes()) {
+            if (route.getEndpoint() == endpoint) {
+                return true;
+            }
+        }
+        return context.hasService(s -> s instanceof EndpointAware ea && ea.getEndpoint() == endpoint) != null;
     }
 
     /**
@@ -264,8 +306,12 @@ abstract class ServicePool<S extends Service> extends ServiceSupport implements 
                 for (Map.Entry<Endpoint, Pool<S>> entry : singlePoolEvicted.entrySet()) {
                     Endpoint e = entry.getKey();
                     Pool<S> p = entry.getValue();
-                    doStop(e);
+                    // stop the evicted service first, so it no longer counts as using the endpoint
                     p.stop();
+                    if (!isEndpointInUse(e)) {
+                        // stop the endpoint as well (such as a dynamic endpoint from toD) to free its resources
+                        doStop(e);
+                    }
                     singlePoolEvicted.remove(e);
                 }
             }
@@ -291,11 +337,15 @@ abstract class ServicePool<S extends Service> extends ServiceSupport implements 
         private final Endpoint endpoint;
         private final BlockingQueue<S> queue;
         private final Deque<S> evicts;
+        // the services created by this pool which have not been evicted, only these are kept in the queue
+        private final Set<S> active;
+        private volatile boolean stopped;
 
         MultiplePool(Endpoint endpoint) {
             this.endpoint = endpoint;
             this.queue = new ArrayBlockingQueue<>(capacity);
             this.evicts = new ConcurrentLinkedDeque<>();
+            this.active = ConcurrentHashMap.newKeySet();
         }
 
         private void cleanupEvicts() {
@@ -312,6 +362,7 @@ abstract class ServicePool<S extends Service> extends ServiceSupport implements 
             if (s == null) {
                 s = creator.apply(endpoint);
                 s.start();
+                active.add(s);
             }
             return s;
         }
@@ -320,8 +371,13 @@ abstract class ServicePool<S extends Service> extends ServiceSupport implements 
         public void release(S s) {
             cleanupEvicts();
 
-            if (!queue.offer(s)) {
-                // there is no room so let's just stop and discard this
+            if (stopped || !active.contains(s) || !queue.offer(s)) {
+                // the pool is stopped, it was evicted while in use, or there is no room so let's just stop and discard this
+                active.remove(s);
+                doStop(s);
+            } else if ((stopped || !active.contains(s)) && queue.remove(s)) {
+                // the pool was stopped, or the service evicted, after the check above, and did not take it from the queue
+                active.remove(s);
                 doStop(s);
             }
         }
@@ -333,16 +389,25 @@ abstract class ServicePool<S extends Service> extends ServiceSupport implements 
 
         @Override
         public void stop() {
+            stopped = true;
             ArrayList<S> list = new ArrayList<>();
             queue.drainTo(list);
             pool.remove(endpoint);
             list.forEach(this::doStop);
+            cleanupEvicts();
         }
 
         @Override
         public void evict(S s) {
-            // to be evicted
-            evicts.add(s);
+            // only an idle service can be stopped (by cleanupEvicts): take it out of the queue so it is not acquired
+            // again, and a service in use is stopped when it is released
+            if (active.remove(s) && queue.remove(s)) {
+                evicts.add(s);
+                if (stopped) {
+                    // the pool was stopped meanwhile, and may have stopped its evicts already
+                    cleanupEvicts();
+                }
+            }
         }
 
         @Override

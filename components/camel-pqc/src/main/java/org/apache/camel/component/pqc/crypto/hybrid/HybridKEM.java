@@ -19,12 +19,14 @@ package org.apache.camel.component.pqc.crypto.hybrid;
 import java.nio.ByteBuffer;
 import java.security.*;
 import java.security.spec.ECGenParameterSpec;
+import java.security.spec.X509EncodedKeySpec;
 
 import javax.crypto.KeyAgreement;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
+import org.apache.camel.util.SecureRandomHelper;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.digests.SHA384Digest;
 import org.bouncycastle.crypto.digests.SHA512Digest;
@@ -95,7 +97,7 @@ public final class HybridKEM {
         // Perform PQC KEM encapsulation
         pqcKemGenerator.init(
                 new KEMGenerateSpec(pqcPublicKey, symmetricAlgorithm, keyLength),
-                new SecureRandom());
+                SecureRandomHelper.getSecureRandom());
         SecretKeyWithEncapsulation pqcResult = (SecretKeyWithEncapsulation) pqcKemGenerator.generateKey();
         byte[] pqcSharedSecret = pqcResult.getEncoded();
         byte[] pqcEncapsulation = pqcResult.getEncapsulation();
@@ -166,7 +168,7 @@ public final class HybridKEM {
         // Perform PQC KEM extraction
         pqcKemGenerator.init(
                 new KEMExtractSpec(pqcPrivateKey, components.pqcEncapsulation(), symmetricAlgorithm, keyLength),
-                new SecureRandom());
+                SecureRandomHelper.getSecureRandom());
         SecretKeyWithEncapsulation pqcResult = (SecretKeyWithEncapsulation) pqcKemGenerator.generateKey();
         byte[] pqcSharedSecret = pqcResult.getEncoded();
 
@@ -274,7 +276,7 @@ public final class HybridKEM {
         if ("EC".equals(algorithm)) {
             kpg = KeyPairGenerator.getInstance("EC");
             // Default to P-256
-            kpg.initialize(new ECGenParameterSpec("secp256r1"), new SecureRandom());
+            kpg.initialize(new ECGenParameterSpec("secp256r1"), SecureRandomHelper.getSecureRandom());
         } else if ("X25519".equals(algorithm) || "XDH".equals(algorithm)) {
             kpg = KeyPairGenerator.getInstance("X25519");
         } else if ("X448".equals(algorithm)) {
@@ -291,19 +293,19 @@ public final class HybridKEM {
      * Reconstructs a public key from encoded bytes.
      */
     private static PublicKey reconstructPublicKey(byte[] encoded, String algorithm) throws Exception {
-        java.security.KeyFactory kf;
+        KeyFactory kf;
 
         if ("EC".equals(algorithm) || "ECDH".equals(algorithm)) {
-            kf = java.security.KeyFactory.getInstance("EC");
+            kf = KeyFactory.getInstance("EC");
         } else if ("X25519".equals(algorithm) || "XDH".equals(algorithm)) {
-            kf = java.security.KeyFactory.getInstance("X25519");
+            kf = KeyFactory.getInstance("X25519");
         } else if ("X448".equals(algorithm)) {
-            kf = java.security.KeyFactory.getInstance("X448");
+            kf = KeyFactory.getInstance("X448");
         } else {
-            kf = java.security.KeyFactory.getInstance(algorithm);
+            kf = KeyFactory.getInstance(algorithm);
         }
 
-        java.security.spec.X509EncodedKeySpec keySpec = new java.security.spec.X509EncodedKeySpec(encoded);
+        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
         return kf.generatePublic(keySpec);
     }
 

@@ -27,9 +27,12 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
+// Credentials are intentional test-only fixtures for testcontainer services — no security risk
+@SuppressWarnings("java:S2068")
 @InfraService(service = CouchDbInfraService.class,
               description = "Apache CouchDB is an open source NoSQL document database",
-              serviceAlias = { "couchdb" })
+              serviceAlias = { "couchdb" },
+              uiSupported = true)
 public class CouchDbLocalContainerInfraService implements CouchDbInfraService, ContainerService<GenericContainer<?>> {
     public static final String CONTAINER_NAME = "couchdb";
 

@@ -16,10 +16,10 @@
  */
 package org.apache.camel.main;
 
-import java.time.Duration;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -43,6 +43,7 @@ import org.apache.camel.impl.engine.PooledExchangeFactory;
 import org.apache.camel.impl.engine.PooledProcessorExchangeFactory;
 import org.apache.camel.impl.engine.PrototypeExchangeFactory;
 import org.apache.camel.impl.engine.PrototypeProcessorExchangeFactory;
+import org.apache.camel.model.BeanFactoryDefinition;
 import org.apache.camel.model.Model;
 import org.apache.camel.model.ModelCamelContext;
 import org.apache.camel.model.ModelLifecycleStrategy;
@@ -78,6 +79,7 @@ import org.apache.camel.spi.ProcessorFactory;
 import org.apache.camel.spi.PropertiesComponent;
 import org.apache.camel.spi.ReactiveExecutor;
 import org.apache.camel.spi.Registry;
+import org.apache.camel.spi.Resource;
 import org.apache.camel.spi.RouteController;
 import org.apache.camel.spi.RoutePolicyFactory;
 import org.apache.camel.spi.RuntimeEndpointRegistry;
@@ -167,6 +169,8 @@ public final class DefaultConfigurationConfigurer {
         beanIntrospection.afterPropertiesConfigured(camelContext);
 
         if ("pooled".equals(config.getExchangeFactory())) {
+            LOG.warn(
+                    "Exchange pooling (exchangeFactory=pooled) is deprecated and will be removed in a future release. Please remove the 'camel.main.exchange-factory=pooled' configuration.");
             ecc.setExchangeFactory(new PooledExchangeFactory());
             ecc.setProcessorExchangeFactory(new PooledProcessorExchangeFactory());
         } else if ("prototype".equals(config.getExchangeFactory())) {
@@ -203,10 +207,7 @@ public final class DefaultConfigurationConfigurer {
 
         camelContext.getInflightRepository().setInflightBrowseEnabled(config.isInflightRepositoryBrowseEnabled());
 
-        camelContext.getErrorRegistry().setEnabled(config.isErrorRegistryEnabled());
-        camelContext.getErrorRegistry().setMaximumEntries(config.getErrorRegistryMaximumEntries());
-        camelContext.getErrorRegistry().setTimeToLive(Duration.ofSeconds(config.getErrorRegistryTimeToLiveSeconds()));
-        camelContext.getErrorRegistry().setStackTraceEnabled(config.isErrorRegistryStackTraceEnabled());
+        // error registry is configured via ErrorRegistryConfigurationProperties (camel.errorRegistry.*)
 
         if (config.getLogDebugMaxChars() != 0) {
             camelContext.getGlobalOptions().put(Exchange.LOG_DEBUG_BODY_MAX_CHARS,
@@ -219,7 +220,12 @@ public final class DefaultConfigurationConfigurer {
         camelContext.getStreamCachingStrategy().setDenyClasses(config.getStreamCachingDenyClasses());
         camelContext.getStreamCachingStrategy().setSpoolEnabled(config.isStreamCachingSpoolEnabled());
         camelContext.getStreamCachingStrategy().setAnySpoolRules(config.isStreamCachingAnySpoolRules());
-        camelContext.getStreamCachingStrategy().setBufferSize(config.getStreamCachingBufferSize());
+        if (config.getStreamCachingBufferSize() > 0) {
+            camelContext.getStreamCachingStrategy().setBufferSize(config.getStreamCachingBufferSize());
+        }
+        if (config.isStreamCachingStatisticsEnabled()) {
+            camelContext.getStreamCachingStrategy().getStatistics().setStatisticsEnabled(true);
+        }
         camelContext.getStreamCachingStrategy()
                 .setRemoveSpoolDirectoryWhenStopping(config.isStreamCachingRemoveSpoolDirectoryWhenStopping());
         camelContext.getStreamCachingStrategy().setSpoolCipher(config.getStreamCachingSpoolCipher());
@@ -253,6 +259,9 @@ public final class DefaultConfigurationConfigurer {
                 camelContext.getStreamCachingStrategy().addSpoolRule(custom);
             }
         }
+
+        // message size
+        camelContext.setMessageSize(config.isMessageSizeEnabled());
 
         if ("default".equals(config.getUuidGenerator())) {
             camelContext.setUuidGenerator(new DefaultUuidGenerator());
@@ -297,7 +306,24 @@ public final class DefaultConfigurationConfigurer {
                     config.getRoutesReloadDirectory(), config.isRoutesReloadDirectoryRecursive());
             reloader.setPattern(config.getRoutesReloadPattern());
             reloader.setRemoveAllRoutes(config.isRoutesReloadRemoveAllRoutes());
+            // the files that declare beans, so a bean is created again when its Java class changes
+            reloader.setBeanResources(() -> {
+                Model model = camelContext.getCamelContextExtension().getContextPlugin(Model.class);
+                if (model == null) {
+                    return null;
+                }
+                Set<Resource> answer = new LinkedHashSet<>();
+                for (BeanFactoryDefinition<?> bean : model.getCustomBeans()) {
+                    if (bean.getResource() != null) {
+                        answer.add(bean.getResource());
+                    }
+                }
+                return answer;
+            });
             camelContext.addService(reloader);
+            // disable contentCache on resource-based components so that resource files (e.g. XSLT
+            // stylesheets, templates) are reloaded live without restarting routes
+            camelContext.addLifecycleStrategy(new DevModeContentCacheStrategy());
         }
         if (config.getDumpRoutes() != null) {
             DumpRoutesStrategy drs = camelContext.getCamelContextExtension().getContextPlugin(DumpRoutesStrategy.class);
@@ -350,12 +376,8 @@ public final class DefaultConfigurationConfigurer {
         camelContext.getGlobalEndpointConfiguration().setBridgeErrorHandler(config.isEndpointBridgeErrorHandler());
         camelContext.getGlobalEndpointConfiguration().setLazyStartProducer(config.isEndpointLazyStartProducer());
 
-        if (config.isMessageHistory()) {
-            camelContext.setMessageHistory(true);
-        }
-        if (config.isSourceLocationEnabled()) {
-            camelContext.setSourceLocationEnabled(true);
-        }
+        camelContext.setMessageHistory(config.isMessageHistory());
+        camelContext.setSourceLocationEnabled(config.isSourceLocationEnabled());
 
         camelContext.setTracing(config.isTracing());
         camelContext.setTracingStandby(config.isTracingStandby());
@@ -412,7 +434,6 @@ public final class DefaultConfigurationConfigurer {
      */
     public static void afterConfigure(final CamelContext camelContext) throws Exception {
         final Registry registry = camelContext.getRegistry();
-        final ManagementStrategy managementStrategy = camelContext.getManagementStrategy();
 
         StartupStepRecorder ssr = getSingleBeanOfType(registry, StartupStepRecorder.class);
         if (ssr != null) {
@@ -450,6 +471,8 @@ public final class DefaultConfigurationConfigurer {
         if (ms != null) {
             camelContext.setManagementStrategy(ms);
         }
+        // must be the management strategy after a custom strategy has been set
+        final ManagementStrategy managementStrategy = camelContext.getManagementStrategy();
         ManagementObjectNameStrategy mons = getSingleBeanOfType(registry, ManagementObjectNameStrategy.class);
         if (mons != null) {
             managementStrategy.setManagementObjectNameStrategy(mons);
@@ -601,7 +624,7 @@ public final class DefaultConfigurationConfigurer {
         if (healthCheckRegistry != null) {
             // Health check repository
             Set<HealthCheckRepository> repositories = registry.findByType(HealthCheckRepository.class);
-            if (org.apache.camel.util.ObjectHelper.isNotEmpty(repositories)) {
+            if (ObjectHelper.isNotEmpty(repositories)) {
                 for (HealthCheckRepository repository : repositories) {
                     healthCheckRegistry.register(repository);
                 }
@@ -722,7 +745,10 @@ public final class DefaultConfigurationConfigurer {
         debugger.setIncludeExchangeVariables(config.isIncludeExchangeVariables());
         debugger.setIncludeException(config.isIncludeException());
         debugger.setLoggingLevel(config.getLoggingLevel().name());
-        debugger.setSuspendMode(config.isWaitForAttach()); // this option is named wait-for-attach
+        if (config.isWaitForAttach()) {
+            // this option is named wait-for-attach (only turn it on, so suspend mode set from the environment is kept)
+            debugger.setSuspendMode(true);
+        }
         debugger.setFallbackTimeout(config.getFallbackTimeout());
 
         // enable jmx connector if port is set

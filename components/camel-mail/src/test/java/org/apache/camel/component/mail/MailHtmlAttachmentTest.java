@@ -41,12 +41,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Unit test for Camel html attachments and Mail attachments.
  */
 public class MailHtmlAttachmentTest extends CamelTestSupport {
-    private static final MailboxUser james = Mailbox.getOrCreateUser("james", "secret");
+    private static final MailboxUser james = Mailbox.getOrCreateUser("MailHtmlAttachmentTest-james", "secret");
 
     @Test
     public void testSendAndReceiveMailWithAttachments() throws Exception {
         // clear mailbox
-        Mailbox.clearAll();
+        Mailbox.clearAll(james);
 
         // START SNIPPET: e1
 

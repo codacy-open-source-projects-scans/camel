@@ -295,11 +295,11 @@ public interface TensorFlowServingEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final TensorFlowServingHeaderNameBuilder INSTANCE = new TensorFlowServingHeaderNameBuilder();
+        public static final TensorFlowServingHeaderNameBuilder INSTANCE = new TensorFlowServingHeaderNameBuilder();
 
         /**
          * The target of the client. See:
-         * https://grpc.github.io/grpc-java/javadoc/io/grpc/Grpc.html#newChannelBuilder%28java.lang.String,io.grpc.ChannelCredentials%29.
+         * https://grpc.github.io/grpc-java/javadoc/io/grpc/Grpc.html#newChannelBuilder%28java.lang.String,io.grpc.ChannelCredentials%29. Deprecation note: Never read by the component. The gRPC channel is built once when the endpoint is initialised, so it cannot be redirected per exchange. Use the target endpoint option.
          * 
          * The option is a: {@code String} type.
          * 
@@ -307,11 +307,15 @@ public interface TensorFlowServingEndpointBuilderFactory {
          * 
          * @return the name of the header {@code TensorFlowServingTarget}.
          */
+        @Deprecated
         public String tensorFlowServingTarget() {
             return "CamelTensorFlowServingTarget";
         }
         /**
-         * The credentials of the client.
+         * The credentials of the client. Deprecation note: Never read by the
+         * component. The gRPC channel is built once when the endpoint is
+         * initialised, so it cannot be re-authenticated per exchange. Use the
+         * credentials endpoint option.
          * 
          * The option is a: {@code io.grpc.ChannelCredentials} type.
          * 
@@ -319,6 +323,7 @@ public interface TensorFlowServingEndpointBuilderFactory {
          * 
          * @return the name of the header {@code TensorFlowServingCredentials}.
          */
+        @Deprecated
         public String tensorFlowServingCredentials() {
             return "CamelTensorFlowServingCredentials";
         }

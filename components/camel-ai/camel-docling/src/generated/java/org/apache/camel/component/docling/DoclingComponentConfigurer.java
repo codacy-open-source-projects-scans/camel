@@ -32,10 +32,16 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "abortonerror":
         case "abortOnError": getOrCreateConfiguration(target).setAbortOnError(property(camelContext, java.lang.Boolean.class, value)); return true;
+        case "allowfilepathsource":
+        case "allowFilePathSource": getOrCreateConfiguration(target).setAllowFilePathSource(property(camelContext, boolean.class, value)); return true;
+        case "allowurlsource":
+        case "allowUrlSource": getOrCreateConfiguration(target).setAllowUrlSource(property(camelContext, boolean.class, value)); return true;
         case "apikeyheader":
         case "apiKeyHeader": getOrCreateConfiguration(target).setApiKeyHeader(property(camelContext, java.lang.String.class, value)); return true;
         case "asyncpollinterval":
         case "asyncPollInterval": getOrCreateConfiguration(target).setAsyncPollInterval(property(camelContext, long.class, value)); return true;
+        case "asynctaskttl":
+        case "asyncTaskTtl": getOrCreateConfiguration(target).setAsyncTaskTtl(property(camelContext, long.class, value)); return true;
         case "asynctimeout":
         case "asyncTimeout": getOrCreateConfiguration(target).setAsyncTimeout(property(camelContext, long.class, value)); return true;
         case "authenticationscheme":
@@ -52,6 +58,8 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         case "batchSize": getOrCreateConfiguration(target).setBatchSize(property(camelContext, int.class, value)); return true;
         case "batchtimeout":
         case "batchTimeout": getOrCreateConfiguration(target).setBatchTimeout(property(camelContext, long.class, value)); return true;
+        case "bridgeerrorhandler":
+        case "bridgeErrorHandler": target.setBridgeErrorHandler(property(camelContext, boolean.class, value)); return true;
         case "chunkingincluderawtext":
         case "chunkingIncludeRawText": getOrCreateConfiguration(target).setChunkingIncludeRawText(property(camelContext, java.lang.Boolean.class, value)); return true;
         case "chunkingmaxtokens":
@@ -99,6 +107,8 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         case "includeMetadataInHeaders": getOrCreateConfiguration(target).setIncludeMetadataInHeaders(property(camelContext, boolean.class, value)); return true;
         case "includerawmetadata":
         case "includeRawMetadata": getOrCreateConfiguration(target).setIncludeRawMetadata(property(camelContext, boolean.class, value)); return true;
+        case "inputbasedirectory":
+        case "inputBaseDirectory": getOrCreateConfiguration(target).setInputBaseDirectory(property(camelContext, java.lang.String.class, value)); return true;
         case "lazystartproducer":
         case "lazyStartProducer": target.setLazyStartProducer(property(camelContext, boolean.class, value)); return true;
         case "maxfilesize":
@@ -112,6 +122,8 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         case "ocrlanguage":
         case "ocrLanguage": getOrCreateConfiguration(target).setOcrLanguage(property(camelContext, java.lang.String.class, value)); return true;
         case "operation": getOrCreateConfiguration(target).setOperation(property(camelContext, org.apache.camel.component.docling.DoclingOperations.class, value)); return true;
+        case "outputbasedirectory":
+        case "outputBaseDirectory": getOrCreateConfiguration(target).setOutputBaseDirectory(property(camelContext, java.lang.String.class, value)); return true;
         case "outputformat":
         case "outputFormat": getOrCreateConfiguration(target).setOutputFormat(property(camelContext, java.lang.String.class, value)); return true;
         case "pdfbackend":
@@ -140,10 +152,16 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "abortonerror":
         case "abortOnError": return java.lang.Boolean.class;
+        case "allowfilepathsource":
+        case "allowFilePathSource": return boolean.class;
+        case "allowurlsource":
+        case "allowUrlSource": return boolean.class;
         case "apikeyheader":
         case "apiKeyHeader": return java.lang.String.class;
         case "asyncpollinterval":
         case "asyncPollInterval": return long.class;
+        case "asynctaskttl":
+        case "asyncTaskTtl": return long.class;
         case "asynctimeout":
         case "asyncTimeout": return long.class;
         case "authenticationscheme":
@@ -160,6 +178,8 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         case "batchSize": return int.class;
         case "batchtimeout":
         case "batchTimeout": return long.class;
+        case "bridgeerrorhandler":
+        case "bridgeErrorHandler": return boolean.class;
         case "chunkingincluderawtext":
         case "chunkingIncludeRawText": return java.lang.Boolean.class;
         case "chunkingmaxtokens":
@@ -207,6 +227,8 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         case "includeMetadataInHeaders": return boolean.class;
         case "includerawmetadata":
         case "includeRawMetadata": return boolean.class;
+        case "inputbasedirectory":
+        case "inputBaseDirectory": return java.lang.String.class;
         case "lazystartproducer":
         case "lazyStartProducer": return boolean.class;
         case "maxfilesize":
@@ -220,6 +242,8 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         case "ocrlanguage":
         case "ocrLanguage": return java.lang.String.class;
         case "operation": return org.apache.camel.component.docling.DoclingOperations.class;
+        case "outputbasedirectory":
+        case "outputBaseDirectory": return java.lang.String.class;
         case "outputformat":
         case "outputFormat": return java.lang.String.class;
         case "pdfbackend":
@@ -249,10 +273,16 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "abortonerror":
         case "abortOnError": return getOrCreateConfiguration(target).getAbortOnError();
+        case "allowfilepathsource":
+        case "allowFilePathSource": return getOrCreateConfiguration(target).isAllowFilePathSource();
+        case "allowurlsource":
+        case "allowUrlSource": return getOrCreateConfiguration(target).isAllowUrlSource();
         case "apikeyheader":
         case "apiKeyHeader": return getOrCreateConfiguration(target).getApiKeyHeader();
         case "asyncpollinterval":
         case "asyncPollInterval": return getOrCreateConfiguration(target).getAsyncPollInterval();
+        case "asynctaskttl":
+        case "asyncTaskTtl": return getOrCreateConfiguration(target).getAsyncTaskTtl();
         case "asynctimeout":
         case "asyncTimeout": return getOrCreateConfiguration(target).getAsyncTimeout();
         case "authenticationscheme":
@@ -269,6 +299,8 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         case "batchSize": return getOrCreateConfiguration(target).getBatchSize();
         case "batchtimeout":
         case "batchTimeout": return getOrCreateConfiguration(target).getBatchTimeout();
+        case "bridgeerrorhandler":
+        case "bridgeErrorHandler": return target.isBridgeErrorHandler();
         case "chunkingincluderawtext":
         case "chunkingIncludeRawText": return getOrCreateConfiguration(target).getChunkingIncludeRawText();
         case "chunkingmaxtokens":
@@ -316,6 +348,8 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         case "includeMetadataInHeaders": return getOrCreateConfiguration(target).isIncludeMetadataInHeaders();
         case "includerawmetadata":
         case "includeRawMetadata": return getOrCreateConfiguration(target).isIncludeRawMetadata();
+        case "inputbasedirectory":
+        case "inputBaseDirectory": return getOrCreateConfiguration(target).getInputBaseDirectory();
         case "lazystartproducer":
         case "lazyStartProducer": return target.isLazyStartProducer();
         case "maxfilesize":
@@ -329,6 +363,8 @@ public class DoclingComponentConfigurer extends PropertyConfigurerSupport implem
         case "ocrlanguage":
         case "ocrLanguage": return getOrCreateConfiguration(target).getOcrLanguage();
         case "operation": return getOrCreateConfiguration(target).getOperation();
+        case "outputbasedirectory":
+        case "outputBaseDirectory": return getOrCreateConfiguration(target).getOutputBaseDirectory();
         case "outputformat":
         case "outputFormat": return getOrCreateConfiguration(target).getOutputFormat();
         case "pdfbackend":

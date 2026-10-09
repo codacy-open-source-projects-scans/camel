@@ -18,14 +18,18 @@ package org.apache.camel.spi;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Objects;
 import java.util.Set;
 
+import org.apache.camel.CamelContext;
 import org.apache.camel.CamelContextAware;
 import org.apache.camel.RouteConfigurationsBuilder;
 import org.apache.camel.RoutesBuilder;
 
 /**
  * SPI for loading {@link RoutesBuilder} from a list of {@link Resource}.
+ *
+ * @since 3.8
  */
 public interface RoutesLoader extends CamelContextAware {
 
@@ -60,18 +64,19 @@ public interface RoutesLoader extends CamelContextAware {
      * @param resources the resources to be loaded.
      */
     default void loadRoutes(Collection<Resource> resources) throws Exception {
+        CamelContext ctx = Objects.requireNonNull(getCamelContext(), "CamelContext");
         Collection<RoutesBuilder> builders = findRoutesBuilders(resources);
         // add configuration first before the routes
         for (RoutesBuilder builder : builders) {
             if (builder instanceof RouteConfigurationsBuilder rcb) {
-                getCamelContext().addRoutesConfigurations(rcb);
+                ctx.addRoutesConfigurations(rcb);
             }
         }
         for (RoutesBuilder builder : builders) {
-            getCamelContext().addRoutes(builder);
+            ctx.addRoutes(builder);
         }
         for (RoutesBuilder builder : builders) {
-            getCamelContext().addTemplatedRoutes(builder);
+            ctx.addTemplatedRoutes(builder);
         }
     }
 
@@ -82,18 +87,19 @@ public interface RoutesLoader extends CamelContextAware {
      * @param resources the resources to be loaded.
      */
     default void loadRoutes(Resource... resources) throws Exception {
+        CamelContext ctx = Objects.requireNonNull(getCamelContext(), "CamelContext");
         Collection<RoutesBuilder> builders = findRoutesBuilders(resources);
         // add configuration first before the routes
         for (RoutesBuilder builder : builders) {
             if (builder instanceof RouteConfigurationsBuilder rcb) {
-                getCamelContext().addRoutesConfigurations(rcb);
+                ctx.addRoutesConfigurations(rcb);
             }
         }
         for (RoutesBuilder builder : builders) {
-            getCamelContext().addRoutes(builder);
+            ctx.addRoutes(builder);
         }
         for (RoutesBuilder builder : builders) {
-            getCamelContext().addTemplatedRoutes(builder);
+            ctx.addTemplatedRoutes(builder);
         }
     }
 
@@ -103,6 +109,8 @@ public interface RoutesLoader extends CamelContextAware {
      *
      * If a route is loaded with a route id for an existing route, then the existing route is stopped and remove, so it
      * can be updated.
+     *
+     * Camel's {@code DefaultRoutesLoader} runs concurrent calls one at a time, see {@link #updateRoutes(Collection)}.
      *
      * @param  resources the resources to be loaded or updated.
      * @return           route ids for the routes that was loaded or updated.
@@ -117,6 +125,10 @@ public interface RoutesLoader extends CamelContextAware {
      *
      * If a route is loaded with a route id for an existing route, then the existing route is stopped and remove, so it
      * can be updated.
+     *
+     * Camel's {@code DefaultRoutesLoader} runs concurrent calls of the {@code updateRoutes} methods one at a time, so
+     * they can be called from several threads. They are not serialized with other ways of adding routes, such as
+     * {@link #loadRoutes(Resource...)}.
      *
      * @param  resources the resources to be loaded or updated.
      * @return           route ids for the routes that was loaded or updated.

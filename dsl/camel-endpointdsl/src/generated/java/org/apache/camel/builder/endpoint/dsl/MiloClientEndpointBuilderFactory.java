@@ -62,8 +62,7 @@ public interface MiloClientEndpointBuilderFactory {
         /**
          * Deadband type for MonitorFilterType DataChangeFilter.
          * 
-         * The option is a:
-         * <code>org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger</code> type.
+         * The option is a: <code>java.lang.Integer</code> type.
          * 
          * Default: 0
          * Group: common
@@ -71,15 +70,15 @@ public interface MiloClientEndpointBuilderFactory {
          * @param dataChangeFilterDeadbandType the value to set
          * @return the dsl builder
          */
-        default MiloClientEndpointConsumerBuilder dataChangeFilterDeadbandType(org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger dataChangeFilterDeadbandType) {
+        default MiloClientEndpointConsumerBuilder dataChangeFilterDeadbandType(Integer dataChangeFilterDeadbandType) {
             doSetProperty("dataChangeFilterDeadbandType", dataChangeFilterDeadbandType);
             return this;
         }
         /**
          * Deadband type for MonitorFilterType DataChangeFilter.
          * 
-         * The option will be converted to a
-         * <code>org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger</code> type.
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
          * 
          * Default: 0
          * Group: common
@@ -302,11 +301,42 @@ public interface MiloClientEndpointBuilderFactory {
             return this;
         }
         /**
+         * The queue size used for OPC UA subscriptions. If not set, a queue
+         * size of 1 is requested.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Group: common
+         * 
+         * @param queueSize the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointConsumerBuilder queueSize(Integer queueSize) {
+            doSetProperty("queueSize", queueSize);
+            return this;
+        }
+        /**
+         * The queue size used for OPC UA subscriptions. If not set, a queue
+         * size of 1 is requested.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Group: common
+         * 
+         * @param queueSize the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointConsumerBuilder queueSize(String queueSize) {
+            doSetProperty("queueSize", queueSize);
+            return this;
+        }
+        /**
          * The sampling interval in milliseconds.
          * 
          * The option is a: <code>java.lang.Double</code> type.
          * 
-         * Default: 0.0
+         * Default: 1000.0
          * Group: common
          * 
          * @param samplingInterval the value to set
@@ -321,7 +351,7 @@ public interface MiloClientEndpointBuilderFactory {
          * 
          * The option will be converted to a <code>java.lang.Double</code> type.
          * 
-         * Default: 0.0
+         * Default: 1000.0
          * Group: common
          * 
          * @param samplingInterval the value to set
@@ -709,6 +739,38 @@ public interface MiloClientEndpointBuilderFactory {
             doSetProperty("sessionTimeout", sessionTimeout);
             return this;
         }
+        /**
+         * The password for authentication. Use this instead of embedding
+         * credentials in the endpoint URI when the password contains special
+         * characters (such as {code }, {code /}, {code }, {code &amp;}).
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param password the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointConsumerBuilder password(String password) {
+            doSetProperty("password", password);
+            return this;
+        }
+        /**
+         * The username for authentication. Use this instead of embedding
+         * credentials in the endpoint URI when the username contains special
+         * characters (such as {code }, {code /}, {code }, {code &amp;}).
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param username the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointConsumerBuilder username(String username) {
+            doSetProperty("username", username);
+            return this;
+        }
     }
 
     /**
@@ -867,8 +929,7 @@ public interface MiloClientEndpointBuilderFactory {
         /**
          * Deadband type for MonitorFilterType DataChangeFilter.
          * 
-         * The option is a:
-         * <code>org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger</code> type.
+         * The option is a: <code>java.lang.Integer</code> type.
          * 
          * Default: 0
          * Group: common
@@ -876,15 +937,15 @@ public interface MiloClientEndpointBuilderFactory {
          * @param dataChangeFilterDeadbandType the value to set
          * @return the dsl builder
          */
-        default MiloClientEndpointProducerBuilder dataChangeFilterDeadbandType(org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger dataChangeFilterDeadbandType) {
+        default MiloClientEndpointProducerBuilder dataChangeFilterDeadbandType(Integer dataChangeFilterDeadbandType) {
             doSetProperty("dataChangeFilterDeadbandType", dataChangeFilterDeadbandType);
             return this;
         }
         /**
          * Deadband type for MonitorFilterType DataChangeFilter.
          * 
-         * The option will be converted to a
-         * <code>org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger</code> type.
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
          * 
          * Default: 0
          * Group: common
@@ -1107,11 +1168,42 @@ public interface MiloClientEndpointBuilderFactory {
             return this;
         }
         /**
+         * The queue size used for OPC UA subscriptions. If not set, a queue
+         * size of 1 is requested.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Group: common
+         * 
+         * @param queueSize the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointProducerBuilder queueSize(Integer queueSize) {
+            doSetProperty("queueSize", queueSize);
+            return this;
+        }
+        /**
+         * The queue size used for OPC UA subscriptions. If not set, a queue
+         * size of 1 is requested.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Group: common
+         * 
+         * @param queueSize the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointProducerBuilder queueSize(String queueSize) {
+            doSetProperty("queueSize", queueSize);
+            return this;
+        }
+        /**
          * The sampling interval in milliseconds.
          * 
          * The option is a: <code>java.lang.Double</code> type.
          * 
-         * Default: 0.0
+         * Default: 1000.0
          * Group: common
          * 
          * @param samplingInterval the value to set
@@ -1126,7 +1218,7 @@ public interface MiloClientEndpointBuilderFactory {
          * 
          * The option will be converted to a <code>java.lang.Double</code> type.
          * 
-         * Default: 0.0
+         * Default: 1000.0
          * Group: common
          * 
          * @param samplingInterval the value to set
@@ -1514,6 +1606,38 @@ public interface MiloClientEndpointBuilderFactory {
             doSetProperty("sessionTimeout", sessionTimeout);
             return this;
         }
+        /**
+         * The password for authentication. Use this instead of embedding
+         * credentials in the endpoint URI when the password contains special
+         * characters (such as {code }, {code /}, {code }, {code &amp;}).
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param password the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointProducerBuilder password(String password) {
+            doSetProperty("password", password);
+            return this;
+        }
+        /**
+         * The username for authentication. Use this instead of embedding
+         * credentials in the endpoint URI when the username contains special
+         * characters (such as {code }, {code /}, {code }, {code &amp;}).
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param username the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointProducerBuilder username(String username) {
+            doSetProperty("username", username);
+            return this;
+        }
     }
 
     /**
@@ -1601,8 +1725,7 @@ public interface MiloClientEndpointBuilderFactory {
         /**
          * Deadband type for MonitorFilterType DataChangeFilter.
          * 
-         * The option is a:
-         * <code>org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger</code> type.
+         * The option is a: <code>java.lang.Integer</code> type.
          * 
          * Default: 0
          * Group: common
@@ -1610,15 +1733,15 @@ public interface MiloClientEndpointBuilderFactory {
          * @param dataChangeFilterDeadbandType the value to set
          * @return the dsl builder
          */
-        default MiloClientEndpointBuilder dataChangeFilterDeadbandType(org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger dataChangeFilterDeadbandType) {
+        default MiloClientEndpointBuilder dataChangeFilterDeadbandType(Integer dataChangeFilterDeadbandType) {
             doSetProperty("dataChangeFilterDeadbandType", dataChangeFilterDeadbandType);
             return this;
         }
         /**
          * Deadband type for MonitorFilterType DataChangeFilter.
          * 
-         * The option will be converted to a
-         * <code>org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger</code> type.
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
          * 
          * Default: 0
          * Group: common
@@ -1841,11 +1964,42 @@ public interface MiloClientEndpointBuilderFactory {
             return this;
         }
         /**
+         * The queue size used for OPC UA subscriptions. If not set, a queue
+         * size of 1 is requested.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Group: common
+         * 
+         * @param queueSize the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointBuilder queueSize(Integer queueSize) {
+            doSetProperty("queueSize", queueSize);
+            return this;
+        }
+        /**
+         * The queue size used for OPC UA subscriptions. If not set, a queue
+         * size of 1 is requested.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Group: common
+         * 
+         * @param queueSize the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointBuilder queueSize(String queueSize) {
+            doSetProperty("queueSize", queueSize);
+            return this;
+        }
+        /**
          * The sampling interval in milliseconds.
          * 
          * The option is a: <code>java.lang.Double</code> type.
          * 
-         * Default: 0.0
+         * Default: 1000.0
          * Group: common
          * 
          * @param samplingInterval the value to set
@@ -1860,7 +2014,7 @@ public interface MiloClientEndpointBuilderFactory {
          * 
          * The option will be converted to a <code>java.lang.Double</code> type.
          * 
-         * Default: 0.0
+         * Default: 1000.0
          * Group: common
          * 
          * @param samplingInterval the value to set
@@ -2248,6 +2402,38 @@ public interface MiloClientEndpointBuilderFactory {
             doSetProperty("sessionTimeout", sessionTimeout);
             return this;
         }
+        /**
+         * The password for authentication. Use this instead of embedding
+         * credentials in the endpoint URI when the password contains special
+         * characters (such as {code }, {code /}, {code }, {code &amp;}).
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param password the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointBuilder password(String password) {
+            doSetProperty("password", password);
+            return this;
+        }
+        /**
+         * The username for authentication. Use this instead of embedding
+         * credentials in the endpoint URI when the username contains special
+         * characters (such as {code }, {code /}, {code }, {code &amp;}).
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param username the value to set
+         * @return the dsl builder
+         */
+        default MiloClientEndpointBuilder username(String username) {
+            doSetProperty("username", username);
+            return this;
+        }
     }
 
     /**
@@ -2330,7 +2516,7 @@ public interface MiloClientEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final MiloClientHeaderNameBuilder INSTANCE = new MiloClientHeaderNameBuilder();
+        public static final MiloClientHeaderNameBuilder INSTANCE = new MiloClientHeaderNameBuilder();
 
         /**
          * The node ids.
@@ -2351,10 +2537,10 @@ public interface MiloClientEndpointBuilderFactory {
          * 
          * Group: producer
          * 
-         * @return the name of the header {@code await}.
+         * @return the name of the header {@code MiloAwait}.
          */
-        public String await() {
-            return "await";
+        public String miloAwait() {
+            return "CamelMiloAwait";
         }
     }
     static MiloClientEndpointBuilder endpointBuilder(String componentName, String path) {

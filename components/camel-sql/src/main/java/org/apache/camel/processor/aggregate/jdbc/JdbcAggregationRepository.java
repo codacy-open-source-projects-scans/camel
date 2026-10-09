@@ -26,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import javax.sql.DataSource;
@@ -111,12 +112,22 @@ public class JdbcAggregationRepository extends ServiceSupport
     @Metadata(label = "advanced", security = "insecure:serialization",
               description = "Whether headers on the Exchange that are Java objects and Serializable should be included and saved to the repository")
     private boolean allowSerializedHeaders;
-    @Metadata(label = "security", defaultValue = "!java.net.**;java.**;org.apache.camel.**;!*",
+    /**
+     * Default deserialization filter. Denies {@code java.net.**} and otherwise allows {@code java.**} and
+     * {@code org.apache.camel.**}; applies JEP-290 graph-shape limits ({@code maxdepth}, {@code maxrefs},
+     * {@code maxbytes}) as defense-in-depth against resource-exhaustion payloads.
+     */
+    static final String DEFAULT_DESERIALIZATION_FILTER
+            = "!java.net.**;java.**;org.apache.camel.**;maxdepth=20;maxrefs=10000;maxbytes=10485760;!*";
+
+    @Metadata(label = "security", defaultValue = DEFAULT_DESERIALIZATION_FILTER,
               description = "Sets a deserialization filter while reading Object from Aggregation Repository. By default the filter denies"
                             + " java.net.** (to avoid classes whose hash/equals methods perform network I/O) and otherwise allows all java"
                             + " packages and subpackages and all org.apache.camel packages and subpackages, while the remaining will be"
-                            + " blacklisted and not deserialized. This parameter should be customized if you're using classes you trust to be deserialized.")
-    private String deserializationFilter = "!java.net.**;java.**;org.apache.camel.**;!*";
+                            + " blacklisted and not deserialized. It also applies JEP-290 graph-shape limits (maxdepth, maxrefs, maxbytes)"
+                            + " as defense-in-depth against resource-exhaustion payloads. This parameter should be customized if you're"
+                            + " using classes you trust to be deserialized.")
+    private String deserializationFilter = DEFAULT_DESERIALIZATION_FILTER;
     @Metadata(label = "advanced",
               description = "Mapper allowing different JDBC vendors to be mapped with vendor specific error codes to an OptimisticLockingException")
     private JdbcOptimisticLockingExceptionMapper jdbcOptimisticLockingExceptionMapper
@@ -174,7 +185,10 @@ public class JdbcAggregationRepository extends ServiceSupport
             throws OptimisticLockingException {
 
         try {
-            return add(camelContext, correlationId, newExchange);
+            // compare-and-set against the exchange that was read by get(): the stored group must still have the version
+            // of oldExchange, and when oldExchange is null there must be no stored group
+            Long expectedVersion = oldExchange != null ? oldExchange.getProperty(VERSION_PROPERTY, Long.class) : null;
+            return doAdd(camelContext, correlationId, newExchange, expectedVersion, true);
         } catch (Exception e) {
             if (jdbcOptimisticLockingExceptionMapper != null && jdbcOptimisticLockingExceptionMapper.isOptimisticLocking(e)) {
                 throw new OptimisticLockingException();
@@ -186,6 +200,20 @@ public class JdbcAggregationRepository extends ServiceSupport
 
     @Override
     public Exchange add(final CamelContext camelContext, final String correlationId, final Exchange exchange) {
+        return doAdd(camelContext, correlationId, exchange, exchange.getProperty(VERSION_PROPERTY, Long.class), false);
+    }
+
+    /**
+     * Stores the exchange: updates the stored group if it still has the expected version, or inserts a new group.
+     *
+     * @param expectedVersion the version of the stored group the exchange was aggregated on, or <tt>null</tt> for a new
+     *                        group
+     * @param mustExist       whether the stored group must still exist when an expected version is given (optimistic
+     *                        locking), as it may have been completed and removed meanwhile
+     */
+    private Exchange doAdd(
+            final CamelContext camelContext, final String correlationId, final Exchange exchange,
+            final Long expectedVersion, final boolean mustExist) {
         return transactionTemplate.execute(new TransactionCallback<Exchange>() {
 
             public Exchange doInTransaction(TransactionStatus status) {
@@ -205,18 +233,21 @@ public class JdbcAggregationRepository extends ServiceSupport
                     }
 
                     if (present) {
-                        Long versionLong = exchange.getProperty(VERSION_PROPERTY, Long.class);
-                        if (versionLong == null) {
+                        if (expectedVersion == null) {
                             LOG.debug("Race while inserting record with key {}", correlationId);
                             throw new OptimisticLockingException();
                         } else {
-                            long version = versionLong.longValue();
+                            long version = expectedVersion.longValue();
                             LOG.debug("Updating record with key {} and version {}", correlationId, version);
                             update(camelContext, correlationId, exchange, table, version);
                         }
+                    } else if (mustExist && expectedVersion != null) {
+                        // the group the exchange was aggregated on has been completed (removed) meanwhile
+                        LOG.debug("Race while updating record with key {} as it has been removed", correlationId);
+                        throw new OptimisticLockingException();
                     } else {
                         LOG.debug("Inserting record with key {}", correlationId);
-                        insert(camelContext, correlationId, exchange, table, 1L);
+                        insert(camelContext, correlationId, exchange, table, newGroupVersion());
                     }
 
                 } catch (Exception e) {
@@ -229,9 +260,18 @@ public class JdbcAggregationRepository extends ServiceSupport
         });
     }
 
+    /**
+     * The version of a new group. It is not 1 for every group, so that an exchange that was read from a previous group
+     * with the same correlation key (which has been completed meanwhile) can never match the version of the new group.
+     */
+    protected long newGroupVersion() {
+        return ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE / 2);
+    }
+
     // Useful to verify if the table name does not contain invalid characters.
+    // Allows simple names (my_table) and schema-qualified names (myschema.my_table).
     protected static void verifyTableName(String tableName) {
-        if (!tableName.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+        if (!tableName.matches("[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)?")) {
             throw new IllegalArgumentException("Invalid repository name: " + tableName);
         }
     }
@@ -427,12 +467,18 @@ public class JdbcAggregationRepository extends ServiceSupport
                     LOG.debug("Removing key {}", correlationId);
                     String table = getRepositoryName();
                     verifyTableName(table);
-                    jdbcTemplate.update("DELETE FROM " + table + " WHERE " + ID + " = ? AND " + VERSION + " = ?", // NOSONAR
+                    int deleteCount = jdbcTemplate.update(
+                            "DELETE FROM " + table + " WHERE " + ID + " = ? AND " + VERSION + " = ?", // NOSONAR
                             correlationId, version);
+                    if (deleteCount != 1) {
+                        throw new OptimisticLockingException();
+                    }
 
                     insert(camelContext, confirmKey, exchange, getRepositoryNameCompleted(), version);
                     LOG.debug("Removed key {}", correlationId);
 
+                } catch (OptimisticLockingException e) {
+                    throw e;
                 } catch (Exception e) {
                     throw new RuntimeException("Error removing key " + correlationId + " from repository " + repositoryName, e);
                 }

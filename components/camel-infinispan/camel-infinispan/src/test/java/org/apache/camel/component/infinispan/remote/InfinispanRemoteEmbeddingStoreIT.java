@@ -30,7 +30,6 @@ import org.apache.camel.component.infinispan.InfinispanConstants;
 import org.apache.camel.component.infinispan.InfinispanOperation;
 import org.apache.camel.component.infinispan.remote.embeddingstore.EmbeddingStoreUtil;
 import org.apache.camel.spi.DataType;
-import org.apache.commons.lang3.SystemUtils;
 import org.awaitility.Awaitility;
 import org.infinispan.api.annotations.indexing.option.VectorSimilarity;
 import org.infinispan.client.hotrod.RemoteCacheManager;
@@ -189,16 +188,16 @@ public class InfinispanRemoteEmbeddingStoreIT extends InfinispanRemoteTestSuppor
 
     private InfinispanRemoteConfiguration createInfinispanRemoteConfiguration() {
         InfinispanRemoteConfiguration configuration = new InfinispanRemoteConfiguration();
-        configuration.setHosts(service.getServiceAddress());
+        // Normalise "localhost" to "127.0.0.1" so the JVM does not resolve it to ::1 (IPv6),
+        // which the server does not bind to in host-network mode on Podman/Linux.
+        configuration.setHosts(InfinispanRemoteTestSupport.resolvedHost(service.host()) + ":" + service.port());
         configuration.setUsername(service.username());
         configuration.setPassword(service.password());
         configuration.setSaslMechanism("SCRAM-SHA-512");
         configuration.setSecurityRealm("default");
         configuration.setSecure(true);
 
-        if (SystemUtils.IS_OS_MAC) {
-            configuration.addConfigurationProperty("infinispan.client.hotrod.client_intelligence", "BASIC");
-        }
+        configuration.addConfigurationProperty("infinispan.client.hotrod.client_intelligence", "BASIC");
 
         return configuration;
     }

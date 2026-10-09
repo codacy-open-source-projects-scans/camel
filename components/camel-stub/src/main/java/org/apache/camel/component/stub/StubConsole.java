@@ -24,34 +24,42 @@ import java.util.Queue;
 import java.util.Set;
 
 import org.apache.camel.Exchange;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.MessageHelper;
 import org.apache.camel.support.PatternHelper;
 import org.apache.camel.support.console.AbstractDevConsole;
-import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 
 @DevConsole(name = "stub", description = "Browse messages on stub endpoints")
 public class StubConsole extends AbstractDevConsole {
 
-    /**
-     * Filters the routes matching by queue name
-     */
+    public record QueueEntry(
+            @Metadata(description = "The queue name") String name,
+            @Metadata(description = "The endpoint URI") String endpointUri,
+            @Metadata(description = "The maximum queue size") int max,
+            @Metadata(description = "The current queue size") int size,
+            @Metadata(description = "The browsed messages (only present when browsing is enabled and there are any)") List<Map<String, Object>> messages) {
+    }
+
+    public record Response(@Metadata(description = "The stub queues") List<QueueEntry> queues) {
+    }
+
+    @Metadata(label = "query", description = "Filters the routes matching by queue name",
+              javaType = "java.lang.String")
     public static final String FILTER = "filter";
 
-    /**
-     * Limits the number of messages dumped
-     */
+    @Metadata(label = "query", description = "Limits the number of messages dumped",
+              javaType = "java.lang.Integer")
     public static final String LIMIT = "limit";
 
-    /**
-     * To use either xml or json output format
-     */
+    @Metadata(label = "query", description = "To use either xml or json output format",
+              javaType = "java.lang.String", enums = "xml,json")
     public static final String FORMAT = "format";
 
-    /**
-     * Whether to browse messages
-     */
+    @Metadata(label = "query", description = "Whether to browse messages", defaultValue = "false",
+              javaType = "java.lang.Boolean")
     public static final String BROWSE = "browse";
 
     public StubConsole() {
@@ -60,11 +68,9 @@ public class StubConsole extends AbstractDevConsole {
 
     @Override
     protected String doCallText(Map<String, Object> options) {
-        String filter = (String) options.get(FILTER);
-        String limit = (String) options.get(LIMIT);
-        String browse = (String) options.get(BROWSE);
-        final int max = limit == null ? Integer.MAX_VALUE : Integer.parseInt(limit);
-        final boolean dump = browse == null ? Boolean.FALSE : Boolean.parseBoolean(browse);
+        String filter = optionString(options, FILTER);
+        final int max = optionInt(options, LIMIT, Integer.MAX_VALUE);
+        final boolean dump = optionBoolean(options, BROWSE, false);
 
         StringBuilder sb = new StringBuilder();
 
@@ -98,7 +104,7 @@ public class StubConsole extends AbstractDevConsole {
                 for (Exchange exchange : copy) {
                     // dump to xml or json
                     try {
-                        String format = (String) options.get(FORMAT);
+                        String format = optionString(options, FORMAT);
                         String msg = null;
                         if (format == null || "xml".equals(format)) {
                             msg = MessageHelper.dumpAsXml(exchange.getMessage(), true, 4);
@@ -119,15 +125,12 @@ public class StubConsole extends AbstractDevConsole {
     }
 
     @Override
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        String filter = (String) options.get(FILTER);
-        String limit = (String) options.get(LIMIT);
-        String browse = (String) options.get(BROWSE);
-        final int max = limit == null ? Integer.MAX_VALUE : Integer.parseInt(limit);
-        final boolean dump = browse == null ? Boolean.FALSE : Boolean.parseBoolean(browse);
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        String filter = optionString(options, FILTER);
+        final int max = optionInt(options, LIMIT, Integer.MAX_VALUE);
+        final boolean dump = optionBoolean(options, BROWSE, false);
 
-        JsonObject root = new JsonObject();
-        JsonArray queues = new JsonArray();
+        List<QueueEntry> queues = new ArrayList<>();
 
         List<StubEndpoint> list = getCamelContext().getEndpoints()
                 .stream().filter(e -> e instanceof StubEndpoint)
@@ -145,15 +148,10 @@ public class StubConsole extends AbstractDevConsole {
                 names.add(name);
             }
 
-            JsonObject jo = new JsonObject();
-            jo.put("name", name);
-            jo.put("endpointUri", se.getEndpointUri());
-            jo.put("max", se.getSize());
-            jo.put("size", se.getCurrentQueueSize());
-
             // browse messages
+            List<Map<String, Object>> messages = null;
             if (dump) {
-                List<JsonObject> arr = new ArrayList<>();
+                List<Map<String, Object>> arr = new ArrayList<>();
 
                 Queue<Exchange> q = se.getQueue();
                 List<Exchange> copy = new ArrayList<>(q);
@@ -172,15 +170,13 @@ public class StubConsole extends AbstractDevConsole {
                         // ignore
                     }
                 }
-                if (!arr.isEmpty()) {
-                    jo.put("messages", arr);
-                }
+                messages = arr.isEmpty() ? null : arr;
             }
-            queues.add(jo);
+            queues.add(new QueueEntry(name, se.getEndpointUri(), se.getSize(), se.getCurrentQueueSize(), messages));
         }
 
-        root.put("queues", queues);
-        return root;
+        Response response = new Response(queues);
+        return JsonRecordSupport.toJsonObject(response);
     }
 
     private static boolean accept(String name, String filter) {

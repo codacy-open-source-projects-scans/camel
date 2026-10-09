@@ -92,6 +92,76 @@ public interface JGroupsEndpointBuilderFactory {
             doSetProperty("enableViewMessages", enableViewMessages);
             return this;
         }
+        /**
+         * Whether to start the consumer and accept any object deserialized from
+         * the cluster even when no pre-read deserialization control is
+         * configured. When false (the default) the consumer fails to start on
+         * an unauthenticated default channel unless a JVM-wide
+         * -Djdk.serialFilter, the JGroups jgroups.deserialization.filter system
+         * property, or an authenticated/encrypted channel is configured. Set to
+         * true to accept any serialized type and bypass the start-up guard;
+         * this also disables the post-read class check, so it is an insecure
+         * setting.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param acceptAllObjects the value to set
+         * @return the dsl builder
+         */
+        default JGroupsEndpointConsumerBuilder acceptAllObjects(boolean acceptAllObjects) {
+            doSetProperty("acceptAllObjects", acceptAllObjects);
+            return this;
+        }
+        /**
+         * Whether to start the consumer and accept any object deserialized from
+         * the cluster even when no pre-read deserialization control is
+         * configured. When false (the default) the consumer fails to start on
+         * an unauthenticated default channel unless a JVM-wide
+         * -Djdk.serialFilter, the JGroups jgroups.deserialization.filter system
+         * property, or an authenticated/encrypted channel is configured. Set to
+         * true to accept any serialized type and bypass the start-up guard;
+         * this also disables the post-read class check, so it is an insecure
+         * setting.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param acceptAllObjects the value to set
+         * @return the dsl builder
+         */
+        default JGroupsEndpointConsumerBuilder acceptAllObjects(String acceptAllObjects) {
+            doSetProperty("acceptAllObjects", acceptAllObjects);
+            return this;
+        }
+        /**
+         * Sets an ObjectInputFilter pattern (jdk.serialFilter syntax) applied
+         * as a defense-in-depth check on the class of the message body
+         * deserialized by org.jgroups.Message.getObject(). The pattern is
+         * evaluated after JGroups has deserialized the payload, so this option
+         * alone does not prevent gadget-chain execution that happens inside the
+         * JGroups receive path; to block such attacks, also configure the
+         * JVM-wide -Djdk.serialFilter and secure the channel with AUTH and
+         * encryption. When this option is not set and no JVM-wide filter is
+         * configured, a conservative default filter denying java.net. and
+         * otherwise allowing java., javax. and org.apache.camel. is applied.
+         * Use to accept any type.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param deserializationFilter the value to set
+         * @return the dsl builder
+         */
+        default JGroupsEndpointConsumerBuilder deserializationFilter(String deserializationFilter) {
+            doSetProperty("deserializationFilter", deserializationFilter);
+            return this;
+        }
     }
 
     /**
@@ -410,7 +480,7 @@ public interface JGroupsEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final JGroupsHeaderNameBuilder INSTANCE = new JGroupsHeaderNameBuilder();
+        public static final JGroupsHeaderNameBuilder INSTANCE = new JGroupsHeaderNameBuilder();
 
         /**
          * Address (org.jgroups.Address) of the channel associated with the
@@ -420,10 +490,10 @@ public interface JGroupsEndpointBuilderFactory {
          * 
          * Group: common
          * 
-         * @return the name of the header {@code JGROUPS_CHANNEL_ADDRESS}.
+         * @return the name of the header {@code JGroupsChannelAddress}.
          */
-        public String jgroupsChannelAddress() {
-            return "JGROUPS_CHANNEL_ADDRESS";
+        public String jGroupsChannelAddress() {
+            return "CamelJGroupsChannelAddress";
         }
         /**
          * Consumer: The org.jgroups.Address instance extracted by
@@ -435,10 +505,10 @@ public interface JGroupsEndpointBuilderFactory {
          * 
          * Group: common
          * 
-         * @return the name of the header {@code JGROUPS_DEST}.
+         * @return the name of the header {@code JGroupsDest}.
          */
-        public String jgroupsDest() {
-            return "JGROUPS_DEST";
+        public String jGroupsDest() {
+            return "CamelJGroupsDest";
         }
         /**
          * Consumer : The org.jgroups.Address instance extracted by
@@ -450,10 +520,10 @@ public interface JGroupsEndpointBuilderFactory {
          * 
          * Group: common
          * 
-         * @return the name of the header {@code JGROUPS_SRC}.
+         * @return the name of the header {@code JGroupsSrc}.
          */
-        public String jgroupsSrc() {
-            return "JGROUPS_SRC";
+        public String jGroupsSrc() {
+            return "CamelJGroupsSrc";
         }
         /**
          * The original org.jgroups.Message instance from which the body of the
@@ -463,10 +533,10 @@ public interface JGroupsEndpointBuilderFactory {
          * 
          * Group: common
          * 
-         * @return the name of the header {@code JGROUPS_ORIGINAL_MESSAGE}.
+         * @return the name of the header {@code JGroupsOriginalMessage}.
          */
-        public String jgroupsOriginalMessage() {
-            return "JGROUPS_ORIGINAL_MESSAGE";
+        public String jGroupsOriginalMessage() {
+            return "CamelJGroupsOriginalMessage";
         }
     }
     static JGroupsEndpointBuilder endpointBuilder(String componentName, String path) {

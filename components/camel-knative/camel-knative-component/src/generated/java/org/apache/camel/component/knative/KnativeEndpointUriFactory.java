@@ -21,9 +21,10 @@ public class KnativeEndpointUriFactory extends org.apache.camel.support.componen
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(18);
+        Set<String> props = new HashSet<>(19);
         props.add("apiVersion");
         props.add("bridgeErrorHandler");
         props.add("ceOverride");
@@ -35,6 +36,7 @@ public class KnativeEndpointUriFactory extends org.apache.camel.support.componen
         props.add("filters");
         props.add("kind");
         props.add("lazyStartProducer");
+        props.add("muteException");
         props.add("name");
         props.add("reply");
         props.add("replyWithCloudEvent");
@@ -44,6 +46,7 @@ public class KnativeEndpointUriFactory extends org.apache.camel.support.componen
         props.add("typeId");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
         SECRET_PROPERTY_NAMES = Collections.emptySet();
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         MULTI_VALUE_PREFIXES = Collections.emptyMap();
     }
 
@@ -57,7 +60,7 @@ public class KnativeEndpointUriFactory extends org.apache.camel.support.componen
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "type", null, false, copy);
         uri = buildPathParameter(syntax, uri, "typeId", null, false, copy);
@@ -73,6 +76,11 @@ public class KnativeEndpointUriFactory extends org.apache.camel.support.componen
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

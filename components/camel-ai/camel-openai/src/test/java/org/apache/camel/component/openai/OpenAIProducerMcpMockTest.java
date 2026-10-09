@@ -41,7 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-public class OpenAIProducerMcpMockTest extends CamelTestSupport {
+class OpenAIProducerMcpMockTest extends CamelTestSupport {
 
     @RegisterExtension
     public OpenAIMock openAIMock = new OpenAIMock().builder()
@@ -62,6 +62,13 @@ public class OpenAIProducerMcpMockTest extends CamelTestSupport {
             // No tools needed: just text response (backward compat)
             .when("no tools needed")
             .replyWith("Just a text response")
+            .end()
+            // Tool call with reasoning content in final response
+            .when("call tool with reasoning")
+            .invokeTool("get_weather")
+            .withParam("city", "Tokyo")
+            .replyWith("The weather in Tokyo is rainy.")
+            .replyWithReasoningContent("I need to check the weather API for Tokyo")
             .end()
             .build();
 
@@ -85,6 +92,11 @@ public class OpenAIProducerMcpMockTest extends CamelTestSupport {
                 from("direct:mcp-chat-max1")
                         .to("openai:chat-completion?model=gpt-5&apiKey=dummy&autoToolExecution=true&maxToolIterations=1&baseUrl="
                             + openAIMock.getBaseUrl() + "/v1");
+
+                from("direct:mcp-chat-reprompt")
+                        .to("openai:chat-completion?model=gpt-5&apiKey=dummy&autoToolExecution=true"
+                            + "&toolExecutionErrorStrategy=repromptModel&baseUrl="
+                            + openAIMock.getBaseUrl() + "/v1");
             }
         };
     }
@@ -92,7 +104,7 @@ public class OpenAIProducerMcpMockTest extends CamelTestSupport {
     private McpSyncClient createMockMcpClient(String toolName, String resultText) {
         McpSyncClient client = mock(McpSyncClient.class);
         McpSchema.CallToolResult result = McpSchema.CallToolResult.builder()
-                .content(List.of(new McpSchema.TextContent(resultText)))
+                .content(List.of(new McpSchema.TextContent(null, resultText, null)))
                 .isError(false)
                 .build();
         when(client.callTool(any(McpSchema.CallToolRequest.class))).thenReturn(result);
@@ -117,16 +129,16 @@ public class OpenAIProducerMcpMockTest extends CamelTestSupport {
 
         // Convert tool names to OpenAI function tools via McpToolConverter
         List<McpSchema.Tool> mcpTools = toolClients.keySet().stream()
-                .map(name -> McpSchema.Tool.builder()
-                        .name(name)
+                .map(name -> McpSchema.Tool.builder(name, Map.of("type", "object"))
                         .description("Mock tool: " + name)
-                        .inputSchema(new McpSchema.JsonSchema("object", null, null, null, null, null))
                         .build())
                 .toList();
 
-        endpoint.setMcpTools(McpToolConverter.convert(mcpTools));
-        endpoint.setToolClientMap(toolClients);
-        endpoint.setReturnDirectTools(returnDirectToolNames);
+        endpoint.setMcpToolState(new McpToolState(
+                McpToolConverter.convert(mcpTools),
+                toolClients,
+                Map.of(),
+                returnDirectToolNames, Map.of()));
     }
 
     @Test
@@ -194,7 +206,8 @@ public class OpenAIProducerMcpMockTest extends CamelTestSupport {
 
     @Test
     void toolExecutionErrorSentToModel() {
-        String endpointUri = "openai:chat-completion?model=gpt-5&apiKey=dummy&autoToolExecution=true&baseUrl="
+        String endpointUri = "openai:chat-completion?model=gpt-5&apiKey=dummy&autoToolExecution=true"
+                             + "&toolExecutionErrorStrategy=repromptModel&baseUrl="
                              + openAIMock.getBaseUrl() + "/v1";
 
         Map<String, McpSyncClient> toolClients = new HashMap<>();
@@ -202,7 +215,7 @@ public class OpenAIProducerMcpMockTest extends CamelTestSupport {
         injectMcpTools(endpointUri, toolClients);
 
         // The error is caught and sent back to the model; the mock responds with final text
-        Exchange result = template.request("direct:mcp-chat", e -> e.getIn().setBody("call one tool"));
+        Exchange result = template.request("direct:mcp-chat-reprompt", e -> e.getIn().setBody("call one tool"));
 
         // The model should still produce a final response (the mock handles this)
         assertNotNull(result.getMessage().getBody(String.class));
@@ -266,7 +279,8 @@ public class OpenAIProducerMcpMockTest extends CamelTestSupport {
 
     @Test
     void returnDirectWithErrorFallsBackToModel() {
-        String endpointUri = "openai:chat-completion?model=gpt-5&apiKey=dummy&autoToolExecution=true&baseUrl="
+        String endpointUri = "openai:chat-completion?model=gpt-5&apiKey=dummy&autoToolExecution=true"
+                             + "&toolExecutionErrorStrategy=repromptModel&baseUrl="
                              + openAIMock.getBaseUrl() + "/v1";
 
         Map<String, McpSyncClient> toolClients = new HashMap<>();
@@ -276,7 +290,7 @@ public class OpenAIProducerMcpMockTest extends CamelTestSupport {
         injectMcpTools(endpointUri, toolClients, returnDirect);
 
         // Error should override returnDirect — results go back to model
-        Exchange result = template.request("direct:mcp-chat", e -> e.getIn().setBody("call one tool"));
+        Exchange result = template.request("direct:mcp-chat-reprompt", e -> e.getIn().setBody("call one tool"));
 
         assertNotNull(result.getMessage().getBody(String.class));
         assertFalse(result.getMessage().getHeader(OpenAIConstants.MCP_RETURN_DIRECT, Boolean.class));
@@ -297,5 +311,23 @@ public class OpenAIProducerMcpMockTest extends CamelTestSupport {
         // Should NOT short-circuit — results go back to model
         assertFalse(result.getMessage().getHeader(OpenAIConstants.MCP_RETURN_DIRECT, Boolean.class));
         assertEquals("The weather in London is sunny.", result.getMessage().getBody(String.class));
+    }
+
+    @Test
+    void agenticLoopExtractsReasoningContent() {
+        String endpointUri = "openai:chat-completion?model=gpt-5&apiKey=dummy&autoToolExecution=true&baseUrl="
+                             + openAIMock.getBaseUrl() + "/v1";
+
+        Map<String, McpSyncClient> toolClients = new HashMap<>();
+        toolClients.put("get_weather", createMockMcpClient("get_weather", "Rainy, 18°C"));
+        injectMcpTools(endpointUri, toolClients);
+
+        Exchange result = template.request("direct:mcp-chat",
+                e -> e.getIn().setBody("call tool with reasoning"));
+
+        assertEquals("The weather in Tokyo is rainy.", result.getMessage().getBody(String.class));
+        assertEquals("I need to check the weather API for Tokyo",
+                result.getMessage().getHeader(OpenAIConstants.REASONING_CONTENT, String.class));
+        assertEquals(1, result.getMessage().getHeader(OpenAIConstants.TOOL_ITERATIONS, Integer.class));
     }
 }

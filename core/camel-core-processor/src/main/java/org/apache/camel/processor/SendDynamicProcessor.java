@@ -16,13 +16,16 @@
  */
 package org.apache.camel.processor;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.camel.AsyncCallback;
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelContextAware;
 import org.apache.camel.Component;
 import org.apache.camel.Endpoint;
+import org.apache.camel.EndpointSending;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePattern;
 import org.apache.camel.ExchangePropertyKey;
@@ -38,8 +41,10 @@ import org.apache.camel.spi.OptimisedComponentResolver;
 import org.apache.camel.spi.ProducerCache;
 import org.apache.camel.spi.RouteIdAware;
 import org.apache.camel.spi.SendDynamicAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.EndpointHelper;
 import org.apache.camel.support.ExchangeHelper;
+import org.apache.camel.support.NormalizedUri;
 import org.apache.camel.support.cache.DefaultProducerCache;
 import org.apache.camel.support.cache.EmptyProducerCache;
 import org.apache.camel.support.service.ServiceHelper;
@@ -52,7 +57,8 @@ import org.slf4j.LoggerFactory;
  *
  * @see org.apache.camel.processor.SendProcessor
  */
-public class SendDynamicProcessor extends BaseProcessorSupport implements IdAware, RouteIdAware, CamelContextAware {
+public class SendDynamicProcessor extends BaseProcessorSupport
+        implements EndpointSending, IdAware, RouteIdAware, StepIdAware, CamelContextAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(SendDynamicProcessor.class);
 
@@ -68,10 +74,13 @@ public class SendDynamicProcessor extends BaseProcessorSupport implements IdAwar
     protected HeadersMapFactory headersMapFactory;
     protected String id;
     protected String routeId;
+    protected String stepId;
     protected boolean ignoreInvalidEndpoint;
     protected int cacheSize;
     protected boolean allowOptimisedComponents = true;
     protected boolean autoStartupComponents = true;
+    protected String allowedSchemes;
+    private Set<String> allowedSchemesSet;
 
     public SendDynamicProcessor(String uri, Expression expression) {
         this.uri = uri;
@@ -101,6 +110,16 @@ public class SendDynamicProcessor extends BaseProcessorSupport implements IdAwar
     @Override
     public void setRouteId(String routeId) {
         this.routeId = routeId;
+    }
+
+    @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
     }
 
     @Override
@@ -156,6 +175,18 @@ public class SendDynamicProcessor extends BaseProcessorSupport implements IdAwar
                 // no endpoint to send to, so ignore
                 callback.done(true);
                 return true;
+            }
+            // enforce the optional allowed-schemes allow-list on the resolved dynamic recipient (CAMEL-24298);
+            // a disallowed scheme is always rejected, independently of ignoreInvalidEndpoint
+            if (allowedSchemes != null) {
+                String targetUri = targetRecipient.toString();
+                String targetScheme = resolveScheme(exchange, targetUri);
+                if (targetScheme != null && !isSchemeAllowed(targetScheme)) {
+                    exchange.setException(new ResolveEndpointFailedException(
+                            targetUri, "Scheme " + targetScheme + " is not in the allowed schemes: " + allowedSchemes));
+                    callback.done(true);
+                    return true;
+                }
             }
             Endpoint existing = getExistingEndpoint(exchange, targetRecipient);
             if (existing == null) {
@@ -217,8 +248,13 @@ public class SendDynamicProcessor extends BaseProcessorSupport implements IdAwar
                 e.setException(t);
                 // restore previous MEP
                 target.setPattern(existingPattern);
-                // we failed
+                // stop endpoint if prototype as it is not used
+                if (stopEndpoint) {
+                    ServiceHelper.stopAndShutdownService(endpoint);
+                }
+                // we failed, so do not send
                 c.done(true);
+                return true;
             }
 
             LOG.debug(">>>> {} {}", endpoint, e);
@@ -264,13 +300,10 @@ public class SendDynamicProcessor extends BaseProcessorSupport implements IdAwar
             uri = exchange.getContext().getTypeConverter().mandatoryConvertTo(String.class, exchange, recipient);
         }
 
-        // in case path has property placeholders then try to let property component resolve those
-        try {
-            uri = EndpointHelper.resolveEndpointUriPropertyPlaceholders(exchange.getContext(), uri);
-        } catch (Exception e) {
-            throw new ResolveEndpointFailedException(uri, e);
-        }
-
+        // NOTE: property placeholders in the dynamic-uri template are resolved once at build time
+        // (see ToDynamicReifier#createExpression). The per-message evaluated recipient must not be
+        // re-resolved here: message content that happens to contain {{...}} must be treated as a
+        // literal endpoint uri, not expanded as a property placeholder (CAMEL-24282).
         return uri;
     }
 
@@ -299,8 +332,9 @@ public class SendDynamicProcessor extends BaseProcessorSupport implements IdAwar
             if (colon == -1 || colon == uri.length() - 1) {
                 throw new ResolveEndpointFailedException(uri, "Endpoint should include scheme:path");
             }
-            // optimize and normalize endpoint
-            return ecc.getCamelContextExtension().normalizeUri(uri);
+            // optimize and normalize endpoint without re-resolving property placeholders on the
+            // per-message evaluated recipient (see resolveUri and CAMEL-24282)
+            return NormalizedUri.newNormalizedUri(uri, false);
         }
         return null;
     }
@@ -480,5 +514,27 @@ public class SendDynamicProcessor extends BaseProcessorSupport implements IdAwar
 
     public void setAutoStartupComponents(boolean autoStartupComponents) {
         this.autoStartupComponents = autoStartupComponents;
+    }
+
+    public String getAllowedSchemes() {
+        return allowedSchemes;
+    }
+
+    public void setAllowedSchemes(String allowedSchemes) {
+        this.allowedSchemes = allowedSchemes;
+        if (allowedSchemes != null) {
+            // pre-parse once into a set, so the per-exchange check does not allocate/split on every message
+            Set<String> set = new HashSet<>();
+            for (String allowed : allowedSchemes.split(",")) {
+                set.add(allowed.trim());
+            }
+            this.allowedSchemesSet = set;
+        } else {
+            this.allowedSchemesSet = null;
+        }
+    }
+
+    private boolean isSchemeAllowed(String scheme) {
+        return allowedSchemesSet == null || allowedSchemesSet.contains(scheme);
     }
 }

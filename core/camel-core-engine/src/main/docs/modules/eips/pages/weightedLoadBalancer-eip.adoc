@@ -1,7 +1,7 @@
 = Weighted Load Balancer EIP
 :doctitle: Weighted Load Balancer
 :shortname: weightedLoadBalancer
-:description: Uses a weighted load distribution ratio for each server with respect to others.
+:description: Load balancer that distributes messages across endpoints according to configured weight ratios
 :since: 
 :supportlevel: Stable
 :tabs-sync-option:
@@ -27,6 +27,10 @@ In this example, we want to send the most message to the first endpoint, then th
 
 The distribution ratio is `7 = 4 + 2 + 1`.
 This means that for every seventh message then 4 goes to the first, 2 for the second, and 1 for the last.
+
+Each ratio must be zero or a positive number, at least one ratio must be positive, and the sum of the ratios
+must not be greater than `2147483647`. Otherwise, the route fails to start.
+An endpoint with ratio `0` does not receive any messages.
 
 [tabs]
 ====
@@ -67,9 +71,9 @@ YAML::
       uri: direct:start
       steps:
         - loadBalance:
+            weightedLoadBalancer:
+              distributionRatio: "4,2,1"
             steps:
-              - weightedLoadBalancer:
-                  distributionRatio: "4,2,1"
               - to:
                   uri: seda:x
               - to:

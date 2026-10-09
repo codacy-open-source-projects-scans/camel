@@ -102,8 +102,26 @@ public class BrowsableQueueTest extends AbstractJMSTest {
     }
 
     @Test
+    public void testSendMessagesThenBrowseQueueWithBrowseLimit() {
+        final String queueName = queueNameForClass("activemq:BrowsableQueueTest.d", this.getClass());
+        // send some messages
+        for (int i = 0; i < expectedBodies.length; i++) {
+            Object expectedBody = expectedBodies[i];
+            template.sendBodyAndHeader(queueName, expectedBody, "counter", i);
+        }
+
+        // now lets browse the queue using the browseLimit URI option
+        JmsQueueEndpoint endpoint = getMandatoryEndpoint(queueName + "?browseLimit=6", JmsQueueEndpoint.class);
+        assertEquals(6, endpoint.getMaximumBrowseSize());
+        assertEquals(6, endpoint.getBrowseLimit());
+        List<Exchange> list = endpoint.getExchanges();
+        LOG.debug("Received: {}", list);
+        assertEquals(6, list.size(), "Size of list");
+    }
+
+    @Test
     public void testSendMessagesThenBrowseQueueNoMax() {
-        final String queueName = queueNameForClass("activemq:BrowsableQueueTest.b", this.getClass());
+        final String queueName = queueNameForClass("activemq:BrowsableQueueTest.e", this.getClass());
 
         // send some messages
         for (int i = 0; i < expectedBodies.length; i++) {
@@ -113,7 +131,7 @@ public class BrowsableQueueTest extends AbstractJMSTest {
 
         // now lets browse the queue
         JmsQueueEndpoint endpoint = getMandatoryEndpoint(queueName, JmsQueueEndpoint.class);
-        assertEquals(-1, endpoint.getMaximumBrowseSize());
+        assertEquals(100, endpoint.getMaximumBrowseSize());
         List<Exchange> list = endpoint.getExchanges();
         LOG.debug("Received: {}", list);
         assertEquals(8, endpoint.getExchanges().size(), "Size of list");
@@ -155,5 +173,12 @@ public class BrowsableQueueTest extends AbstractJMSTest {
         context = camelContextExtension.getContext();
         template = camelContextExtension.getProducerTemplate();
         consumer = camelContextExtension.getConsumerTemplate();
+
+        for (String suffix : new String[] { "b", "c", "d", "e" }) {
+            String q = queueNameForClass("activemq:BrowsableQueueTest." + suffix, getClass());
+            while (consumer.receiveNoWait(q) != null) {
+                // drain leftover messages from previous runs/retries
+            }
+        }
     }
 }

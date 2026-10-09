@@ -1,7 +1,7 @@
 = Validate EIP
 :doctitle: Validate
 :shortname: validate
-:description: Validates a message based on an expression
+:description: Validates the message against a predicate expression and throws a PredicateValidationException if the validation fails
 :since: 
 :supportlevel: Stable
 :tabs-sync-option:
@@ -38,7 +38,7 @@ Java::
 [source,java]
 ----
 from("file:inbox")
-  .validate(body(String.class).regex("^\\w{10}\\,\\d{2}\\,\\w{24}$"))
+  .validate(bodyAs(String.class).regex("^\\w{10}\\,\\d{2}\\,\\w{24}$"))
   .to("bean:myServiceBean.processLine");
 ----
 
@@ -68,7 +68,9 @@ YAML::
               simple:
                 expression: "${body} regex '^\\w{10}\\,\\d{2}\\,\\w{24}$'"
         - to:
-            uri: bean:myServiceBean?method=processLine
+            uri: bean:myServiceBean
+            parameters:
+              method: processLine
 ----
 ====
 
@@ -103,7 +105,7 @@ XML::
   <validate>
     <simple>${header.bar} &gt; 100</simple>
   </validate>
-  <to uri="bean:myServiceBean" method="processLine"/>
+  <to uri="bean:myServiceBean?method=processLine"/>
 </route>
 ----
 

@@ -143,7 +143,7 @@ public class MilvusComponentIT extends MilvusTestSupport {
         Random ran = new Random();
         List<Integer> ages = new ArrayList<>();
         for (long i = 0L; i < 2; ++i) {
-            ages.add(ran.nextInt(99));
+            ages.add(ran.nextInt(1, 99));
         }
         List<InsertParam.Field> fields = new ArrayList<>();
         fields.add(new InsertParam.Field("userAge", ages));
@@ -170,7 +170,7 @@ public class MilvusComponentIT extends MilvusTestSupport {
         Random ran = new Random();
         List<Integer> ages = new ArrayList<>();
         for (long i = 0L; i < 2; ++i) {
-            ages.add(ran.nextInt(99));
+            ages.add(ran.nextInt(1, 99));
         }
         List<UpsertParam.Field> fields = new ArrayList<>();
         fields.add(new UpsertParam.Field("userAge", ages));
@@ -213,7 +213,7 @@ public class MilvusComponentIT extends MilvusTestSupport {
 
         assertThat(result).isNotNull();
         assertThat(result.getException()).isNull();
-        assertThat(result.getMessage().getBody(SearchResponse.class).getRowRecords().size() == 2);
+        assertThat(result.getMessage().getBody(SearchResponse.class).getRowRecords().get(0)).hasSize(2);
     }
 
     @Test
@@ -234,7 +234,7 @@ public class MilvusComponentIT extends MilvusTestSupport {
 
         assertThat(result).isNotNull();
         assertThat(result.getException()).isNull();
-        assertThat(result.getMessage().getBody(QueryResults.class).getFieldsDataCount() == 2);
+        assertThat(result.getMessage().getBody(QueryResults.class).getFieldsDataCount()).isEqualTo(2);
     }
 
     @Test
@@ -272,7 +272,7 @@ public class MilvusComponentIT extends MilvusTestSupport {
 
         assertThat(result).isNotNull();
         assertThat(result.getException()).isNull();
-        assertThat(result.getMessage().getBody(SearchResponse.class).getRowRecords().size() == 0);
+        assertThat(result.getMessage().getBody(SearchResponse.class).getRowRecords().get(0)).isEmpty();
     }
 
     // --- Helper-based tests (same operations via MilvusHelper beans) ---

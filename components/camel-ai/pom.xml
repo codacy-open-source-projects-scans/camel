@@ -25,7 +25,7 @@
     <parent>
         <groupId>org.apache.camel</groupId>
         <artifactId>components</artifactId>
-        <version>4.21.0-SNAPSHOT</version>
+        <version>4.23.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>camel-ai-parent</artifactId>
@@ -34,10 +34,18 @@
     <description>Camel AI parent</description>
 
     <modules>
+        <module>camel-a2a</module>
+        <module>camel-ai-observability-api</module>
+        <module>camel-ai-observability</module>
+        <module>camel-ai-resource</module>
+        <module>camel-ai-tool</module>
         <module>camel-chatscript</module>
         <module>camel-djl</module>
         <module>camel-docling</module>
         <module>camel-huggingface</module>
+        <module>camel-semantic</module>
+        <module>camel-typesafe-ai</module>
+        <module>camel-wolf-defender</module>
         <module>camel-kserve</module>
         <module>camel-langchain4j-agent-api</module>
         <module>camel-langchain4j-agent</module>
@@ -46,9 +54,11 @@
         <module>camel-langchain4j-embeddings</module>
         <module>camel-langchain4j-embeddingstore-api</module>
         <module>camel-langchain4j-embeddingstore</module>
+        <module>camel-langchain4j-ingest</module>
         <module>camel-langchain4j-tokenizer</module>
-        <module>camel-langchain4j-tools</module>
         <module>camel-langchain4j-web-search</module>
+        <module>camel-mcp-server-api</module>
+        <module>camel-mcp-server</module>
         <module>camel-milvus</module>
         <module>camel-neo4j</module>
         <module>camel-openai</module>

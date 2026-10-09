@@ -16,47 +16,78 @@
  */
 package org.apache.camel;
 
+import java.util.Objects;
+
+import org.jspecify.annotations.Nullable;
+
 /**
  * Error binding property to a bean.
+ *
+ * @since 3.0
  */
 public class PropertyBindingException extends RuntimeCamelException {
 
+    private static final int MAX_CAUSE_DEPTH = 100;
+
     private final Object target;
-    private final String propertyName;
-    private final Object value;
-    private final String optionPrefix;
-    private final String optionKey;
+    private final @Nullable String propertyName;
+    private final @Nullable Object value;
+    private final @Nullable String optionPrefix;
+    private final @Nullable String optionKey;
 
-    public PropertyBindingException(Object target, String propertyName, Object value) {
-        this.target = target;
+    /**
+     * @param target       the target bean on which property binding failed
+     * @param propertyName the name of the property that could not be bound, or {@code null}
+     * @param value        the value that could not be bound, or {@code null}
+     */
+    public PropertyBindingException(Object target, @Nullable String propertyName, @Nullable Object value) {
+        this.target = Objects.requireNonNull(target, "target");
         this.propertyName = propertyName;
         this.value = value;
         this.optionPrefix = null;
         this.optionKey = null;
     }
 
-    public PropertyBindingException(Object target, String propertyName, Object value, Throwable e) {
-        initCause(e);
-        this.target = target;
+    /**
+     * @param target       the target bean on which property binding failed
+     * @param propertyName the name of the property that could not be bound, or {@code null}
+     * @param value        the value that could not be bound, or {@code null}
+     * @param e            the cause of the failure
+     */
+    public PropertyBindingException(Object target, @Nullable String propertyName, @Nullable Object value, Throwable e) {
+        initCause(Objects.requireNonNull(e, "e"));
+        this.target = Objects.requireNonNull(target, "target");
         this.propertyName = propertyName;
         this.value = value;
         this.optionPrefix = null;
         this.optionKey = null;
     }
 
+    /**
+     * @param target the target bean on which property binding failed
+     * @param e      the cause of the failure
+     */
     public PropertyBindingException(Object target, Throwable e) {
-        initCause(e);
-        this.target = target;
+        initCause(Objects.requireNonNull(e, "e"));
+        this.target = Objects.requireNonNull(target, "target");
         this.propertyName = null;
         this.value = null;
         this.optionPrefix = null;
         this.optionKey = null;
     }
 
-    public PropertyBindingException(Object target, String propertyName, Object value, String optionPrefix, String optionKey,
-                                    Throwable e) {
-        initCause(e);
-        this.target = target;
+    /**
+     * @param target       the target bean on which property binding failed
+     * @param propertyName the name of the property that could not be bound, or {@code null}
+     * @param value        the value that could not be bound, or {@code null}
+     * @param optionPrefix the option prefix used when resolving the property, or {@code null}
+     * @param optionKey    the option key used when resolving the property, or {@code null}
+     * @param e            the cause of the failure
+     */
+    public PropertyBindingException(Object target, @Nullable String propertyName, @Nullable Object value,
+                                    @Nullable String optionPrefix, @Nullable String optionKey, Throwable e) {
+        initCause(Objects.requireNonNull(e, "e"));
+        this.target = Objects.requireNonNull(target, "target");
         this.propertyName = propertyName;
         this.value = value;
         this.optionPrefix = optionPrefix;
@@ -70,31 +101,51 @@ public class PropertyBindingException extends RuntimeCamelException {
         if (optionPrefix != null && optionKey != null) {
             key = optionPrefix.endsWith(".") ? optionPrefix + optionKey : optionPrefix + "." + optionKey;
         }
+        String reason = rootCauseMessage();
         if (key != null) {
             return "Error binding property (" + key + "=" + stringValue + ") with name: " + propertyName
-                   + " on bean: " + target + " with value: " + stringValue;
+                   + " on bean: " + target + " with value: " + stringValue + (reason != null ? ": " + reason : "");
         } else {
-            return "Error binding properties on bean: " + target;
+            return "Error binding properties on bean: " + target + (reason != null ? ": " + reason : "");
         }
+    }
+
+    /**
+     * The message of the deepest cause, the reason the binding failed (host must be an absolute URI, no type converter
+     * available): the first line is what a person reads, and it said only that the binding failed (CAMEL-24836).
+     */
+    private @Nullable String rootCauseMessage() {
+        Throwable t = getCause();
+        Throwable deepest = null;
+        // bounded: a cause chain assembled outside initCause (a getCause override, deserialization) may loop
+        for (int i = 0; t != null && i < MAX_CAUSE_DEPTH; i++) {
+            deepest = t;
+            t = t.getCause();
+        }
+        if (deepest == null || deepest instanceof PropertyBindingException) {
+            return null;
+        }
+        String msg = deepest.getMessage();
+        return msg != null && !msg.isBlank() ? msg.trim() : null;
     }
 
     public Object getTarget() {
         return target;
     }
 
-    public String getPropertyName() {
+    public @Nullable String getPropertyName() {
         return propertyName;
     }
 
-    public Object getValue() {
+    public @Nullable Object getValue() {
         return value;
     }
 
-    public String getOptionPrefix() {
+    public @Nullable String getOptionPrefix() {
         return optionPrefix;
     }
 
-    public String getOptionKey() {
+    public @Nullable String getOptionKey() {
         return optionKey;
     }
 

@@ -39,13 +39,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Unit test for idempotent repository.
  */
 public class MailIdempotentRepositoryDuplicateTest extends CamelTestSupport {
-    protected static final MailboxUser jones = Mailbox.getOrCreateUser("jones", "secret");
+    protected static final MailboxUser jones = Mailbox.getOrCreateUser("MailIdempotentRepositoryDuplicateTest-jones", "secret");
 
     @BindToRegistry("myRepo")
     MemoryIdempotentRepository myRepo = new MemoryIdempotentRepository();
 
     @Override
-    public void doPreSetup() throws Exception {
+    public void setupResources() throws Exception {
         myRepo.start();
         prepareMailbox();
     }
@@ -72,7 +72,7 @@ public class MailIdempotentRepositoryDuplicateTest extends CamelTestSupport {
 
     private void prepareMailbox() throws Exception {
         // connect to mailbox
-        Mailbox.clearAll();
+        Mailbox.clearAll(jones);
         JavaMailSender sender = new DefaultJavaMailSender();
         Store store = sender.getSession().getStore("imap");
         store.connect("localhost", Mailbox.getPort(Protocol.imap), jones.getLogin(), jones.getPassword());
@@ -99,7 +99,7 @@ public class MailIdempotentRepositoryDuplicateTest extends CamelTestSupport {
         return new RouteBuilder() {
             public void configure() {
                 from(jones.uriPrefix(Protocol.pop3) + "&idempotentRepository=#myRepo&initialDelay=100&delay=100")
-                        .routeId("foo").noAutoStartup()
+                        .routeId("foo").autoStartup(false)
                         .to("mock:result");
             }
         };

@@ -16,6 +16,7 @@
  */
 package org.apache.camel.impl.console;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -30,49 +31,53 @@ import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.MessageHelper;
 import org.apache.camel.support.PatternHelper;
 import org.apache.camel.support.console.AbstractDevConsole;
-import org.apache.camel.util.json.JsonArray;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 
 @DevConsole(name = "browse", description = "Browse pending messages on Camel components")
 public class BrowseDevConsole extends AbstractDevConsole {
+
+    public record BrowseEntry(
+            @Metadata(description = "The endpoint URI") String endpointUri,
+            @Metadata(description = "Number of messages currently in the queue") int queueSize,
+            @Metadata(description = "The maximum number of messages returned (only present when messages were dumped)") Integer limit,
+            @Metadata(description = "The starting position of the returned messages (only present when messages were dumped)") Integer position,
+            @Metadata(description = "Epoch time in milliseconds of the first returned message (only present when available)") Long firstTimestamp,
+            @Metadata(description = "Epoch time in milliseconds of the last returned message (only present when available)") Long lastTimestamp,
+            @Metadata(description = "The dumped messages, as opaque JSON objects (only present when messages were dumped and found)") List<Map<String, Object>> messages) {
+    }
+
+    public record Response(@Metadata(description = "The browsed endpoints") List<BrowseEntry> browse) {
+    }
 
     public BrowseDevConsole() {
         super("camel", "browse", "Browse", "Browse pending messages on Camel components");
     }
 
-    /**
-     * Filters the endpoints matching by route id, endpoint url
-     */
+    @Metadata(label = "query", description = "Filters the endpoints matching by route id, endpoint url",
+              javaType = "java.lang.String")
     public static final String FILTER = "filter";
 
-    /**
-     * Limits the number of entries per endpoint
-     */
+    @Metadata(label = "query", description = "Limits the number of entries per endpoint", javaType = "java.lang.Integer",
+              defaultValue = "100")
     public static final String LIMIT = "limit";
 
-    /**
-     * To receive N last messages from the tail
-     */
+    @Metadata(label = "query", description = "To receive N last messages from the tail", javaType = "java.lang.Integer")
     public static final String TAIL = "tail";
 
-    /**
-     * Whether to include message dumps
-     */
+    @Metadata(label = "query", description = "Whether to include message dumps", javaType = "java.lang.Boolean",
+              defaultValue = "true")
     public static final String DUMP = "dump";
 
-    /**
-     * Whether to include message body in dumps
-     */
+    @Metadata(label = "query", description = "Whether to include message body in dumps", javaType = "java.lang.Boolean",
+              defaultValue = "true")
     public static final String INCLUDE_BODY = "includeBody";
 
-    /**
-     * Whether to calculate fresh queue size (can cause performance overhead)
-     */
+    @Metadata(label = "query", description = "Whether to calculate fresh queue size (can cause performance overhead)",
+              javaType = "java.lang.Boolean", defaultValue = "false")
     public static final String FRESH_SIZE = "freshSize";
 
-    /**
-     * Maximum size of the message body to include in the dump
-     */
+    @Metadata(label = "query", description = "Maximum size of the message body to include in the dump",
+              javaType = "java.lang.Integer", defaultValue = "32768")
     public static final String BODY_MAX_CHARS = "bodyMaxChars";
 
     @Metadata(defaultValue = "32768",
@@ -103,15 +108,13 @@ public class BrowseDevConsole extends AbstractDevConsole {
     protected String doCallText(Map<String, Object> options) {
         StringBuilder sb = new StringBuilder();
 
-        String filter = (String) options.get(FILTER);
-        String lim = (String) options.get(LIMIT);
-        String tail = (String) options.get(TAIL);
-        final int pos = tail == null ? 0 : Integer.parseInt(tail);
-        final int max = lim == null ? limit : Integer.parseInt(lim);
-        boolean freshSize = "true".equals(options.getOrDefault(FRESH_SIZE, "false"));
-        boolean dump = "true".equals(options.getOrDefault(DUMP, "true"));
-        boolean includeBody = "true".equals(options.getOrDefault(INCLUDE_BODY, "true"));
-        int maxChars = Integer.parseInt((String) options.getOrDefault(BODY_MAX_CHARS, "" + bodyMaxChars));
+        String filter = optionString(options, FILTER);
+        final int pos = optionInt(options, TAIL, 0);
+        final int max = optionInt(options, LIMIT, limit);
+        boolean freshSize = optionBoolean(options, FRESH_SIZE, false);
+        boolean dump = optionBoolean(options, DUMP, true);
+        boolean includeBody = optionBoolean(options, INCLUDE_BODY, true);
+        int maxChars = optionInt(options, BODY_MAX_CHARS, bodyMaxChars);
 
         Collection<Endpoint> endpoints = new TreeSet<>(Comparator.comparing(Endpoint::getEndpointUri));
         endpoints.addAll(getCamelContext().getEndpoints());
@@ -126,6 +129,10 @@ public class BrowseDevConsole extends AbstractDevConsole {
                     if (list != null && pos > 0) {
                         begin = Math.max(0, list.size() - pos);
                         list = list.subList(begin, list.size());
+                    }
+                    if (list != null && list.size() > max) {
+                        // fresh size gets all the messages (to know the size) but only limit messages are dumped
+                        list = list.subList(0, max);
                     }
                     if (list != null) {
                         sb.append("\n");
@@ -151,19 +158,16 @@ public class BrowseDevConsole extends AbstractDevConsole {
     }
 
     @Override
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        JsonObject root = new JsonObject();
-        JsonArray arr = new JsonArray();
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        List<BrowseEntry> arr = new ArrayList<>();
 
-        String filter = (String) options.get(FILTER);
-        String lim = (String) options.get(LIMIT);
-        String tail = (String) options.get(TAIL);
-        final int pos = tail == null ? 0 : Integer.parseInt(tail);
-        final int max = lim == null ? limit : Integer.parseInt(lim);
-        boolean freshSize = "true".equals(options.getOrDefault(FRESH_SIZE, "false"));
-        boolean dump = "true".equals(options.getOrDefault(DUMP, "true"));
-        boolean includeBody = "true".equals(options.getOrDefault(INCLUDE_BODY, "true"));
-        int maxChars = Integer.parseInt((String) options.getOrDefault(BODY_MAX_CHARS, "" + bodyMaxChars));
+        String filter = optionString(options, FILTER);
+        final int pos = optionInt(options, TAIL, 0);
+        final int max = optionInt(options, LIMIT, limit);
+        boolean freshSize = optionBoolean(options, FRESH_SIZE, false);
+        boolean dump = optionBoolean(options, DUMP, true);
+        boolean includeBody = optionBoolean(options, INCLUDE_BODY, true);
+        int maxChars = optionInt(options, BODY_MAX_CHARS, bodyMaxChars);
 
         Collection<Endpoint> endpoints = new TreeSet<>(Comparator.comparing(Endpoint::getEndpointUri));
         endpoints.addAll(getCamelContext().getEndpoints());
@@ -178,55 +182,47 @@ public class BrowseDevConsole extends AbstractDevConsole {
                         begin = Math.max(0, list.size() - pos);
                         list = list.subList(begin, list.size());
                     }
+                    if (list != null && list.size() > max) {
+                        // fresh size gets all the messages (to know the size) but only limit messages are dumped
+                        list = list.subList(0, max);
+                    }
                     if (list != null) {
-                        JsonObject jo = new JsonObject();
-                        jo.put("endpointUri", endpoint.getEndpointUri());
-                        jo.put("queueSize", queueSize);
-                        jo.put("limit", max);
-                        jo.put("position", begin);
+                        Long firstTimestamp = null;
+                        Long lastTimestamp = null;
                         if (!list.isEmpty()) {
                             long ts = list.get(0).getMessage().getHeader(Exchange.MESSAGE_TIMESTAMP, 0L, long.class);
                             if (ts > 0) {
-                                jo.put("firstTimestamp", ts);
+                                firstTimestamp = ts;
                             }
                             if (list.size() > 1) {
                                 ts = list.get(list.size() - 1).getMessage().getHeader(Exchange.MESSAGE_TIMESTAMP, 0L,
                                         long.class);
                                 if (ts > 0) {
-                                    jo.put("lastTimestamp", ts);
+                                    lastTimestamp = ts;
                                 }
                             }
                         }
-                        arr.add(jo);
-                        JsonArray arr2 = new JsonArray();
+                        List<Map<String, Object>> messages = new ArrayList<>();
                         for (Exchange e : list) {
-                            arr2.add(MessageHelper.dumpAsJSonObject(e.getMessage(), false, false, includeBody, true, true, true,
-                                    maxChars));
+                            messages.add(MessageHelper.dumpAsJSonObject(e.getMessage(), false, false, includeBody, true, true,
+                                    true, maxChars));
                         }
-                        if (!arr2.isEmpty()) {
-                            jo.put("messages", arr2);
-                        }
+                        arr.add(new BrowseEntry(
+                                endpoint.getEndpointUri(), queueSize, max, begin, firstTimestamp, lastTimestamp,
+                                messages.isEmpty() ? null : messages));
                     }
                 } else {
                     BrowsableEndpoint.BrowseStatus status = be.getBrowseStatus(Integer.MAX_VALUE);
-                    JsonObject jo = new JsonObject();
-                    jo.put("endpointUri", endpoint.getEndpointUri());
-                    jo.put("queueSize", status.size());
-                    if (status.firstTimestamp() > 0) {
-                        jo.put("firstTimestamp", status.firstTimestamp());
-                    }
-                    if (status.lastTimestamp() > 0) {
-                        jo.put("lastTimestamp", status.lastTimestamp());
-                    }
-                    arr.add(jo);
+                    Long firstTimestamp = status.firstTimestamp() > 0 ? status.firstTimestamp() : null;
+                    Long lastTimestamp = status.lastTimestamp() > 0 ? status.lastTimestamp() : null;
+                    arr.add(new BrowseEntry(
+                            endpoint.getEndpointUri(), status.size(), null, null, firstTimestamp, lastTimestamp, null));
                 }
             }
         }
-        if (!arr.isEmpty()) {
-            root.put("browse", arr);
-        }
 
-        return root;
+        Response response = new Response(arr.isEmpty() ? null : arr);
+        return JsonRecordSupport.toJsonObject(response);
     }
 
 }

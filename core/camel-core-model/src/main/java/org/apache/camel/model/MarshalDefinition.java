@@ -64,6 +64,8 @@ import org.apache.camel.model.dataformat.SwiftMxDataFormat;
 import org.apache.camel.model.dataformat.SyslogDataFormat;
 import org.apache.camel.model.dataformat.TarFileDataFormat;
 import org.apache.camel.model.dataformat.ThriftDataFormat;
+import org.apache.camel.model.dataformat.ToonDataFormat;
+import org.apache.camel.model.dataformat.UblDataFormat;
 import org.apache.camel.model.dataformat.UniVocityCsvDataFormat;
 import org.apache.camel.model.dataformat.UniVocityFixedDataFormat;
 import org.apache.camel.model.dataformat.UniVocityTsvDataFormat;
@@ -76,7 +78,9 @@ import org.apache.camel.spi.Metadata;
 /**
  * Marshals data into a specified format for transmission over a transport or component
  */
-@Metadata(label = "eip,dataformat,transformation")
+@Metadata(label = "eip,dataformat,transformation",
+          aliases = { "serialize" },
+          description = "Serializes the message body into a specific data format such as JSON, XML, CSV, or Protobuf for transmission or storage")
 @XmlRootElement(name = "marshal")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class MarshalDefinition extends NoOutputDefinition<MarshalDefinition> implements DataFormatDefinitionAware {
@@ -122,6 +126,8 @@ public class MarshalDefinition extends NoOutputDefinition<MarshalDefinition> imp
             @XmlElement(name = "swiftMx", type = SwiftMxDataFormat.class),
             @XmlElement(name = "syslog", type = SyslogDataFormat.class),
             @XmlElement(name = "tarFile", type = TarFileDataFormat.class),
+            @XmlElement(name = "toon", type = ToonDataFormat.class),
+            @XmlElement(name = "ubl", type = UblDataFormat.class),
             @XmlElement(name = "thrift", type = ThriftDataFormat.class),
             @XmlElement(name = "univocityCsv", type = UniVocityCsvDataFormat.class),
             @XmlElement(name = "univocityFixed", type = UniVocityFixedDataFormat.class),
@@ -130,11 +136,21 @@ public class MarshalDefinition extends NoOutputDefinition<MarshalDefinition> imp
             @XmlElement(name = "yaml", type = YAMLDataFormat.class),
             @XmlElement(name = "zipDeflater", type = ZipDeflaterDataFormat.class),
             @XmlElement(name = "zipFile", type = ZipFileDataFormat.class) })
+    @Metadata(required = true,
+              description = "The data format to use for marshalling the message body into a specific format such as JSON, XML, CSV, Avro, Protobuf, etc.")
     private DataFormatDefinition dataFormatType;
     @XmlAttribute
+    @Metadata(description = "To use a variable as the source for the message body to send. This makes it handy to use variables for user data and to easily control what data to use for sending and receiving.")
     private String variableSend;
     @XmlAttribute
+    @Metadata(description = "To use a variable to store the received message body (only body, not headers). This makes it handy to use variables for user data and to easily control what data to use for sending and receiving.")
     private String variableReceive;
+    @XmlAttribute
+    @Metadata(label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false",
+              description = "Indicates whether a null body is skipped instead of marshalled. By default the data format marshals"
+                            + " the null, and what that gives depends on the data format (JSON gives the text null)."
+                            + " When true, a null body is not marshalled and the body stays null.")
+    private String allowNullBody;
 
     public MarshalDefinition() {
     }
@@ -143,6 +159,7 @@ public class MarshalDefinition extends NoOutputDefinition<MarshalDefinition> imp
         super(source);
         this.variableSend = source.variableSend;
         this.variableReceive = source.variableReceive;
+        this.allowNullBody = source.allowNullBody;
         this.dataFormatType = source.dataFormatType != null ? source.dataFormatType.copyDefinition() : null;
     }
 
@@ -179,9 +196,6 @@ public class MarshalDefinition extends NoOutputDefinition<MarshalDefinition> imp
         return dataFormatType;
     }
 
-    /**
-     * The data format to be used
-     */
     @Override
     public void setDataFormatType(DataFormatDefinition dataFormatType) {
         this.dataFormatType = dataFormatType;
@@ -201,6 +215,14 @@ public class MarshalDefinition extends NoOutputDefinition<MarshalDefinition> imp
 
     public void setVariableReceive(String variableReceive) {
         this.variableReceive = variableReceive;
+    }
+
+    public String getAllowNullBody() {
+        return allowNullBody;
+    }
+
+    public void setAllowNullBody(String allowNullBody) {
+        this.allowNullBody = allowNullBody;
     }
 
     // Fluent API
@@ -228,6 +250,19 @@ public class MarshalDefinition extends NoOutputDefinition<MarshalDefinition> imp
      */
     public MarshalDefinition variableSend(String variableSend) {
         setVariableSend(variableSend);
+        return this;
+    }
+
+    /**
+     * Indicates whether a {@code null} body is skipped instead of marshalled. By default the data format marshals the
+     * {@code null}, and what that gives depends on the data format (JSON gives the text {@code null}).
+     *
+     * @param  allowNullBody {@code true} to skip marshalling a {@code null} body, so the body stays {@code null},
+     *                       {@code false} to let the data format marshal it
+     * @return               the builder
+     */
+    public MarshalDefinition allowNullBody(boolean allowNullBody) {
+        setAllowNullBody(Boolean.toString(allowNullBody));
         return this;
     }
 

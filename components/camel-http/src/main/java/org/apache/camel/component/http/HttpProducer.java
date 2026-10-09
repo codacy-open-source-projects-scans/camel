@@ -27,6 +27,7 @@ import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -38,6 +39,7 @@ import java.util.Map.Entry;
 import org.apache.camel.CamelExchangeException;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePropertyKey;
+import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.LineNumberAware;
 import org.apache.camel.Message;
 import org.apache.camel.RuntimeCamelException;
@@ -45,9 +47,9 @@ import org.apache.camel.TypeConverter;
 import org.apache.camel.WrappedFile;
 import org.apache.camel.component.http.helper.HttpMethodHelper;
 import org.apache.camel.http.base.HttpOperationFailedException;
+import org.apache.camel.http.base.HttpProtocolHeaderFilterStrategy;
 import org.apache.camel.http.base.cookie.CookieHandler;
 import org.apache.camel.http.common.HttpHelper;
-import org.apache.camel.http.common.HttpProtocolHeaderFilterStrategy;
 import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.support.DefaultProducer;
 import org.apache.camel.support.ExchangeHelper;
@@ -71,6 +73,7 @@ import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HeaderElements;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.HttpException;
+import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.HttpVersion;
 import org.apache.hc.core5.http.io.HttpClientResponseHandler;
@@ -259,6 +262,10 @@ public class HttpProducer extends DefaultProducer implements LineNumberAware {
                             if (LOG.isDebugEnabled()) {
                                 LOG.debug("Http responseCode: {}", responseCode);
                             }
+                            // httpclient 5.6+ auto-decompresses but no longer removes the stale
+                            // Content-Encoding, Content-Length, and Content-MD5 headers.
+                            // Strip them here to restore the 5.5.2 invariant for all downstream code.
+                            removeStaleCompressionHeaders(httpResponse);
                             if (!throwException) {
                                 // if we do not use failed exception then populate response for all response codes
                                 HttpProducer.this.populateResponse(exchange, httpRequest, httpResponse, strategy, responseCode);
@@ -513,6 +520,21 @@ public class HttpProducer extends DefaultProducer implements LineNumberAware {
     }
 
     /**
+     * httpclient 5.6+ auto-decompresses response bodies but no longer strips the stale Content-Encoding, Content-Length
+     * (compressed byte count), and Content-MD5 headers. Remove them here so every downstream reader sees the same
+     * invariant as 5.5.2.
+     */
+    private static void removeStaleCompressionHeaders(ClassicHttpResponse httpResponse) {
+        HttpEntity entity = httpResponse.getEntity();
+        if (entity != null && entity.getContentEncoding() == null
+                && httpResponse.containsHeader(Exchange.CONTENT_ENCODING)) {
+            httpResponse.removeHeaders(Exchange.CONTENT_ENCODING);
+            httpResponse.removeHeaders(Exchange.CONTENT_LENGTH);
+            httpResponse.removeHeaders(HttpHeaders.CONTENT_MD5);
+        }
+    }
+
+    /**
      * Extracts the response from the method as a InputStream.
      */
     protected Object extractResponseBody(
@@ -528,8 +550,7 @@ public class HttpProducer extends DefaultProducer implements LineNumberAware {
             return null;
         }
 
-        Header header = httpResponse.getFirstHeader(HttpConstants.CONTENT_ENCODING);
-        String contentEncoding = header != null ? header.getValue() : null;
+        String contentEncoding = entity.getContentEncoding();
 
         final boolean gzipEncoding = exchange.getProperty(Exchange.SKIP_GZIP_ENCODING, Boolean.FALSE, Boolean.class);
         if (!gzipEncoding) {
@@ -537,7 +558,7 @@ public class HttpProducer extends DefaultProducer implements LineNumberAware {
         }
         // Honor the character encoding
         String contentType = null;
-        header = httpResponse.getFirstHeader("content-type");
+        Header header = httpResponse.getFirstHeader("content-type");
         if (header != null) {
             contentType = header.getValue();
             // find the charset and set it to the Exchange
@@ -553,7 +574,8 @@ public class HttpProducer extends DefaultProducer implements LineNumberAware {
         if (contentType != null && contentType.equals(HttpConstants.CONTENT_TYPE_JAVA_SERIALIZED_OBJECT)) {
             // only deserialize java if allowed
             if (getEndpoint().getComponent().isAllowJavaSerializedObject() || getEndpoint().isTransferException()) {
-                return HttpHelper.deserializeJavaObjectFromStream(is, exchange.getContext());
+                return HttpHelper.deserializeJavaObjectFromStream(is, exchange.getContext(),
+                        getEndpoint().getComponent().getDeserializationFilter());
             } else {
                 // empty response
                 return null;
@@ -694,6 +716,28 @@ public class HttpProducer extends DefaultProducer implements LineNumberAware {
     }
 
     /**
+     * The body as a stream for the request entity. A Map or a List (a body unmarshalled from JSON, or built as a map)
+     * cannot become one, and the converter's message only names the conversion: say what to do (CAMEL-25309).
+     */
+    private static InputStream mandatoryBodyStream(Exchange exchange, Message in) throws InvalidPayloadException {
+        try {
+            return in.getMandatoryBody(InputStream.class);
+        } catch (InvalidPayloadException e) {
+            Object body = in.getBody();
+            if (body instanceof Map || body instanceof Collection) {
+                InvalidPayloadException answer = new InvalidPayloadException(
+                        exchange, InputStream.class, in,
+                        "a " + (body instanceof Map ? "Map" : body instanceof List ? "List" : "Collection")
+                                                         + " is not an HTTP request body: marshal it to JSON first "
+                                                         + "(marshal: json) or set the body to the JSON text");
+                answer.initCause(e.getCause() != null ? e.getCause() : e);
+                throw answer;
+            }
+            throw e;
+        }
+    }
+
+    /**
      * Creates a holder object for the data to send to the remote server.
      *
      * @param  exchange               the exchange with the IN message with data to send
@@ -813,7 +857,7 @@ public class HttpProducer extends DefaultProducer implements LineNumberAware {
                     // fallback as input stream
                     if (answer == null) {
                         // force the body as an input stream since this is the fallback
-                        InputStream is = in.getMandatoryBody(InputStream.class);
+                        InputStream is = mandatoryBodyStream(exchange, in);
                         if (multipart) {
                             answer = MultipartEntityBuilder.create().addBinaryBody(multipartName, is).build();
                         } else {

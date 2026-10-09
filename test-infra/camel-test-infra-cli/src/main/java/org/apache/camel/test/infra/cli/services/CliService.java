@@ -25,7 +25,7 @@ import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 /**
- * Test infra service for Camel Cli (Camel JBang)
+ * Test infra service for Camel Cli (Camel CLI)
  */
 public interface CliService extends BeforeEachCallback, AfterEachCallback, TestService {
 
@@ -50,6 +50,10 @@ public interface CliService extends BeforeEachCallback, AfterEachCallback, TestS
     String execute(String command, Boolean getError, Boolean expectFail);
 
     String executeBackground(String command);
+
+    default String executeNohup(String command) {
+        return executeGenericCommand("nohup " + getMainCommand() + " " + command + " &");
+    }
 
     String executeGenericCommand(String command);
 

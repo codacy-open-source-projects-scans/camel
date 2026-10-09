@@ -17,7 +17,9 @@
 package org.apache.camel.dsl.jbang.core.commands.validate;
 
 import java.io.File;
-import java.nio.file.Path;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,8 +28,10 @@ import java.util.Map;
 import java.util.Stack;
 
 import com.networknt.schema.Error;
+import org.apache.camel.catalog.CamelCatalog;
 import org.apache.camel.dsl.jbang.core.commands.CamelCommand;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
+import org.apache.camel.dsl.jbang.core.commands.ai.SourceValidator;
 import org.apache.camel.dsl.yaml.validator.YamlValidator;
 import org.apache.camel.util.FileUtil;
 import picocli.CommandLine;
@@ -38,14 +42,22 @@ public class YamlValidateCommand extends CamelCommand {
     private static final String IGNORE_FILE = "application";
 
     @CommandLine.Option(names = { "--canonical" }, defaultValue = "false",
-                        description = "Validate against the canonical schema (rejects shorthands and implicit expressions)")
+                        description = "Validate against the canonical schema: reports the deprecated compact notation (string shorthands,"
+                                      + " implicit expressions) with the canonical form to write")
     boolean canonical;
+
+    @CommandLine.Option(names = { "--catalog" }, defaultValue = "true",
+                        description = "Also check endpoint URIs and simple expressions against the Camel catalog"
+                                      + " (use --catalog=false for the schema only)")
+    boolean catalog = true;
+
+    @CommandLine.Mixin
+    CatalogVersionMixin catalogVersion;
 
     @CommandLine.Parameters(description = { "The Camel YAML source files to parse." },
                             arity = "1..9",
                             paramLabel = "<files>",
                             parameterConsumer = FilesConsumer.class)
-    Path[] filePaths;
     List<String> files = new ArrayList<>();
 
     public YamlValidateCommand(CamelJBangMain main) {
@@ -54,14 +66,39 @@ public class YamlValidateCommand extends CamelCommand {
 
     @Override
     public Integer doCall() throws Exception {
-        YamlValidator validator = new YamlValidator(canonical);
-        validator.init();
+        // the catalog and schema of the Camel version and runtime asked for; the CLI's own without options
+        CatalogVersionMixin.Loaded loaded = catalogVersion.load();
+        YamlValidator validator = catalogVersion.yamlValidator(loaded, canonical);
 
+        CamelCatalog camelCatalog = catalog ? loaded.catalog() : null;
         Map<String, List<Error>> reports = new LinkedHashMap<>();
         for (String n : files) {
             if (matchFile(n)) {
-                var report = validator.validate(new File(n));
+                var report = new ArrayList<>(validator.validate(new File(n)));
+                if (camelCatalog != null && report.isEmpty()) {
+                    // the schema is fine: check what the schema cannot, endpoint URIs and simple expressions
+                    // (CAMEL-24698), the same checks the MCP tools do before writing a file
+                    String content = Files.readString(new File(n).toPath());
+                    for (String msg : SourceValidator.validateYamlCatalog(content, camelCatalog)) {
+                        report.add(catalogError(msg));
+                    }
+                    if (report.isEmpty()) {
+                        File parent = new File(n).getAbsoluteFile().getParentFile();
+                        var declared = SourceValidator.BeanDeclarations.scan(parent != null ? parent.toPath() : null,
+                                new File(n).getName());
+                        for (String msg : SourceValidator.validateYamlBeanRefs(content, declared, camelCatalog)) {
+                            report.add(catalogError(msg));
+                        }
+                        if (parent != null) {
+                            for (String msg : SourceValidator.validateResourceRefs(content, parent.toPath())) {
+                                report.add(catalogError(msg));
+                            }
+                        }
+                    }
+                }
                 reports.put(n, report);
+            } else {
+                printer().println("WARN: Skipping non-YAML file: " + n);
             }
         }
 
@@ -75,8 +112,9 @@ public class YamlValidateCommand extends CamelCommand {
                 var report = e.getValue();
                 if (!report.isEmpty()) {
                     sb.append("\tFile: ").append(name).append("\n");
-                    for (var r : report) {
-                        sb.append("\t\t").append(r.toString()).append("\n");
+                    // the line of the file each error points at, not only its pointer
+                    for (String r : YamlValidator.describeAll(readQuietly(name), report)) {
+                        sb.append("\t\t").append(r).append("\n");
                     }
                     sb.append("\n");
                 }
@@ -91,12 +129,28 @@ public class YamlValidateCommand extends CamelCommand {
         return 0;
     }
 
+    private static String readQuietly(String file) {
+        try {
+            return Files.readString(new File(file).toPath());
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    static Error catalogError(String message) {
+        return Error.builder()
+                .messageKey("catalog")
+                .format(new MessageFormat("{0}"))
+                .arguments(message)
+                .build();
+    }
+
     private static boolean matchFile(String name) {
         String no = FileUtil.onlyName(name).toLowerCase(Locale.ROOT);
         if (IGNORE_FILE.equals(no)) {
             return false;
         }
-        String ext = FileUtil.onlyExt(name);
+        String ext = FileUtil.onlyExt(name, true);
         if (ext == null) {
             return false;
         }
@@ -107,9 +161,7 @@ public class YamlValidateCommand extends CamelCommand {
     private static int errorCounts(Map<String, List<Error>> reports) {
         int count = 0;
         for (List<Error> list : reports.values()) {
-            if (!list.isEmpty()) {
-                count++;
-            }
+            count += list.size();
         }
         return count;
     }

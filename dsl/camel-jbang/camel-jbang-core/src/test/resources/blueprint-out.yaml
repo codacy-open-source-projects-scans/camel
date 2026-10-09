@@ -17,7 +17,7 @@
 
 - beans:
     - name: userService
-      type: "org.apache.camel.example.rest.UserService"
+      type: org.apache.camel.example.rest.UserService
 - route:
     from:
       uri: direct
@@ -38,4 +38,4 @@
                   name: Exchange.HTTP_RESPONSE_CODE
                   expression:
                     constant:
-                      expression: 404
+                      expression: "404"

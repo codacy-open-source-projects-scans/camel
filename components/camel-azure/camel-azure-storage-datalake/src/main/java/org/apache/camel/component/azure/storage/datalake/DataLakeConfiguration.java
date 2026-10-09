@@ -25,6 +25,7 @@ import com.azure.identity.ClientSecretCredential;
 import com.azure.storage.common.StorageSharedKeyCredential;
 import com.azure.storage.file.datalake.DataLakeServiceClient;
 import org.apache.camel.RuntimeCamelException;
+import org.apache.camel.component.azure.common.CredentialType;
 import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriParams;
@@ -102,7 +103,7 @@ public class DataLakeConfiguration implements Cloneable {
     @Metadata(autowired = true)
     private AzureSasCredential sasCredential;
 
-    @UriParam(label = "producer", enums = "listFileSystem, listFiles", defaultValue = "listFileSystem",
+    @UriParam(label = "producer", defaultValue = "listFileSystem",
               description = "operation to be performed")
     private DataLakeOperationsDefinition operation = DataLakeOperationsDefinition.listFileSystem;
 

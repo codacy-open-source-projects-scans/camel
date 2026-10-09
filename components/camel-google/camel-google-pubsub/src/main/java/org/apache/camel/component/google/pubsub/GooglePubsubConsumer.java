@@ -25,6 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.api.core.AbstractApiService;
 import com.google.api.core.ApiFuture;
@@ -43,11 +45,13 @@ import com.google.pubsub.v1.ReceivedMessage;
 import com.google.pubsub.v1.Subscription;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
+import org.apache.camel.ShutdownRunningTask;
 import org.apache.camel.component.google.pubsub.consumer.AcknowledgeCompletion;
 import org.apache.camel.component.google.pubsub.consumer.AcknowledgeSync;
 import org.apache.camel.component.google.pubsub.consumer.CamelMessageReceiver;
 import org.apache.camel.component.google.pubsub.consumer.GooglePubsubAcknowledge;
 import org.apache.camel.spi.HeaderFilterStrategy;
+import org.apache.camel.spi.ShutdownAware;
 import org.apache.camel.spi.Synchronization;
 import org.apache.camel.support.DefaultConsumer;
 import org.apache.camel.support.UnitOfWorkHelper;
@@ -56,13 +60,15 @@ import org.apache.camel.support.task.budget.Budgets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class GooglePubsubConsumer extends DefaultConsumer {
+public class GooglePubsubConsumer extends DefaultConsumer implements ShutdownAware {
 
     private final Logger localLog;
 
     private final GooglePubsubEndpoint endpoint;
     private final Processor processor;
+    private final AtomicInteger pendingExchanges = new AtomicInteger();
     private ExecutorService executor;
+    private ScheduledExecutorService taskExecutor;
     private final List<Subscriber> subscribers;
     private final Set<ApiFuture<PullResponse>> pendingSynchronousPullResponses;
     private final HeaderFilterStrategy headerFilterStrategy;
@@ -97,6 +103,8 @@ public class GooglePubsubConsumer extends DefaultConsumer {
         }
 
         executor = endpoint.createExecutor(this);
+        taskExecutor = endpoint.getCamelContext().getExecutorServiceManager()
+                .newSingleThreadScheduledExecutor(this, "PubSubReconnectTask");
         for (int i = 0; i < endpoint.getConcurrentConsumers(); i++) {
             executor.submit(new SubscriberWrapper());
         }
@@ -113,6 +121,15 @@ public class GooglePubsubConsumer extends DefaultConsumer {
 
         safeCancelSynchronousPullResponses();
 
+        super.doStop();
+    }
+
+    @Override
+    protected void doShutdown() throws Exception {
+        if (taskExecutor != null) {
+            getEndpoint().getCamelContext().getExecutorServiceManager().shutdown(taskExecutor);
+            taskExecutor = null;
+        }
         if (executor != null) {
             if (getEndpoint() != null && getEndpoint().getCamelContext() != null) {
                 getEndpoint().getCamelContext().getExecutorServiceManager().shutdownGraceful(executor);
@@ -122,7 +139,26 @@ public class GooglePubsubConsumer extends DefaultConsumer {
         }
         executor = null;
 
-        super.doStop();
+        super.doShutdown();
+    }
+
+    @Override
+    public boolean deferShutdown(ShutdownRunningTask shutdownRunningTask) {
+        if (!subscribers.isEmpty()) {
+            subscribers.forEach(AbstractApiService::stopAsync);
+        }
+        safeCancelSynchronousPullResponses();
+        return true;
+    }
+
+    @Override
+    public int getPendingExchangesSize() {
+        return pendingExchanges.get();
+    }
+
+    @Override
+    public void prepareShutdown(boolean suspendOnly, boolean forced) {
+        // noop
     }
 
     private void safeCancelSynchronousPullResponses() {
@@ -168,6 +204,14 @@ public class GooglePubsubConsumer extends DefaultConsumer {
 
     public int getResolvedMaxDeliveryAttempts() {
         return resolvedMaxDeliveryAttempts;
+    }
+
+    public void incrementPendingExchanges() {
+        pendingExchanges.incrementAndGet();
+    }
+
+    public void decrementPendingExchanges() {
+        pendingExchanges.decrementAndGet();
     }
 
     private class SubscriberWrapper implements Runnable {
@@ -216,6 +260,10 @@ public class GooglePubsubConsumer extends DefaultConsumer {
                     // Only add to list after successful startup
                     subscribers.add(subscriber);
                     subscriberAdded = true;
+                    // a stop while the subscriber was starting missed it; stop it here or awaitTerminated never returns
+                    if (!isRunAllowed() || isSuspendingOrSuspended()) {
+                        subscriber.stopAsync();
+                    }
                     subscriber.awaitTerminated();
                 } catch (Exception e) {
                     // Remove from list if it was added
@@ -249,12 +297,14 @@ public class GooglePubsubConsumer extends DefaultConsumer {
 
                     // Add backoff delay for recoverable errors to prevent tight loop
                     // We use initialDelay for the actual delay, and maxIterations(1) to run once
-                    Tasks.foregroundTask()
-                            .withBudget(Budgets.iterationBudget()
+                    Tasks.backgroundTask()
+                            .withBudget(Budgets.iterationTimeBudget()
                                     .withMaxIterations(1)
                                     .withInitialDelay(Duration.ofSeconds(5))
-                                    .withInterval(Duration.ZERO)
+                                    .withInterval(Duration.ofMillis(1))
+                                    .withUnlimitedDuration()
                                     .build())
+                            .withScheduledExecutor(taskExecutor)
                             .withName("PubSubRetryDelay")
                             .build()
                             .run(getEndpoint().getCamelContext(), () -> true);
@@ -282,6 +332,10 @@ public class GooglePubsubConsumer extends DefaultConsumer {
 
                     synchronousPullResponseFuture = subscriber.pullCallable().futureCall(pullRequest);
                     pendingSynchronousPullResponses.add(synchronousPullResponseFuture);
+                    // a stop while the pull was being issued missed this future; cancel it here or get() blocks
+                    if (!isRunAllowed() || isSuspendingOrSuspended()) {
+                        synchronousPullResponseFuture.cancel(true);
+                    }
                     PullResponse pullResponse = synchronousPullResponseFuture.get();
                     for (ReceivedMessage message : pullResponse.getReceivedMessagesList()) {
                         PubsubMessage pubsubMessage = message.getMessage();
@@ -333,24 +387,30 @@ public class GooglePubsubConsumer extends DefaultConsumer {
                             exchange.getIn().setHeader(pubSubHeader, value);
                         }
 
+                        pendingExchanges.incrementAndGet();
                         try {
-                            processor.process(exchange);
-                        } catch (Exception e) {
-                            exchange.setException(e);
-                        }
+                            try {
+                                processor.process(exchange);
+                            } catch (Exception e) {
+                                exchange.setException(e);
+                            }
 
-                        // Handle exception if one occurred
-                        if (exchange.getException() != null) {
-                            getExceptionHandler().handleException("Error processing exchange", exchange,
-                                    exchange.getException());
-                        }
+                            // Handle exception if one occurred
+                            if (exchange.getException() != null) {
+                                getExceptionHandler().handleException("Error processing exchange", exchange,
+                                        exchange.getException());
+                            }
 
-                        // Execute synchronization callbacks (ACK/NACK) based on exchange status
-                        // This is required because we are directly calling processor.process() outside of the normal
-                        // Camel routing engine, so we must manually trigger the OnCompletion callbacks
-                        if (endpoint.getAckMode() != GooglePubsubConstants.AckMode.NONE) {
-                            List<Synchronization> synchronizations = exchange.getExchangeExtension().handoverCompletions();
-                            UnitOfWorkHelper.doneSynchronizations(exchange, synchronizations);
+                            // Execute synchronization callbacks (ACK/NACK) based on exchange status
+                            // This is required because we are directly calling processor.process() outside of the normal
+                            // Camel routing engine, so we must manually trigger the OnCompletion callbacks
+                            if (endpoint.getAckMode() != GooglePubsubConstants.AckMode.NONE) {
+                                List<Synchronization> synchronizations
+                                        = exchange.getExchangeExtension().handoverCompletions();
+                                UnitOfWorkHelper.doneSynchronizations(exchange, synchronizations);
+                            }
+                        } finally {
+                            pendingExchanges.decrementAndGet();
                         }
                     }
                 } catch (CancellationException e) {

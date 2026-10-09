@@ -22,6 +22,8 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,14 +33,22 @@ import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.NoSuchHeaderException;
 import org.apache.camel.WrappedFile;
+import org.apache.camel.component.ai.observability.GenAiErrorSupport;
+import org.apache.camel.component.ai.observability.GenAiModelResolver;
+import org.apache.camel.component.ai.observability.GenAiObservability;
+import org.apache.camel.component.ai.observability.GenAiObservation;
+import org.apache.camel.component.ai.observability.GenAiObservationContext;
+import org.apache.camel.component.ai.observability.GenAiOperationName;
+import org.apache.camel.component.ai.observability.GenAiUsage;
+import org.apache.camel.component.ai.tool.AiToolParameterHelper;
+import org.apache.camel.component.ai.tool.AiToolRegistry;
+import org.apache.camel.component.ai.tool.AiToolSpec;
 import org.apache.camel.component.springai.chat.mcp.SpringAiChatMcpManager;
-import org.apache.camel.component.springai.tools.TagsHelper;
-import org.apache.camel.component.springai.tools.spec.CamelToolExecutorCache;
-import org.apache.camel.component.springai.tools.spec.CamelToolSpecification;
 import org.apache.camel.support.DefaultProducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ResponseEntity;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SafeGuardAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
@@ -62,6 +72,8 @@ import org.springframework.ai.converter.StructuredOutputConverter;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.ToolCallbackProvider;
+import org.springframework.ai.tool.resolution.ToolCallbackResolver;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.core.convert.support.DefaultConversionService;
@@ -73,9 +85,12 @@ import org.springframework.util.MimeType;
 public class SpringAiChatProducer extends DefaultProducer {
 
     private static final Logger LOG = LoggerFactory.getLogger(SpringAiChatProducer.class);
+    private static volatile boolean chatModelExtractionWarnLogged;
 
     private ChatClient chatClient;
+    private ChatModel observabilityChatModel;
     private SpringAiChatMcpManager mcpManager;
+    private Advisor chatMemoryAdvisor;
 
     public SpringAiChatProducer(SpringAiChatEndpoint endpoint) {
         super(endpoint);
@@ -92,16 +107,24 @@ public class SpringAiChatProducer extends DefaultProducer {
 
         // Initialize ChatClient
         ChatClient configuredClient = getEndpoint().getConfiguration().getChatClient();
+        ChatModel configuredChatModel = getEndpoint().getConfiguration().getChatModel();
         if (configuredClient != null) {
             // Use the provided ChatClient
             this.chatClient = configuredClient;
+            if (configuredChatModel != null) {
+                this.observabilityChatModel = configuredChatModel;
+            } else {
+                this.observabilityChatModel = extractChatModelFromClient(configuredClient);
+                warnWhenObservabilityNeedsExplicitChatModel();
+            }
         } else {
             // Create ChatClient from ChatModel
-            ChatModel chatModel = getEndpoint().getConfiguration().getChatModel();
+            ChatModel chatModel = configuredChatModel;
             if (chatModel == null) {
                 throw new IllegalArgumentException(
                         "Either ChatClient or ChatModel must be configured");
             }
+            this.observabilityChatModel = chatModel;
 
             ChatClient.Builder builder = ChatClient.builder(chatModel);
 
@@ -118,6 +141,23 @@ public class SpringAiChatProducer extends DefaultProducer {
             }
 
             this.chatClient = builder.build();
+        }
+
+        // Build chat memory advisor (added per-request only when conversationId is set)
+        ChatMemory chatMemory = getEndpoint().getConfiguration().getChatMemory();
+        VectorStore chatMemoryVectorStore = getEndpoint().getConfiguration().getChatMemoryVectorStore();
+        if (chatMemory != null && chatMemoryVectorStore != null) {
+            LOG.warn("Both chatMemory and chatMemoryVectorStore are configured. Using MessageChatMemoryAdvisor (chatMemory). "
+                     + "Configure only one memory type.");
+        }
+        if (chatMemory != null) {
+            this.chatMemoryAdvisor = MessageChatMemoryAdvisor.builder(chatMemory).build();
+            LOG.debug("MessageChatMemoryAdvisor available (activated per-request via conversationId header)");
+        } else if (chatMemoryVectorStore != null) {
+            this.chatMemoryAdvisor = VectorStoreChatMemoryAdvisor.builder(chatMemoryVectorStore)
+                    .defaultTopK(getEndpoint().getConfiguration().getTopK())
+                    .build();
+            LOG.debug("VectorStoreChatMemoryAdvisor available with topK={}", getEndpoint().getConfiguration().getTopK());
         }
 
         // Initialize MCP clients if configured
@@ -214,9 +254,14 @@ public class SpringAiChatProducer extends DefaultProducer {
             UserMessage multimodalMessage = createMultimodalMessage(exchange, bytes);
             applyUserMessageWithMedia(request, exchange, multimodalMessage.getText(), multimodalMessage.getMedia());
         } else {
-            throw new IllegalArgumentException(
-                    "Unsupported message type: " + messageBody.getClass().getName()
-                                               + ". Expected String, byte[], WrappedFile, List<WrappedFile>, or org.springframework.ai.chat.messages.Message");
+            String text = exchange.getIn().getBody(String.class);
+            if (text != null) {
+                userMessageText = text;
+            } else {
+                throw new IllegalArgumentException(
+                        "Unsupported message type: " + messageBody.getClass().getName()
+                                                   + ". Expected String, byte[], WrappedFile, List<WrappedFile>, or org.springframework.ai.chat.messages.Message");
+            }
         }
 
         // Apply augmented data to user message if provided
@@ -524,16 +569,45 @@ public class SpringAiChatProducer extends DefaultProducer {
         // Note: Augmented data is handled in the calling method for better control
 
         // Get tool callbacks first if tags are configured
-        List<ToolCallback> toolCallbacks = getToolCallbacksForTags(getEndpoint().getConfiguration().getTags());
+        List<ToolCallback> toolCallbacks = getToolCallbacksForTags(getEndpoint().getConfiguration().getTags(), exchange);
 
         // Apply chat options from configuration and headers using ToolCallingChatOptions
         // This ensures tool callbacks are properly included in the options
         ToolCallingChatOptions.Builder optionsBuilder = ToolCallingChatOptions.builder();
 
-        // Add tool callbacks to the options builder if present
-        if (!toolCallbacks.isEmpty()) {
-            LOG.debug("Adding {} tool callbacks to ToolCallingChatOptions", toolCallbacks.size());
-            optionsBuilder.toolCallbacks(toolCallbacks);
+        // Collect the tool callbacks from every source keyed by tool name. Spring AI 2.0 rejects duplicate
+        // tool names, so a tool reachable through more than one source must be registered only once.
+        Map<String, ToolCallback> callbacksByName = new LinkedHashMap<>();
+        for (ToolCallback callback : toolCallbacks) {
+            callbacksByName.putIfAbsent(callback.getToolDefinition().name(), callback);
+        }
+        List<ToolCallback> configuredCallbacks = getEndpoint().getConfiguration().getToolCallbacks();
+        if (configuredCallbacks != null) {
+            for (ToolCallback callback : configuredCallbacks) {
+                callbacksByName.putIfAbsent(callback.getToolDefinition().name(), callback);
+            }
+        }
+
+        // Apply tool names by resolving them to ToolCallback instances
+        String toolNames = exchange.getIn().getHeader(SpringAiChatConstants.TOOL_NAMES, String.class);
+        if (toolNames == null) {
+            toolNames = getEndpoint().getConfiguration().getToolNames();
+        }
+        if (toolNames != null && !toolNames.trim().isEmpty()) {
+            List<String> names = Arrays.stream(toolNames.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+            for (ToolCallback callback : resolveToolCallbacksByName(names, callbacksByName)) {
+                callbacksByName.putIfAbsent(callback.getToolDefinition().name(), callback);
+            }
+            LOG.debug("Resolved tool names {} to ToolCallbacks", names);
+        }
+
+        if (!callbacksByName.isEmpty()) {
+            LOG.debug("Adding {} tool callbacks to ToolCallingChatOptions: {}",
+                    callbacksByName.size(), callbacksByName.keySet());
+            optionsBuilder.toolCallbacks(List.copyOf(callbacksByName.values()));
         }
 
         // Check configuration first
@@ -571,34 +645,13 @@ public class SpringAiChatProducer extends DefaultProducer {
             optionsBuilder.topK(topK);
         }
 
-        ToolCallingChatOptions options = optionsBuilder.build();
-        request.options(options);
-
-        // Add direct ToolCallbacks if configured
-        List<ToolCallback> configuredCallbacks = getEndpoint().getConfiguration().getToolCallbacks();
-        if (configuredCallbacks != null && !configuredCallbacks.isEmpty()) {
-            request.toolCallbacks(configuredCallbacks);
-            LOG.debug("Added {} configured ToolCallbacks", configuredCallbacks.size());
-        }
+        // Spring AI 2.0 takes the options builder rather than a built ChatOptions instance
+        request.options(optionsBuilder);
 
         // Add MCP tool callbacks if MCP servers are configured
         if (mcpManager != null && mcpManager.getToolCallbackProvider() != null) {
             request.toolCallbacks(mcpManager.getToolCallbackProvider());
             LOG.debug("Added MCP tool callback provider");
-        }
-
-        // Apply tool names for resolution via ToolCallbackResolver
-        String toolNames = exchange.getIn().getHeader(SpringAiChatConstants.TOOL_NAMES, String.class);
-        if (toolNames == null) {
-            toolNames = getEndpoint().getConfiguration().getToolNames();
-        }
-        if (toolNames != null && !toolNames.trim().isEmpty()) {
-            String[] names = Arrays.stream(toolNames.split(","))
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .toArray(String[]::new);
-            request.toolNames(names);
-            LOG.debug("Added {} tool names for resolution: {}", names.length, Arrays.toString(names));
         }
 
         // Apply tool context if configured
@@ -608,10 +661,12 @@ public class SpringAiChatProducer extends DefaultProducer {
             LOG.debug("Added tool context with {} entries", toolContext.size());
         }
 
-        // Apply conversation ID for chat memory if provided
+        // Add chat memory advisor per-request only when conversationId header is set
         String conversationId = exchange.getIn().getHeader(SpringAiChatConstants.CONVERSATION_ID, String.class);
-        if (conversationId != null) {
-            request.advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId));
+        if (conversationId != null && chatMemoryAdvisor != null) {
+            final String convId = conversationId;
+            request.advisors(chatMemoryAdvisor);
+            request.advisors(a -> a.param(ChatMemory.CONVERSATION_ID, convId));
         }
 
         // Apply SafeGuard advisor overrides if provided via headers
@@ -716,7 +771,7 @@ public class SpringAiChatProducer extends DefaultProducer {
 
             // Full metadata map for advanced users
             // This includes all metadata fields in a single map
-            Map<String, Object> metadataMap = new java.util.HashMap<>();
+            Map<String, Object> metadataMap = new HashMap<>();
             if (responseMetadata.getId() != null) {
                 metadataMap.put("id", responseMetadata.getId());
             }
@@ -815,13 +870,24 @@ public class SpringAiChatProducer extends DefaultProducer {
      */
     private <T> void processEntityRequest(
             ChatClient.ChatClientRequestSpec request, Exchange exchange, Class<T> entityClass) {
-        // Execute the request and convert to entity
-        T entity = request.call().entity(entityClass);
-
-        // Set the entity as the body
-        exchange.getMessage().setBody(entity);
-
-        LOG.debug("Converted response to entity of type: {}", entityClass.getName());
+        GenAiObservationContext observationContext = buildObservationContext();
+        GenAiObservation observation = GenAiObservability.start(exchange, observationContext);
+        try {
+            ResponseEntity<ChatResponse, T> responseEntity = request.call().responseEntity(entityClass);
+            ChatResponse chatResponse = responseEntity.response();
+            T entity = responseEntity.entity();
+            recordObservationSuccess(observation, chatResponse, observationContext.requestModel());
+            populateTokenUsage(chatResponse, exchange);
+            populateResponseMetadata(chatResponse, exchange);
+            exchange.getMessage().setBody(entity);
+            LOG.debug("Converted response to entity of type: {}", entityClass.getName());
+        } catch (RuntimeException e) {
+            GenAiErrorSupport.apply(exchange, e);
+            observation.recordError(e);
+            throw e;
+        } finally {
+            observation.close();
+        }
     }
 
     private StructuredOutputConverter<?> getStructuredOutputConverter(Exchange exchange) {
@@ -913,8 +979,8 @@ public class SpringAiChatProducer extends DefaultProducer {
         // Append format instructions to the request
         request.user(u -> u.text(format));
 
-        // Execute the request
-        ChatResponse response = request.call().chatResponse();
+        ChatResponse response = callWithObservability(request, exchange);
+        populateTokenUsage(response, exchange);
 
         // Get the raw response text
         String responseText = response.getResult().getOutput().getText();
@@ -928,24 +994,22 @@ public class SpringAiChatProducer extends DefaultProducer {
         // Also set headers
         exchange.getMessage().setHeader(SpringAiChatConstants.CHAT_RESPONSE, responseText);
         exchange.getMessage().setHeader(SpringAiChatConstants.STRUCTURED_OUTPUT, structuredOutput);
-
-        populateTokenUsage(response, exchange);
     }
 
     /**
-     * Register tools from camel-spring-ai-tools routes based on configured tags
+     * Register tools from ai-tool routes based on configured tags
      *
      * Tools are registered via ChatOptions.toolCallbacks() which is the correct way to pass ToolCallback instances in
      * Spring AI. The tools() method expects objects with @Tool annotated methods, not ToolCallback instances.
      */
-    private List<ToolCallback> getToolCallbacksForTags(String tags) {
+    private List<ToolCallback> getToolCallbacksForTags(String tags, Exchange callingExchange) {
         if (tags == null || tags.trim().isEmpty()) {
             LOG.debug("No tags configured, skipping tool discovery");
             return List.of();
         }
 
-        // Discover tools from Camel Spring AI Tools routes
-        List<ToolCallback> toolCallbacks = discoverTools(tags);
+        // Discover tools from the unified AiToolRegistry
+        List<ToolCallback> toolCallbacks = discoverAiRegistryTools(tags, callingExchange);
 
         if (!toolCallbacks.isEmpty()) {
             // Collect tool names for enhanced logging
@@ -969,21 +1033,65 @@ public class SpringAiChatProducer extends DefaultProducer {
     }
 
     /**
-     * Discover tools by tags and return a list of ToolCallback instances
+     * Resolve the configured tool names to {@link ToolCallback} instances.
+     * <p>
+     * Spring AI 2.0 removed {@code ChatClient.ChatClientRequestSpec.toolNames(String...)} and the Spring bean based
+     * {@code SpringBeanToolCallbackResolver}, so the names are resolved here instead. Each name is looked up, in order,
+     * against:
+     * <ol>
+     * <li>a {@link ToolCallbackResolver} bound in the Camel registry - Spring Boot applications get Spring AI's
+     * auto-configured resolver, which covers {@link ToolCallback} and {@link ToolCallbackProvider} beans</li>
+     * <li>the tool callbacks already available to this endpoint, i.e. the ones discovered from {@code tags} and the
+     * ones configured via {@code toolCallbacks}, matched on their tool definition name</li>
+     * <li>a {@link ToolCallback} bound in the Camel registry under that name</li>
+     * </ol>
+     *
+     * @param  names                    the tool names to resolve
+     * @param  availableByName          the callbacks already available to this endpoint, keyed by tool name
+     * @return                          the resolved callbacks, never {@code null}
+     * @throws IllegalArgumentException if a name cannot be resolved
      */
-    private List<ToolCallback> discoverTools(String tags) {
-        final CamelToolExecutorCache toolCache = CamelToolExecutorCache.getInstance();
-        final Map<String, Set<CamelToolSpecification>> tools = toolCache.getTools();
-        final String[] tagArray = TagsHelper.splitTags(tags);
+    private List<ToolCallback> resolveToolCallbacksByName(List<String> names, Map<String, ToolCallback> availableByName) {
+        final ToolCallbackResolver resolver = getEndpoint().getCamelContext().getRegistry()
+                .findSingleByType(ToolCallbackResolver.class);
 
-        final List<ToolCallback> toolCallbacks = Arrays.stream(tagArray)
-                .flatMap(tag -> tools.entrySet().stream()
-                        .filter(entry -> entry.getKey().equals(tag))
-                        .flatMap(entry -> entry.getValue().stream()))
-                .map(CamelToolSpecification::getToolCallback)
+        final List<ToolCallback> resolved = new ArrayList<>(names.size());
+        for (String name : names) {
+            ToolCallback callback = resolver != null ? resolver.resolve(name) : null;
+            if (callback == null) {
+                callback = availableByName.get(name);
+            }
+            if (callback == null) {
+                callback = getEndpoint().getCamelContext().getRegistry().lookupByNameAndType(name, ToolCallback.class);
+            }
+            if (callback == null) {
+                throw new IllegalArgumentException(
+                        "Cannot resolve tool name '" + name + "'. Available tools: " + availableByName.keySet()
+                                                   + ". Bind the tool as a ToolCallback in the registry, expose it via"
+                                                   + " toolCallbacks, or discover it with tags.");
+            }
+            resolved.add(callback);
+        }
+        return resolved;
+    }
+
+    /**
+     * Discover tools registered via {@code ai-tool:} consumer endpoints in the shared {@link AiToolRegistry}. Converts
+     * each {@link AiToolSpec} to a Spring AI {@link ToolCallback} via {@link AiToolSpecToSpringAi}.
+     */
+    private List<ToolCallback> discoverAiRegistryTools(String tags, Exchange callingExchange) {
+        final AiToolRegistry registry = AiToolRegistry.getOrCreate(getEndpoint().getCamelContext());
+        final String[] tagArray = AiToolParameterHelper.splitTags(tags);
+
+        final Set<AiToolSpec> uniqueSpecs = new LinkedHashSet<>();
+        for (String tag : tagArray) {
+            uniqueSpecs.addAll(registry.getToolsByTag(tag));
+        }
+        final List<ToolCallback> toolCallbacks = uniqueSpecs.stream()
+                .map(spec -> AiToolSpecToSpringAi.toToolCallback(spec, callingExchange))
                 .collect(Collectors.toList());
 
-        LOG.debug("Discovered {} unique tools for tags: {}", toolCallbacks.size(), tags);
+        LOG.debug("Discovered {} tools from AiToolRegistry for tags: {}", toolCallbacks.size(), tags);
         return toolCallbacks;
     }
 
@@ -1121,8 +1229,101 @@ public class SpringAiChatProducer extends DefaultProducer {
         } else if (converter != null) {
             processStructuredOutputRequest(request, exchange, converter);
         } else {
-            ChatResponse response = request.call().chatResponse();
+            ChatResponse response = callWithObservability(request, exchange);
             populateResponse(response, exchange);
+        }
+    }
+
+    private ChatResponse callWithObservability(ChatClient.ChatClientRequestSpec request, Exchange exchange) {
+        GenAiObservationContext observationContext = buildObservationContext();
+        GenAiObservation observation = GenAiObservability.start(exchange, observationContext);
+        try {
+            ChatResponse response = request.call().chatResponse();
+            recordObservationSuccess(observation, response, observationContext.requestModel());
+            return response;
+        } catch (RuntimeException e) {
+            GenAiErrorSupport.apply(exchange, e);
+            observation.recordError(e);
+            throw e;
+        } finally {
+            observation.close();
+        }
+    }
+
+    private void recordObservationSuccess(GenAiObservation observation, ChatResponse response, String requestModel) {
+        Integer inputTokens = null;
+        Integer outputTokens = null;
+        String finishReason = null;
+        String responseModel = requestModel;
+        if (response.getMetadata() != null) {
+            if (response.getMetadata().getUsage() != null) {
+                var usage = response.getMetadata().getUsage();
+                inputTokens = usage.getPromptTokens();
+                outputTokens = usage.getCompletionTokens();
+            }
+            if (response.getMetadata().getModel() != null) {
+                responseModel = response.getMetadata().getModel();
+            }
+        }
+        if (response.getResult() != null && response.getResult().getMetadata() != null) {
+            finishReason = response.getResult().getMetadata().getFinishReason();
+        }
+        observation.recordSuccess(GenAiUsage.of(inputTokens, outputTokens, finishReason, responseModel));
+    }
+
+    private GenAiObservationContext buildObservationContext() {
+        Object modelSource = resolveObservabilityModelSource();
+        String requestModel = GenAiModelResolver.resolveModelName(
+                getEndpoint().getCamelContext().getClassResolver(), modelSource);
+        return GenAiObservationContext.builder()
+                .operationName(GenAiOperationName.CHAT)
+                .system(GenAiModelResolver.resolveSystem(getEndpoint().getCamelContext().getClassResolver(), modelSource))
+                .requestModel(requestModel)
+                .componentScheme("spring-ai-chat")
+                .build();
+    }
+
+    private Object resolveObservabilityModelSource() {
+        if (observabilityChatModel != null) {
+            return observabilityChatModel;
+        }
+        ChatModel chatModel = getEndpoint().getConfiguration().getChatModel();
+        if (chatModel != null) {
+            return chatModel;
+        }
+        return chatClient;
+    }
+
+    /**
+     * Attempts to read the backing {@link ChatModel} from Spring AI's internal {@code ChatClientRequestSpec}
+     * implementation. This relies on a private {@code chatModel} field that is not part of the public Spring AI API and
+     * may change between Spring AI releases.
+     */
+    private ChatModel extractChatModelFromClient(ChatClient client) {
+        try {
+            ChatClient.ChatClientRequestSpec requestSpec = client.prompt();
+            var field = requestSpec.getClass().getDeclaredField("chatModel");
+            field.setAccessible(true);
+            return (ChatModel) field.get(requestSpec);
+        } catch (ReflectiveOperationException e) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Could not extract ChatModel from ChatClient for observability: {}", e.getMessage());
+            }
+            return null;
+        }
+    }
+
+    private void warnWhenObservabilityNeedsExplicitChatModel() {
+        if (observabilityChatModel != null || !GenAiObservability.isEnabled(getEndpoint().getCamelContext())) {
+            return;
+        }
+        if (!chatModelExtractionWarnLogged) {
+            chatModelExtractionWarnLogged = true;
+            LOG.warn(
+                    "GenAI observability is enabled but ChatModel could not be resolved from the configured ChatClient. "
+                     + "Spring AI does not expose the backing ChatModel publicly, so Camel reads a private field "
+                     + "that may change between releases. Configure chatModel explicitly on the endpoint URI or "
+                     + "component so gen_ai.system and gen_ai.request.model span attributes are populated.");
         }
     }
 
@@ -1174,28 +1375,8 @@ public class SpringAiChatProducer extends DefaultProducer {
             advisors.add(safeguardAdvisor);
         }
 
-        // Add ChatMemory advisor if configured
-        ChatMemory chatMemory = getEndpoint().getConfiguration().getChatMemory();
-        VectorStore chatMemoryVectorStore = getEndpoint().getConfiguration().getChatMemoryVectorStore();
-
-        if (chatMemory != null && chatMemoryVectorStore != null) {
-            LOG.warn("Both chatMemory and chatMemoryVectorStore are configured. Using MessageChatMemoryAdvisor (chatMemory). " +
-                     "Configure only one memory type.");
-        }
-
-        if (chatMemory != null) {
-            advisors.add(MessageChatMemoryAdvisor.builder(chatMemory).build());
-            LOG.debug("MessageChatMemoryAdvisor enabled");
-        } else if (chatMemoryVectorStore != null) {
-            // Configure VectorStoreChatMemoryAdvisor with conversation isolation
-            // The conversationId parameter enables automatic filtering by conversation ID
-            advisors.add(VectorStoreChatMemoryAdvisor.builder(chatMemoryVectorStore)
-                    .conversationId(ChatMemory.CONVERSATION_ID)
-                    .defaultTopK(getEndpoint().getConfiguration().getTopK())
-                    .build());
-            LOG.debug("VectorStoreChatMemoryAdvisor enabled with conversation isolation and topK={}",
-                    getEndpoint().getConfiguration().getTopK());
-        }
+        // Chat memory advisors are NOT added to defaults — they are added per-request
+        // only when a conversationId header is present (see applyRequestOptions)
 
         // Add QuestionAnswerAdvisor if VectorStore is configured
         VectorStore vectorStore = getEndpoint().getConfiguration().getVectorStore();

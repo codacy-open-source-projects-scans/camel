@@ -30,11 +30,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class MailCollectionHeaderTest extends CamelTestSupport {
-    private static final MailboxUser james = Mailbox.getOrCreateUser("james", "secret");
+    private static final MailboxUser james = Mailbox.getOrCreateUser("MailCollectionHeaderTest-james", "secret");
 
     @Test
     public void testMailHeaderWithCollection() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(james);
 
         String[] foo = new String[] { "Carlsberg", "Heineken" };
         template.sendBodyAndHeader("direct:a", "Hello World", "beers", foo);
@@ -60,7 +60,7 @@ public class MailCollectionHeaderTest extends CamelTestSupport {
                 from("direct:a").to(james.uriPrefix(Protocol.smtp));
 
                 from("pop3://localhost:" + Mailbox.getPort(Protocol.pop3)
-                     + "?username=james&password=secret&initialDelay=100&delay=100").to("mock:result");
+                     + "?username=" + james.getLogin() + "&password=secret&initialDelay=100&delay=100").to("mock:result");
             }
         };
     }

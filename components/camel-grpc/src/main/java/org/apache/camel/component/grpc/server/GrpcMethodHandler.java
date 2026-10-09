@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import org.apache.camel.Exchange;
 import org.apache.camel.component.grpc.GrpcConstants;
@@ -32,6 +33,8 @@ import org.apache.camel.component.grpc.GrpcEndpoint;
  * Handles gRPC service method invocations
  */
 public class GrpcMethodHandler {
+
+    private static final String MUTED_DESCRIPTION = "Exchange processing failed";
 
     protected final GrpcConsumer consumer;
 
@@ -64,11 +67,7 @@ public class GrpcMethodHandler {
         invokeRoute(endpoint, exchange);
 
         if (exchange.isFailed()) {
-            responseObserver.onError(Status.INTERNAL
-                    .withDescription(exchange.getException().getMessage())
-                    // This can be attached to the Status locally, but NOT transmitted to the client!
-                    .withCause(exchange.getException())
-                    .asRuntimeException());
+            responseObserver.onError(toStatusException(endpoint, exchange.getException()));
         } else {
             Object responseBody = exchange.getIn().getBody();
             if (responseBody instanceof List) {
@@ -79,6 +78,20 @@ public class GrpcMethodHandler {
             }
             responseObserver.onCompleted();
         }
+    }
+
+    /**
+     * The error to send to the client when the exchange failed.
+     */
+    static StatusRuntimeException toStatusException(GrpcEndpoint endpoint, Exception cause) {
+        // the description IS transmitted to the client, so it carries the route's exception message only when
+        // the endpoint opted out of muting; the cause below stays local either way
+        String description = endpoint.getConfiguration().isMuteException() ? MUTED_DESCRIPTION : cause.getMessage();
+        return Status.INTERNAL
+                .withDescription(description)
+                // This can be attached to the Status locally, but NOT transmitted to the client!
+                .withCause(cause)
+                .asRuntimeException();
     }
 
     private void invokeRoute(GrpcEndpoint endpoint, Exchange exchange) throws Exception {

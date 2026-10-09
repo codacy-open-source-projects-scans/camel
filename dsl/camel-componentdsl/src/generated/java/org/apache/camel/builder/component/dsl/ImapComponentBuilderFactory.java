@@ -533,6 +533,82 @@ public interface ImapComponentBuilderFactory {
             return this;
         }
     
+        
+        /**
+         * Whether message headers From and Sender override the sender
+         * pre-configured in the endpoint URI. Defaults to false. Set to true to
+         * let message headers From and Sender override the endpoint URI sender.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: producer
+         * 
+         * @param useHeaderFrom the value to set
+         * @return the dsl builder
+         */
+        default ImapComponentBuilder useHeaderFrom(boolean useHeaderFrom) {
+            doSetProperty("useHeaderFrom", useHeaderFrom);
+            return this;
+        }
+    
+        
+        /**
+         * Whether message headers To, CC, and BCC override the recipients
+         * pre-configured in the endpoint URI. Defaults to false. Set to true to
+         * let message headers override the endpoint URI recipients.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: producer
+         * 
+         * @param useHeaderRecipients the value to set
+         * @return the dsl builder
+         */
+        default ImapComponentBuilder useHeaderRecipients(boolean useHeaderRecipients) {
+            doSetProperty("useHeaderRecipients", useHeaderRecipients);
+            return this;
+        }
+    
+        
+        /**
+         * Whether message header Reply-To overrides the replyTo pre-configured
+         * in the endpoint URI. Defaults to false. Set to true to let the
+         * message Reply-To header override the endpoint URI replyTo.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: producer
+         * 
+         * @param useHeaderReplyTo the value to set
+         * @return the dsl builder
+         */
+        default ImapComponentBuilder useHeaderReplyTo(boolean useHeaderReplyTo) {
+            doSetProperty("useHeaderReplyTo", useHeaderReplyTo);
+            return this;
+        }
+    
+        
+        /**
+         * Whether message header Subject overrides the subject pre-configured
+         * in the endpoint URI. Defaults to false. Set to true to let the
+         * message Subject header override the endpoint URI subject.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: producer
+         * 
+         * @param useHeaderSubject the value to set
+         * @return the dsl builder
+         */
+        default ImapComponentBuilder useHeaderSubject(boolean useHeaderSubject) {
+            doSetProperty("useHeaderSubject", useHeaderSubject);
+            return this;
+        }
+    
         /**
          * To use a custom org.apache.camel.component.mail.JavaMailSender for
          * sending emails.
@@ -786,6 +862,27 @@ public interface ImapComponentBuilderFactory {
             return this;
         }
     
+        
+        /**
+         * The maximum nesting depth of multipart MIME parts the consumer
+         * descends into when extracting attachments. A message nested deeper
+         * than this has its deeper parts skipped, so a crafted deeply nested
+         * multipart cannot exhaust the stack. Increase it only if a legitimate
+         * source produces unusually deep nesting.
+         * 
+         * The option is a: &lt;code&gt;int&lt;/code&gt; type.
+         * 
+         * Default: 20
+         * Group: advanced
+         * 
+         * @param maxMultipartDepth the value to set
+         * @return the dsl builder
+         */
+        default ImapComponentBuilder maxMultipartDepth(int maxMultipartDepth) {
+            doSetProperty("maxMultipartDepth", maxMultipartDepth);
+            return this;
+        }
+    
         /**
          * Specifies the mail session that camel should use for all mail
          * interactions. Useful in scenarios where mail sessions are created and
@@ -926,6 +1023,31 @@ public interface ImapComponentBuilderFactory {
             return this;
         }
     
+        
+        /**
+         * Whether to allow dynamic JavaMail session properties (message headers
+         * whose key starts with mail.smtp. or mail.smtps.) to override the
+         * endpoint configuration on a per-message basis. This is disabled by
+         * default. Only enable it when these headers originate exclusively from
+         * trusted route logic, never from data crossing a trust boundary (for
+         * example HTTP query parameters, or JMS/Kafka messages from untrusted
+         * producers). When enabled, an attacker able to set these headers could
+         * weaken transport security (such as mail.smtp.ssl.trust or
+         * mail.smtp.starttls.enable) or redirect the SMTP connection.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param useJavaMailSessionPropertiesFromHeaders the value to set
+         * @return the dsl builder
+         */
+        default ImapComponentBuilder useJavaMailSessionPropertiesFromHeaders(boolean useJavaMailSessionPropertiesFromHeaders) {
+            doSetProperty("useJavaMailSessionPropertiesFromHeaders", useJavaMailSessionPropertiesFromHeaders);
+            return this;
+        }
+    
         /**
          * The username for login. See also setAuthenticator(MailAuthenticator).
          * 
@@ -986,6 +1108,10 @@ public interface ImapComponentBuilderFactory {
             case "replyTo": getOrCreateConfiguration((MailComponent) component).setReplyTo((java.lang.String) value); return true;
             case "subject": getOrCreateConfiguration((MailComponent) component).setSubject((java.lang.String) value); return true;
             case "to": getOrCreateConfiguration((MailComponent) component).setTo((java.lang.String) value); return true;
+            case "useHeaderFrom": getOrCreateConfiguration((MailComponent) component).setUseHeaderFrom((boolean) value); return true;
+            case "useHeaderRecipients": getOrCreateConfiguration((MailComponent) component).setUseHeaderRecipients((boolean) value); return true;
+            case "useHeaderReplyTo": getOrCreateConfiguration((MailComponent) component).setUseHeaderReplyTo((boolean) value); return true;
+            case "useHeaderSubject": getOrCreateConfiguration((MailComponent) component).setUseHeaderSubject((boolean) value); return true;
             case "javaMailSender": getOrCreateConfiguration((MailComponent) component).setJavaMailSender((org.apache.camel.component.mail.JavaMailSender) value); return true;
             case "additionalJavaMailProperties": getOrCreateConfiguration((MailComponent) component).setAdditionalJavaMailProperties((java.util.Properties) value); return true;
             case "alternativeBodyHeader": getOrCreateConfiguration((MailComponent) component).setAlternativeBodyHeader((java.lang.String) value); return true;
@@ -1000,6 +1126,7 @@ public interface ImapComponentBuilderFactory {
             case "ignoreUnsupportedCharset": getOrCreateConfiguration((MailComponent) component).setIgnoreUnsupportedCharset((boolean) value); return true;
             case "ignoreUriScheme": getOrCreateConfiguration((MailComponent) component).setIgnoreUriScheme((boolean) value); return true;
             case "javaMailProperties": getOrCreateConfiguration((MailComponent) component).setJavaMailProperties((java.util.Properties) value); return true;
+            case "maxMultipartDepth": getOrCreateConfiguration((MailComponent) component).setMaxMultipartDepth((int) value); return true;
             case "session": getOrCreateConfiguration((MailComponent) component).setSession((jakarta.mail.Session) value); return true;
             case "useInlineAttachments": getOrCreateConfiguration((MailComponent) component).setUseInlineAttachments((boolean) value); return true;
             case "headerFilterStrategy": ((MailComponent) component).setHeaderFilterStrategy((org.apache.camel.spi.HeaderFilterStrategy) value); return true;
@@ -1008,6 +1135,7 @@ public interface ImapComponentBuilderFactory {
             case "password": getOrCreateConfiguration((MailComponent) component).setPassword((java.lang.String) value); return true;
             case "sslContextParameters": getOrCreateConfiguration((MailComponent) component).setSslContextParameters((org.apache.camel.support.jsse.SSLContextParameters) value); return true;
             case "useGlobalSslContextParameters": ((MailComponent) component).setUseGlobalSslContextParameters((boolean) value); return true;
+            case "useJavaMailSessionPropertiesFromHeaders": getOrCreateConfiguration((MailComponent) component).setUseJavaMailSessionPropertiesFromHeaders((boolean) value); return true;
             case "username": getOrCreateConfiguration((MailComponent) component).setUsername((java.lang.String) value); return true;
             default: return false;
             }

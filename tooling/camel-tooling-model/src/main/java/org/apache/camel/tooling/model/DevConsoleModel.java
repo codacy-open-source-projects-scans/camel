@@ -16,9 +16,13 @@
  */
 package org.apache.camel.tooling.model;
 
-public class DevConsoleModel extends ArtifactModel<BaseOptionModel> {
+import org.apache.camel.util.json.JsonObject;
+
+public class DevConsoleModel extends ArtifactModel<DevConsoleModel.DevConsoleOptionModel> {
 
     protected String group;
+    protected boolean readOnly = true;
+    protected JsonObject responseSchema;
 
     public DevConsoleModel() {
     }
@@ -31,9 +35,32 @@ public class DevConsoleModel extends ArtifactModel<BaseOptionModel> {
         this.group = group;
     }
 
+    public boolean isReadOnly() {
+        return readOnly;
+    }
+
+    public void setReadOnly(boolean readOnly) {
+        this.readOnly = readOnly;
+    }
+
+    /**
+     * The JSON Schema describing this console's response payload, or {@code null} if the console has not declared one
+     * (via a nested {@code Response} record).
+     */
+    public JsonObject getResponseSchema() {
+        return responseSchema;
+    }
+
+    public void setResponseSchema(JsonObject responseSchema) {
+        this.responseSchema = responseSchema;
+    }
+
     @Override
     public Kind getKind() {
         return Kind.console;
+    }
+
+    public static class DevConsoleOptionModel extends BaseOptionModel {
     }
 
 }

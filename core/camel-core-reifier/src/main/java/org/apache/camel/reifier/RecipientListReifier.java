@@ -32,7 +32,6 @@ import org.apache.camel.processor.EvaluateExpressionProcessor;
 import org.apache.camel.processor.RecipientList;
 import org.apache.camel.processor.aggregate.AggregationStrategyBeanAdapter;
 import org.apache.camel.processor.aggregate.AggregationStrategyBiFunctionAdapter;
-import org.apache.camel.processor.aggregate.ShareUnitOfWorkAggregationStrategy;
 import org.apache.camel.processor.aggregate.UseLatestAggregationStrategy;
 
 public class RecipientListReifier extends ProcessorReifier<RecipientListDefinition<?>> {
@@ -69,6 +68,7 @@ public class RecipientListReifier extends ProcessorReifier<RecipientListDefiniti
         answer.setShareUnitOfWork(isShareUnitOfWork);
         answer.setStopOnException(isStopOnException);
         answer.setIgnoreInvalidEndpoints(isIgnoreInvalidEndpoints);
+        answer.setAllowedSchemes(parseString(definition.getAllowedSchemes()));
         Integer num = parseInt(definition.getCacheSize());
         if (num != null) {
             answer.setCacheSize(num);
@@ -117,7 +117,7 @@ public class RecipientListReifier extends ProcessorReifier<RecipientListDefiniti
         AggregationStrategy strategy = definition.getAggregationStrategyBean();
         String ref = parseString(definition.getAggregationStrategy());
         if (strategy == null && ref != null) {
-            Object aggStrategy = lookupByName(ref);
+            Object aggStrategy = lookupByName(ref, AggregationStrategy.class);
             if (aggStrategy == null) {
                 aggStrategy = lookupByNameAndType(ref, AggregationStrategy.class);
             }
@@ -153,11 +153,6 @@ public class RecipientListReifier extends ProcessorReifier<RecipientListDefiniti
             strategy = new UseLatestAggregationStrategy();
         }
         CamelContextAware.trySetCamelContext(strategy, camelContext);
-
-        if (parseBoolean(definition.getShareUnitOfWork(), false)) {
-            // wrap strategy in share unit of work
-            strategy = new ShareUnitOfWorkAggregationStrategy(strategy);
-        }
 
         return strategy;
     }

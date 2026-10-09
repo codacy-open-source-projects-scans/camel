@@ -21,6 +21,7 @@ import org.apache.camel.test.infra.common.services.InfrastructureService;
 /**
  * Test infra service for Minio
  */
+@Deprecated(since = "4.23")
 public interface MinioInfraService extends InfrastructureService {
 
     String secretKey();
@@ -39,5 +40,9 @@ public interface MinioInfraService extends InfrastructureService {
 
     default String endpoint() {
         return String.format("http://%s:%d", host(), port());
+    }
+
+    default String uiUrl() {
+        return String.format("http://%s:%d", host(), consolePort());
     }
 }

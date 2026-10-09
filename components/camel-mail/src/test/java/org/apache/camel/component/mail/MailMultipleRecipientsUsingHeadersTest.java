@@ -33,12 +33,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Unit test for Mail using camel headers to set recipeient subject.
  */
 public class MailMultipleRecipientsUsingHeadersTest extends CamelTestSupport {
-    private static final MailboxUser claus = Mailbox.getOrCreateUser("claus", "secret");
-    private static final MailboxUser jon = Mailbox.getOrCreateUser("jon", "secret");
+    private static final MailboxUser claus = Mailbox.getOrCreateUser("MailMultipleRecipientsUsingHeadersTest-claus", "secret");
+    private static final MailboxUser jon = Mailbox.getOrCreateUser("MailMultipleRecipientsUsingHeadersTest-jon", "secret");
 
     @Test
     public void testMailMultipleRecipientUsingHeaders() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(claus, jon);
 
         // START SNIPPET: e1
         Map<String, Object> map = new HashMap<>();
@@ -48,7 +48,9 @@ public class MailMultipleRecipientsUsingHeadersTest extends CamelTestSupport {
         map.put("Subject", "Camel rocks");
 
         String body = "Hello Riders.\nYes it does.\n\nRegards James.";
-        template.sendBodyAndHeaders(claus.uriPrefix(Protocol.smtp), body, map);
+        template.sendBodyAndHeaders(
+                claus.uriPrefix(Protocol.smtp) + "&useHeaderRecipients=true&useHeaderFrom=true&useHeaderSubject=true",
+                body, map);
         // END SNIPPET: e1
 
         Mailbox box = claus.getInbox();

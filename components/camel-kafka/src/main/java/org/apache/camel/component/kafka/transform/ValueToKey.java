@@ -25,15 +25,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangeProperty;
 import org.apache.camel.InvalidPayloadException;
+import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.util.ObjectHelper;
 
 public class ValueToKey {
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     public void process(@ExchangeProperty("fields") String fields, Exchange ex) throws InvalidPayloadException {
         List<String> splittedFields = new ArrayList<>();
-        ObjectMapper mapper = new ObjectMapper();
         JsonNode jsonNodeBody = ex.getMessage().getBody(JsonNode.class);
-        Map<Object, Object> body = mapper.convertValue(jsonNodeBody, new TypeReference<Map<Object, Object>>() {
+        Map<Object, Object> body = OBJECT_MAPPER.convertValue(jsonNodeBody, new TypeReference<Map<Object, Object>>() {
         });
         if (ObjectHelper.isNotEmpty(fields)) {
             splittedFields = Arrays.stream(fields.split(",")).collect(Collectors.toList());
@@ -47,7 +49,7 @@ public class ValueToKey {
             }
         }
 
-        ex.getMessage().setHeader("kafka.KEY", key);
+        ex.getMessage().setHeader(KafkaConstants.KEY, key);
     }
 
     boolean filterNames(String fieldName, List<String> splittedFields) {

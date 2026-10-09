@@ -2,12 +2,10 @@
 :doctitle: uniVocity CSV
 :shortname: univocityCsv
 :artifactid: camel-univocity-parsers
-:description: Marshal and unmarshal Java objects from and to CSV (Comma Separated Values) using UniVocity Parsers.
+:description: Marshal and unmarshal Java objects from and to CSV (Comma Separated Values) using UniVocity Parsers
 :since: 2.15
 :supportlevel: Stable
 :tabs-sync-option:
-//Manually maintained attributes
-:camel-spring-boot-name: univocity-parsers
 
 *Since Camel {since}*
 
@@ -54,7 +52,6 @@ include::partial$dataformat-options.adoc[]
 // dataformat options: END
 
 
-
 == Marshalling usages
 
 The marshalling accepts either:
@@ -66,46 +63,131 @@ Any other body will throw an exception.
 
 === Usage example: marshalling a Map into CSV format
 
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:input")
+    .marshal().univocityCsv()
+    .to("mock:result");
+----
+
+XML::
++
 [source,xml]
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
 <route>
     <from uri="direct:input"/>
     <marshal>
-        <univocity-csv/>
+        <univocityCsv/>
     </marshal>
     <to uri="mock:result"/>
 </route>
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:input
+      steps:
+        - marshal:
+            univocityCsv: {}
+        - to:
+            uri: mock:result
+----
+====
 
 === Usage example: marshalling a Map into fixed-width format
 
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:input")
+    .marshal().univocityFixed()
+    .to("mock:result");
+----
+
+XML::
++
 [source,xml]
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
 <route>
     <from uri="direct:input"/>
     <marshal>
-        <univocity-fixed padding="_">
-            <univocity-header length="5"/>
-            <univocity-header length="5"/>
-            <univocity-header length="5"/>
-        </univocity-fixed>
+        <univocityFixed padding="_">
+            <univocityHeader length="5"/>
+            <univocityHeader length="5"/>
+            <univocityHeader length="5"/>
+        </univocityFixed>
     </marshal>
     <to uri="mock:result"/>
 </route>
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:input
+      steps:
+        - marshal:
+            univocityFixed:
+              padding: "_"
+        - to:
+            uri: mock:result
+----
+====
 
 === Usage example: marshalling a Map into TSV format
 
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:input")
+    .marshal().univocityTsv()
+    .to("mock:result");
+----
+
+XML::
++
 [source,xml]
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
 <route>
     <from uri="direct:input"/>
     <marshal>
-        <univocity-tsv/>
+        <univocityTsv/>
     </marshal>
     <to uri="mock:result"/>
 </route>
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:input
+      steps:
+        - marshal:
+            univocityTsv: {}
+        - to:
+            uri: mock:result
+----
+====
 
 == Unmarshalling usages
 
@@ -122,35 +204,95 @@ All the rows can either:
 * be collected at once into a list (`lazyLoad` option with `false`);
 * be read on the fly using an iterator (`lazyLoad` option with `true`).
 
+NOTE: When using `lazyLoad=true`, the returned iterator holds a reference to the underlying input stream.
+The iterator implements `Closeable`, so you should ensure it is closed when no longer needed
+(for example, by fully consuming it or by explicitly calling `close()` in a processor).
+If the iterator is not closed, the input stream will not be released until garbage collection.
+
 === Usage example: unmarshalling a CSV format into maps with automatic headers
 
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:input")
+    .unmarshal().univocityCsv()
+    .to("mock:result");
+----
+
+XML::
++
 [source,xml]
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
 <route>
     <from uri="direct:input"/>
     <unmarshal>
-        <univocity-csv headerExtractionEnabled="true" asMap="true"/>
+        <univocityCsv headerExtractionEnabled="true" asMap="true"/>
     </unmarshal>
     <to uri="mock:result"/>
 </route>
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:input
+      steps:
+        - unmarshal:
+            univocityCsv:
+              headerExtractionEnabled: true
+              asMap: true
+        - to:
+            uri: mock:result
+----
+====
 
 === Usage example: unmarshalling a fixed-width format into lists
 
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:input")
+    .unmarshal().univocityFixed()
+    .to("mock:result");
+----
+
+XML::
++
 [source,xml]
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
 <route>
     <from uri="direct:input"/>
     <unmarshal>
-        <univocity-fixed>
-            <univocity-header length="5"/>
-            <univocity-header length="5"/>
-            <univocity-header length="5"/>
-        </univocity-fixed>
+        <univocityFixed>
+            <univocityHeader length="5"/>
+            <univocityHeader length="5"/>
+            <univocityHeader length="5"/>
+        </univocityFixed>
     </unmarshal>
     <to uri="mock:result"/>
 </route>
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
 
-
-include::spring-boot:partial$starter.adoc[]
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:input
+      steps:
+        - unmarshal:
+            univocityFixed: {}
+        - to:
+            uri: mock:result
+----
+====

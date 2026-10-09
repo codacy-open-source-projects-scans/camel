@@ -4,7 +4,7 @@
 :artifactid: camel-pgvector
 :description: Perform operations on the PostgreSQL pgvector Vector Database.
 :since: 4.19
-:supportlevel: Preview
+:supportlevel: Stable
 :tabs-sync-option:
 :component-header: Only producer is supported
 //Manually maintained attributes
@@ -53,6 +53,7 @@ When using the `SIMILARITY_SEARCH` action, you can filter results using a SQL WH
 `CamelPgVectorFilter` header. For safe handling of dynamic values, use parameterized queries with `?`
 placeholders and provide values via the `CamelPgVectorFilterParams` header:
 
+._Java-only: setting parameterized filter headers programmatically_
 [source,java]
 ----
 from("direct:search")
@@ -103,37 +104,49 @@ YAML::
 - route:
     from:
       uri: direct:index
-    steps:
-      - setVariable:
-          name: text
-          simple: "${body}"
-      - to:
-          uri: openai:embeddings
-          parameters:
-            embeddingModel: nomic-embed-text
-      - setHeader:
-          name: CamelPgVectorAction
-          constant: UPSERT
-      - setHeader:
-          name: CamelPgVectorTextContent
-          simple: "${variable.text}"
-      - to: pgvector:documents
+      steps:
+        - setVariable:
+            name: text
+            expression:
+              simple:
+                expression: "${body}"
+        - to:
+            uri: openai:embeddings
+            parameters:
+              embeddingModel: nomic-embed-text
+        - setHeader:
+            name: CamelPgVectorAction
+            expression:
+              constant:
+                expression: UPSERT
+        - setHeader:
+            name: CamelPgVectorTextContent
+            expression:
+              simple:
+                expression: "${variable.text}"
+        - to:
+            uri: pgvector:documents
 
 - route:
     from:
       uri: direct:search
-    steps:
-      - to:
-          uri: openai:embeddings
-          parameters:
-            embeddingModel: nomic-embed-text
-      - setHeader:
-          name: CamelPgVectorAction
-          constant: SIMILARITY_SEARCH
-      - setHeader:
-          name: CamelPgVectorQueryTopK
-          constant: 5
-      - to: pgvector:documents
+      steps:
+        - to:
+            uri: openai:embeddings
+            parameters:
+              embeddingModel: nomic-embed-text
+        - setHeader:
+            name: CamelPgVectorAction
+            expression:
+              constant:
+                expression: SIMILARITY_SEARCH
+        - setHeader:
+            name: CamelPgVectorQueryTopK
+            expression:
+              constant:
+                expression: 5
+        - to:
+            uri: pgvector:documents
 ----
 ====
 
@@ -172,29 +185,37 @@ YAML::
 ----
 - route:
     from:
-      uri: "direct:store"
-    steps:
-      - to: "langchain4j-embeddings:embed"
-      - setHeader:
-          name: CamelPgVectorAction
-          constant: UPSERT
-      - transform:
-          dataType: "pgvector:embeddings"
-      - to: "pgvector:myCollection"
+      uri: direct:store
+      steps:
+        - to:
+            uri: langchain4j-embeddings:embed
+        - setHeader:
+            name: CamelPgVectorAction
+            expression:
+              constant:
+                expression: UPSERT
+        - transformDataType:
+            toType: "pgvector:embeddings"
+        - to:
+            uri: pgvector:myCollection
 
 - route:
     from:
-      uri: "direct:search"
-    steps:
-      - to: "langchain4j-embeddings:embed"
-      - transform:
-          dataType: "pgvector:embeddings"
-      - setHeader:
-          name: CamelPgVectorAction
-          constant: SIMILARITY_SEARCH
-      - to: "pgvector:myCollection"
-      - transform:
-          dataType: "pgvector:rag"
+      uri: direct:search
+      steps:
+        - to:
+            uri: langchain4j-embeddings:embed
+        - transformDataType:
+            toType: "pgvector:embeddings"
+        - setHeader:
+            name: CamelPgVectorAction
+            expression:
+              constant:
+                expression: SIMILARITY_SEARCH
+        - to:
+            uri: pgvector:myCollection
+        - transformDataType:
+            toType: "pgvector:rag"
 ----
 ====
 

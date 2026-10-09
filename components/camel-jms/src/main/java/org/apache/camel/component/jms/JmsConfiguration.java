@@ -137,7 +137,7 @@ public class JmsConfiguration implements Cloneable {
     private String clientId;
     @UriParam(description = "The durable subscriber name for specifying durable topic subscriptions. The clientId option must be configured as well.")
     private String durableSubscriptionName;
-    @UriParam(label = "consumer,advanced",
+    @UriParam(defaultValue = "true", label = "consumer,advanced",
               description = "Specifies whether the listener session should be exposed when consuming messages.")
     private boolean exposeListenerSession = true;
     @UriParam(label = "consumer,advanced",
@@ -394,6 +394,14 @@ public class JmsConfiguration implements Cloneable {
                             + " a conservative default filter denying java.net.** and otherwise allowing java.**, javax.**"
                             + " and org.apache.camel.** is applied.")
     private String deserializationFilter;
+    @UriParam(label = "advanced", security = "insecure:serialization",
+              description = "Whether to enable sending and receiving JMS ObjectMessage."
+                            + " By default this is disabled because Java object serialization is a known source of security"
+                            + " vulnerabilities. Enable this option only if you trust the source of the messages and need"
+                            + " to send or receive Java serialized objects via JMS. When disabled, Camel will refuse to"
+                            + " create or read JMS ObjectMessage instances. Options that rely on ObjectMessage internally"
+                            + " (such as transferExchange and transferException) require this option to be enabled.")
+    private boolean objectMessageEnabled;
     @UriParam(label = "advanced", security = "insecure:serialization",
               description = "If enabled and you are using Request Reply messaging (InOut) and an Exchange failed on the consumer side,"
                             + " then the caused Exception will be send back in response as a jakarta.jms.ObjectMessage."
@@ -2079,6 +2087,21 @@ public class JmsConfiguration implements Cloneable {
      */
     public void setDeserializationFilter(String deserializationFilter) {
         this.deserializationFilter = deserializationFilter;
+    }
+
+    public boolean isObjectMessageEnabled() {
+        return objectMessageEnabled;
+    }
+
+    /**
+     * Whether to enable sending and receiving JMS ObjectMessage. By default this is disabled because Java object
+     * serialization is a known source of security vulnerabilities. Enable this option only if you trust the source of
+     * the messages and need to send or receive Java serialized objects via JMS. When disabled, Camel will refuse to
+     * create or read JMS ObjectMessage instances. Options that rely on ObjectMessage internally (such as
+     * transferExchange and transferException) require this option to be enabled.
+     */
+    public void setObjectMessageEnabled(boolean objectMessageEnabled) {
+        this.objectMessageEnabled = objectMessageEnabled;
     }
 
     public boolean isTransferException() {

@@ -23,7 +23,6 @@ import java.util.Optional;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
-import org.apache.camel.test.AvailablePortFinder;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
@@ -32,13 +31,17 @@ import org.apache.sshd.server.SshServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 public class SshIdleTimeoutTest extends SshComponentTestSupport {
 
-    @RegisterExtension
-    AvailablePortFinder.Port delayedPort = AvailablePortFinder.find();
+    private int delayedPort;
     private SshServer delayedSshd;
+
+    @Override
+    public void doPreSetup() throws Exception {
+        super.doPreSetup();
+        startDelayedServer();
+    }
 
     @AfterEach
     public void stopDelayedServer() throws Exception {
@@ -103,21 +106,26 @@ public class SshIdleTimeoutTest extends SshComponentTestSupport {
     }
 
     private void startDelayedServer() throws Exception {
+        if (delayedSshd != null) {
+            return;
+        }
         delayedSshd = SshServer.setUpDefaultServer();
-        delayedSshd.setPort(delayedPort.getPort());
+        delayedSshd.setPort(0);
         delayedSshd.setKeyPairProvider(new FileKeyPairProvider(Paths.get("src/test/resources/hostkey.pem")));
-        delayedSshd.setCommandFactory(new DelayedEchoCommandFactory(1000));
+        delayedSshd.setCommandFactory(new DelayedEchoCommandFactory(5000));
         delayedSshd.setPasswordAuthenticator((username, password, session) -> true);
         delayedSshd.setPublickeyAuthenticator((username, key, session) -> true);
         delayedSshd.start();
+        delayedPort = delayedSshd.getPort();
     }
 
     @Test
     public void testIdleTimeoutExpiresBeforeCommandCompletes() throws Exception {
-        startDelayedServer();
         // Send the command using a producer with idleTimeout=500ms.
-        // The client's idle timeout fires during the 3s command delay,
+        // The client's idle timeout fires during the 5s command delay,
         // closing the session before the command completes.
+        // The 10:1 ratio (500ms timeout vs 5000ms delay) provides a wide margin
+        // against scheduling jitter in CI environments (-T1C parallel builds).
         Exchange exchange = template.send(
                 "direct:sshWithShortIdleTimeout",
                 e -> e.getIn().setBody("test"));
@@ -130,9 +138,8 @@ public class SshIdleTimeoutTest extends SshComponentTestSupport {
 
     @Test
     public void testIdleTimeoutLongerThanCommandDelay() throws Exception {
-        startDelayedServer();
-        // Send the command using a producer with idleTimeout=5000ms.
-        // The command delay (3s) completes before the idle timeout fires.
+        // Send the command using a producer with idleTimeout=30000ms.
+        // The command delay (5s) completes before the idle timeout fires.
         Exchange exchange = template.send(
                 "direct:sshWithLongIdleTimeout",
                 e -> e.getIn().setBody("test"));
@@ -152,9 +159,9 @@ public class SshIdleTimeoutTest extends SshComponentTestSupport {
                         .to("mock:result");
 
                 from("direct:sshWithShortIdleTimeout")
-                        .to("ssh://smx:smx@localhost:" + delayedPort.getPort() + "?timeout=5000&idleTimeout=500");
+                        .to("ssh://smx:smx@localhost:" + delayedPort + "?timeout=10000&idleTimeout=500");
                 from("direct:sshWithLongIdleTimeout")
-                        .to("ssh://smx:smx@localhost:" + delayedPort.getPort() + "?timeout=5000&idleTimeout=5000");
+                        .to("ssh://smx:smx@localhost:" + delayedPort + "?timeout=30000&idleTimeout=30000");
             }
         };
     }

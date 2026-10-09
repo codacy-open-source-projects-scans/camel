@@ -27,7 +27,7 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-public class SpringDeadLetterChannelInvalidDeadLetterUriTest extends SpringTestSupport {
+class SpringDeadLetterChannelInvalidDeadLetterUriTest extends SpringTestSupport {
 
     @Override
     protected AbstractXmlApplicationContext createApplicationContext() {
@@ -38,19 +38,20 @@ public class SpringDeadLetterChannelInvalidDeadLetterUriTest extends SpringTestS
     @Override
     @BeforeEach
     public void setUp() throws Exception {
+        // Do NOT call super.setUp() — this test validates that context creation fails
+    }
+
+    @Test
+    void testInvalidUri() throws Exception {
         Exception e = assertThrows(Exception.class, () -> {
             super.setUp();
         });
         FailedToCreateRouteException ftcre = assertIsInstanceOf(FailedToCreateRouteException.class, e);
         NoSuchEndpointException cause = assertIsInstanceOf(NoSuchEndpointException.class, ftcre.getCause());
         assertEquals(
-                "No endpoint could be found for: xxx, please check your classpath contains the needed Camel component jar.",
+                "No endpoint could be found for: xxx, please check your classpath contains the needed Camel component jar"
+                     + " (not a built-in Camel component).",
                 cause.getMessage());
-    }
-
-    @Test
-    public void testInvalidUri() throws Exception {
-        // noop
     }
 
 }

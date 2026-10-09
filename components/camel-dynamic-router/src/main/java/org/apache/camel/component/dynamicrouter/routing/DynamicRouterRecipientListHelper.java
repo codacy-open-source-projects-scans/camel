@@ -124,6 +124,7 @@ public final class DynamicRouterRecipientListHelper {
         recipientList.setShareUnitOfWork(cfg.isShareUnitOfWork());
         recipientList.setStopOnException(cfg.isStopOnException());
         recipientList.setIgnoreInvalidEndpoints(cfg.isIgnoreInvalidEndpoints());
+        recipientList.setAllowedSchemes(cfg.getAllowedSchemes());
         recipientList.setCacheSize(cfg.getCacheSize());
         if (cfg.getOnPrepare() != null) {
             recipientList.setOnPrepare(mandatoryLookup(camelContext, cfg.getOnPrepare(), Processor.class));
@@ -152,7 +153,7 @@ public final class DynamicRouterRecipientListHelper {
                                 .orElseThrow(() -> new IllegalArgumentException(
                                         "Cannot find AggregationStrategy in Registry with name: " +
                                                                                 cfg.getAggregationStrategy()))))
-                .orElse(new NoopAggregationStrategy());
+                .orElse(new UseLatestAggregationStrategy());
         CamelContextAware.trySetCamelContext(strategy, camelContext);
         return cfg.isShareUnitOfWork() ? new ShareUnitOfWorkAggregationStrategy(strategy) : strategy;
     }
@@ -256,6 +257,15 @@ public final class DynamicRouterRecipientListHelper {
                 .orElse(null);
     }
 
+    /**
+     * Keeps the first result and discards later ones. This was unintentionally used as the default aggregation
+     * strategy, contradicting the documented behavior of using the last reply as the outgoing message.
+     *
+     * @deprecated no longer used as the default aggregation strategy: {@link UseLatestAggregationStrategy} is used
+     *             instead, matching the documentation. Configure an explicit {@code aggregationStrategy} if the
+     *             first-result behavior is desired.
+     */
+    @Deprecated
     public static class NoopAggregationStrategy implements AggregationStrategy {
 
         public Exchange aggregate(Exchange oldExchange, Exchange newExchange) {

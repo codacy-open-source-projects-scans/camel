@@ -1,0 +1,198 @@
+= Camel CLI - AI Tools
+
+The Camel CLI includes AI-powered commands that use large language models (LLMs)
+to help you understand, troubleshoot, and secure your integrations.
+
+The commands work with local models (Ollama) or hosted APIs (Anthropic, OpenAI, Gemini, and others).
+The CLI auto-detects the LLM provider, see xref:camel-jbang-ai-providers.adoc[AI Providers and Local Models].
+
+== Ask — chat with a running integration
+
+The `camel ask` command is an AI agent that can inspect and interact with a live Camel process.
+It has access to routes, health checks, metrics, tracing, endpoints, and more — and can
+answer questions about what your integration is doing right now.
+
+[source,bash]
+----
+camel ask "what routes are running?"
+camel ask "why is my route failing?" --name=myApp
+camel ask "are there any blocked exchanges?"
+----
+
+Start an interactive chat session by running without a question:
+
+[source,bash]
+----
+camel ask
+----
+
+This opens a `ask>` prompt where you can have a multi-turn conversation,
+with the AI maintaining context across questions.
+
+=== What the AI can do
+
+The agent has access to tools that let it:
+
+* Inspect the running process — routes, health, endpoints, consumers, properties, inflight/blocked exchanges
+* Read route source code and dump route definitions as YAML or XML
+* Show route structure as a processor tree
+* Find the slowest processors with top statistics
+* Enable, disable, and dump message tracing
+* Start, stop, suspend, and resume individual routes
+* Search the Camel component catalog and read component documentation
+* List and read built-in CLI examples
+* Discover and run any CLI command
+* Read and write files in the current directory
+
+Use `--show-tools` to see tool calls and results as they happen:
+
+[source,bash]
+----
+camel ask "show me the route structure" --show-tools
+----
+
+=== Connecting to a specific process
+
+When multiple Camel processes are running, specify which one to inspect:
+
+[source,bash]
+----
+camel ask "check health" --name=myApp
+camel ask "check health" --name=12345
+----
+
+Without `--name`, the CLI auto-detects when exactly one Camel process is running.
+
+NOTE: The catalog, example, file, and CLI tools work even without a running Camel process.
+
+== Explain — understand a route
+
+The `camel explain` command reads route files from disk and uses an LLM to explain
+what they do — step by step.
+
+[source,bash]
+----
+camel explain hello.yaml
+camel explain my-routes.java --format=markdown
+camel explain route1.yaml route2.xml
+----
+
+Use `--verbose` for detailed technical information, or `--catalog-context` to enrich
+the prompt with Camel component and EIP documentation:
+
+[source,bash]
+----
+camel explain hello.yaml --verbose --catalog-context
+----
+
+TIP: Use `--format=markdown` for structured output with headers, lists, and code blocks.
+
+== Project overview
+
+Where `camel explain` explains one route, `camel overview` gives a high-level view of all the integrations in
+a project directory, read from the route sources (no running integration needed):
+
+* the *entry points*: schedules (`timer`, `cron`, ...), HTTP endpoints and REST operations, and consumers of
+  external systems such as a Kafka topic;
+* the *routes*, with their description, where they consume from and the file and line they are written at;
+* the *flows between routes*: a route *calls* another over `direct`, *hands off* over `seda`, *publishes events*
+  over a broker (Kafka, JMS, ...), or *shares data* over the same folder or table;
+* the *external systems* grouped by category (AI, databases, messaging, files, email, HTTP, cloud), taken
+  from the component labels of the Camel catalog;
+* *findings*: a `direct` or `seda` endpoint that no route consumes, routes that call each other in a cycle,
+  duplicate route ids, routes without a description;
+* the *architecture*: the routes grouped by what they do. Routes that set `group` in the source keep
+  it. Routes that routes of two or more groups call are *shared services*. Routes reached only while
+  handling a failure (from a `doCatch`, an `onException` or a dead letter channel), or that only log,
+  are *utility*. The rest is *other* until the AI groups it (see below).
+
+[source,bash]
+----
+camel overview
+camel overview src/main/resources/camel
+camel overview --format=json
+----
+
+YAML and XML routes are read structurally. Java DSL routes are read into the Camel model without compiling
+them: constants, nested EIPs (`choice`, `doTry`), error paths and the endpoint DSL are seen as in a compiled route,
+and nothing of the project is loaded or run. What is only known at runtime, such as a lambda or a value returned by
+a helper method, cannot be read; the overview says which Java routes have such parts, as their endpoints may be
+incomplete.
+Endpoint URIs are shown without their query, as a query may carry credentials.
+
+=== AI-assisted summary
+
+A diagram of many routes quickly becomes spaghetti, especially when the routes have no `description`.
+With `--ai` an LLM explains the project, and the result is saved in `camel-summary.md` in the project
+directory:
+
+[source,bash]
+----
+camel overview --ai
+camel overview --ai --api-type=anthropic
+----
+
+The LLM gets the facts above and excerpts of the routes (values of sensitive options such as passwords and
+tokens are masked), and writes:
+
+* an *overview* of what the project does as a whole;
+* the *capabilities*: the routes without a `group` in the source, grouped by what they achieve for the
+  business, such as _Order intake_, and which of them are *utility* routes (logging, dead letters, retries);
+* a *description* of each route that has none in the source, in two parts: a short *label* of a few words
+  (such as _Order intake & validation_), which is what diagrams and tables show, and a *note*, a sentence on
+  what the route does and why, shown in full where there is room. They map to the `description` and `note` of
+  a route in the DSL.
+
+The summary file is plain Markdown, meant to be read by people, committed with the routes, and read back by
+tools. It keeps the two kinds of content apart: the sections derived from the sources, and the sections an AI
+wrote, which are headed with `✦ AI-assisted`, and an AI-written route description or note is prefixed with
+`✦ AI:`.
+The file records which model wrote the AI sections, when, and a fingerprint of the route sources it saw, so a
+tool can tell when the routes changed afterwards; the file then says the AI sections may be out of date.
+Run `camel overview --ai` again to refresh them, or `camel overview --save` to refresh only the facts.
+
+Once the AI descriptions are reviewed, `--apply-descriptions` puts them into the route sources, so they become
+part of the routes (`description` and `note` in YAML and XML, `.routeDescription(...)` and `.routeNote(...)` in
+Java), shown by every tool, and no longer marked as AI-assisted. What a route already has is never changed: a
+route with a description only gets a note, and the other way around. Review the change with `git diff` before
+committing it.
+
+[source,bash]
+----
+camel overview --apply-descriptions
+----
+
+The same overview is available to AI agents through the `camel_project_overview` and
+`camel_save_project_summary` tools of the xref:camel-jbang-mcp.adoc[Camel MCP Server] and `camel tui --mcp`,
+and in the xref:camel-jbang-tui.adoc[Camel TUI] with the `/overview` command of the AI panel. The TUI draws
+the architecture in the Diagram tab: its top level, Architecture.
+
+== Harden — security analysis
+
+The `camel harden` command analyzes route files for security concerns and suggests hardening measures.
+It covers authentication, encryption, secrets management, input validation, secure configuration,
+and logging.
+
+[source,bash]
+----
+camel harden hello.yaml
+camel harden my-routes.java --verbose
+camel harden *.yaml --format=markdown
+----
+
+Findings are prioritized by severity (Critical, High, Medium, Low).
+Use `--catalog-context` to include security-specific notes for each component detected in your routes:
+
+[source,bash]
+----
+camel harden my-routes.yaml --catalog-context
+----
+
+NOTE: `camel harden` currently supports Ollama and OpenAI-compatible APIs only (no Anthropic).
+
+== Choosing an LLM provider
+
+The commands detect the provider from the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`,
+a local Ollama, and others), or take it from `--api-type`, `--model` and `--api-key`.
+See xref:camel-jbang-ai-providers.adoc[AI Providers and Local Models] for the detection order and for
+running a model on your own machine with Ollama or an OpenAI-compatible server.

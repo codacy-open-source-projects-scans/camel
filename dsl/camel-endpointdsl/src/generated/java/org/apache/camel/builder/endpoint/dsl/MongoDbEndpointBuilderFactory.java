@@ -249,6 +249,52 @@ public interface MongoDbEndpointBuilderFactory {
             return this;
         }
         /**
+         * A change stream token as a serialized BSON document JSON string.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: consumer
+         * 
+         * @param changeStreamToken the value to set
+         * @return the dsl builder
+         */
+        default MongoDbEndpointConsumerBuilder changeStreamToken(String changeStreamToken) {
+            doSetProperty("changeStreamToken", changeStreamToken);
+            return this;
+        }
+        /**
+         * The repository to store change stream tokens.
+         * 
+         * The option is a:
+         * <code>org.apache.camel.spi.StateRepository&lt;java.lang.String,
+         * java.lang.String&gt;</code> type.
+         * 
+         * Group: consumer
+         * 
+         * @param changeStreamTokenRepository the value to set
+         * @return the dsl builder
+         */
+        default MongoDbEndpointConsumerBuilder changeStreamTokenRepository(org.apache.camel.spi.StateRepository<java.lang.String, java.lang.String> changeStreamTokenRepository) {
+            doSetProperty("changeStreamTokenRepository", changeStreamTokenRepository);
+            return this;
+        }
+        /**
+         * The repository to store change stream tokens.
+         * 
+         * The option will be converted to a
+         * <code>org.apache.camel.spi.StateRepository&lt;java.lang.String,
+         * java.lang.String&gt;</code> type.
+         * 
+         * Group: consumer
+         * 
+         * @param changeStreamTokenRepository the value to set
+         * @return the dsl builder
+         */
+        default MongoDbEndpointConsumerBuilder changeStreamTokenRepository(String changeStreamTokenRepository) {
+            doSetProperty("changeStreamTokenRepository", changeStreamTokenRepository);
+            return this;
+        }
+        /**
          * Consumer type.
          * 
          * The option is a: <code>java.lang.String</code> type.
@@ -4142,7 +4188,7 @@ public interface MongoDbEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final MongoDbHeaderNameBuilder INSTANCE = new MongoDbHeaderNameBuilder();
+        public static final MongoDbHeaderNameBuilder INSTANCE = new MongoDbHeaderNameBuilder();
 
         /**
          * The operation this endpoint will execute against MongoDB.
@@ -4418,13 +4464,15 @@ public interface MongoDbEndpointBuilderFactory {
             return "CamelMongoDbBulkOrdered";
         }
         /**
-         * A document that contains the _id of the document created or modified
-         * by the insert, replace, delete, update operations (i.e. CRUD
-         * operations). For sharded collections, also displays the full shard
-         * key for the document. The _id field is not repeated if it is already
-         * a part of the shard key.
+         * The _id of the document created or modified by the insert, replace,
+         * delete or update operation (i.e. CRUD operations). It is an
+         * org.bson.types.ObjectId when MongoDB generated the id, and otherwise
+         * the id in its natural Java type: a String, a number, or a Document
+         * for a compound key. The header is absent on the events that do not
+         * belong to a single document, such as invalidate, drop, rename and
+         * dropDatabase.
          * 
-         * The option is a: {@code org.bson.types.ObjectId} type.
+         * The option is a: {@code Object} type.
          * 
          * Group: consumer changeStreams
          * 

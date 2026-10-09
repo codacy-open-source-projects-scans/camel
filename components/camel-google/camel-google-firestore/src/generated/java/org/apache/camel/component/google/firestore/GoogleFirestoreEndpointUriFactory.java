@@ -21,9 +21,10 @@ public class GoogleFirestoreEndpointUriFactory extends org.apache.camel.support.
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(28);
+        Set<String> props = new HashSet<>(29);
         props.add("backoffErrorThreshold");
         props.add("backoffIdleThreshold");
         props.add("backoffMultiplier");
@@ -38,6 +39,7 @@ public class GoogleFirestoreEndpointUriFactory extends org.apache.camel.support.
         props.add("greedy");
         props.add("initialDelay");
         props.add("lazyStartProducer");
+        props.add("maxPendingChanges");
         props.add("operation");
         props.add("pollStrategy");
         props.add("projectId");
@@ -54,6 +56,7 @@ public class GoogleFirestoreEndpointUriFactory extends org.apache.camel.support.
         props.add("useFixedDelay");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
         SECRET_PROPERTY_NAMES = Collections.emptySet();
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         Map<String, String> prefixes = new HashMap<>(1);
         prefixes.put("schedulerProperties", "scheduler.");
         MULTI_VALUE_PREFIXES = Collections.unmodifiableMap(prefixes);
@@ -69,7 +72,7 @@ public class GoogleFirestoreEndpointUriFactory extends org.apache.camel.support.
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "collectionName", null, true, copy);
         uri = buildQueryParameters(uri, copy, encode);
@@ -84,6 +87,11 @@ public class GoogleFirestoreEndpointUriFactory extends org.apache.camel.support.
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

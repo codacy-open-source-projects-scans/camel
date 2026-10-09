@@ -63,8 +63,14 @@ public class MiloClientEndpoint extends DefaultEndpoint {
     /**
      * The sampling interval in milliseconds
      */
-    @UriParam(defaultValue = "0.0")
-    private Double samplingInterval = 0.0;
+    @UriParam(defaultValue = "1000.0")
+    private Double samplingInterval = 1000.0;
+
+    /**
+     * The queue size used for OPC UA subscriptions. If not set, a queue size of 1 is requested.
+     */
+    @UriParam
+    private Integer queueSize;
 
     /**
      * The client configuration
@@ -180,6 +186,17 @@ public class MiloClientEndpoint extends DefaultEndpoint {
         this.samplingInterval = samplingInterval;
     }
 
+    public Integer getQueueSize() {
+        return this.queueSize;
+    }
+
+    public void setQueueSize(final Integer queueSize) {
+        if (queueSize != null && queueSize < 0) {
+            throw new IllegalArgumentException("queueSize must be >= 0, got: " + queueSize);
+        }
+        this.queueSize = queueSize;
+    }
+
     public boolean isDefaultAwaitWrites() {
         return this.defaultAwaitWrites;
     }
@@ -202,5 +219,25 @@ public class MiloClientEndpoint extends DefaultEndpoint {
 
     public void setOmitNullValues(boolean omitNullValues) {
         this.omitNullValues = omitNullValues;
+    }
+
+    public String getUsername() {
+        return configuration != null ? configuration.getUsername() : null;
+    }
+
+    public void setUsername(String username) {
+        if (configuration != null) {
+            configuration.setUsername(username);
+        }
+    }
+
+    public String getPassword() {
+        return configuration != null ? configuration.getPassword() : null;
+    }
+
+    public void setPassword(String password) {
+        if (configuration != null) {
+            configuration.setPassword(password);
+        }
     }
 }

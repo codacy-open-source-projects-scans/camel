@@ -33,7 +33,7 @@ public class FileToFtpsImplicitSSLWithoutClientAuthAndSSLContextParametersIT
         tmp.setKeyStore(ksp);
 
         SSLContextParameters sslContextParameters = new SSLContextParameters();
-        sslContextParameters.setSecureSocketProtocol("SSLv3");
+        sslContextParameters.setSecureSocketProtocol("TLSv1.2");
         sslContextParameters.setTrustManagers(tmp);
 
         return sslContextParameters;
@@ -41,7 +41,7 @@ public class FileToFtpsImplicitSSLWithoutClientAuthAndSSLContextParametersIT
 
     @Override
     protected String getFtpUrl() {
-        return "ftps://admin@localhost:{{ftp.server.port}}"
+        return "ftps://admin@localhost:" + service.getPort()
                + "/tmp2/camel?password=admin&initialDelay=2000&disableSecureDataChannelDefaults=true"
                + "&implicit=true&sslContextParameters=#sslContextParameters&delete=true";
     }

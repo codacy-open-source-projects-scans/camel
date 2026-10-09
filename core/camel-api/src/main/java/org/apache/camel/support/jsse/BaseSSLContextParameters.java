@@ -17,6 +17,7 @@
 package org.apache.camel.support.jsse;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -28,8 +29,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -46,7 +50,9 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 
+import org.apache.camel.CamelContext;
 import org.apache.camel.support.jsse.FilterParameters.Patterns;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,17 +62,19 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class BaseSSLContextParameters extends JsseParameters {
 
+    private volatile boolean signatureSchemesFilterWarned;
+
     protected static final List<String> DEFAULT_CIPHER_SUITES_FILTER_INCLUDE
             = List.of(".*");
 
     protected static final List<String> DEFAULT_CIPHER_SUITES_FILTER_EXCLUDE
-            = List.of(".*_NULL_.*", ".*_anon_.*", ".*_EXPORT_.*", ".*_DES_.*", ".*MD5", ".*RC4.*");
+            = List.of(".*_NULL_.*", ".*_anon_.*", ".*_EXPORT_.*", ".*_DES_.*", ".*_3DES_.*", ".*MD5", ".*RC4.*");
 
     protected static final List<String> DEFAULT_SECURE_SOCKET_PROTOCOLS_FILTER_INCLUDE
             = List.of(".*");
 
     protected static final List<String> DEFAULT_SECURE_SOCKET_PROTOCOLS_FILTER_EXCLUDE
-            = List.of("SSL.*");
+            = List.of("SSL.*", "TLSv1", "TLSv1\\.1");
 
     private static final Logger LOG = LoggerFactory.getLogger(BaseSSLContextParameters.class);
 
@@ -97,11 +105,14 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
     private static final String SSL_SERVER_SOCKET_SIGNATURE_SCHEME_LOG_MSG
             = createSignatureSchemeLogMessage("SSLServerSocket");
 
+    private static volatile boolean namedGroupsNotSupportedWarned;
+    private static volatile boolean signatureSchemesNotSupportedWarned;
+
     // Reflection handles for JDK 19/20 SSLParameters methods (not available on JDK 17)
-    private static final Method GET_NAMED_GROUPS;
-    private static final Method SET_NAMED_GROUPS;
-    private static final Method GET_SIGNATURE_SCHEMES;
-    private static final Method SET_SIGNATURE_SCHEMES;
+    private static final @Nullable Method GET_NAMED_GROUPS;
+    private static final @Nullable Method SET_NAMED_GROUPS;
+    private static final @Nullable Method GET_SIGNATURE_SCHEMES;
+    private static final @Nullable Method SET_SIGNATURE_SCHEMES;
 
     static {
         Method gng = null, sng = null, gss = null, sss = null;
@@ -119,7 +130,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
         SET_SIGNATURE_SCHEMES = sss;
     }
 
-    static String[] getNamedGroupsFromParams(SSLParameters params) {
+    static String @Nullable [] getNamedGroupsFromParams(SSLParameters params) {
         if (GET_NAMED_GROUPS == null) {
             return null;
         }
@@ -132,16 +143,43 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
 
     private static void setNamedGroupsOnParams(SSLParameters params, String[] namedGroups) {
         if (SET_NAMED_GROUPS == null) {
+            if (!namedGroupsNotSupportedWarned) {
+                namedGroupsNotSupportedWarned = true;
+                LOG.warn("The named groups cannot be configured as this JVM does not support it (requires JDK 20 or newer)");
+            }
             return;
         }
+        invokeSetter(SET_NAMED_GROUPS, params, namedGroups, "named groups");
+    }
+
+    private static void invokeSetter(Method method, SSLParameters params, String[] values, String name) {
         try {
-            SET_NAMED_GROUPS.invoke(params, (Object) namedGroups);
-        } catch (Exception e) {
-            // ignore
+            method.invoke(params, (Object) values);
+        } catch (InvocationTargetException e) {
+            // the configured values must not be silently ignored (the JVM defaults would be used instead)
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new IllegalArgumentException(
+                    "Cannot configure the " + name + " " + Arrays.toString(values) + " due to: " + cause.getMessage(), cause);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(e);
         }
     }
 
-    private static String[] getSignatureSchemesFromParams(SSLParameters params) {
+    /**
+     * Trims the values, and removes blank and duplicate values (keeping the order), as the JVM does not allow blank or
+     * duplicate named groups and signature schemes.
+     */
+    static List<String> normalizeValues(List<String> values) {
+        Set<String> answer = new LinkedHashSet<>();
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                answer.add(value.trim());
+            }
+        }
+        return new ArrayList<>(answer);
+    }
+
+    private static String @Nullable [] getSignatureSchemesFromParams(SSLParameters params) {
         if (GET_SIGNATURE_SCHEMES == null) {
             return null;
         }
@@ -154,63 +192,64 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
 
     private static void setSignatureSchemesOnParams(SSLParameters params, String[] signatureSchemes) {
         if (SET_SIGNATURE_SCHEMES == null) {
+            if (!signatureSchemesNotSupportedWarned) {
+                signatureSchemesNotSupportedWarned = true;
+                LOG.warn(
+                        "The signature schemes cannot be configured as this JVM does not support it (requires JDK 19 or newer)");
+            }
             return;
         }
-        try {
-            SET_SIGNATURE_SCHEMES.invoke(params, (Object) signatureSchemes);
-        } catch (Exception e) {
-            // ignore
-        }
+        invokeSetter(SET_SIGNATURE_SCHEMES, params, signatureSchemes, "signature schemes");
     }
 
     /**
      * The optional explicitly configured cipher suites for this configuration.
      */
-    private CipherSuitesParameters cipherSuites;
+    private @Nullable CipherSuitesParameters cipherSuites;
 
     /**
      * The optional cipher suite filter configuration for this configuration.
      */
-    private FilterParameters cipherSuitesFilter;
+    private @Nullable FilterParameters cipherSuitesFilter;
 
     /**
      * The optional explicitly configured secure socket protocol names for this configuration.
      */
-    private SecureSocketProtocolsParameters secureSocketProtocols;
+    private @Nullable SecureSocketProtocolsParameters secureSocketProtocols;
 
     /**
      * The option secure socket protocol name filter configuration for this configuration.
      */
-    private FilterParameters secureSocketProtocolsFilter;
+    private @Nullable FilterParameters secureSocketProtocolsFilter;
 
     /**
      * The optional explicitly configured named groups (key exchange groups) for this configuration. Named groups
      * control which key exchange algorithms are available during the TLS handshake, including post-quantum hybrid
      * groups such as X25519MLKEM768.
      */
-    private NamedGroupsParameters namedGroups;
+    private @Nullable NamedGroupsParameters namedGroups;
 
     /**
      * The optional named groups filter configuration for this configuration.
      */
-    private FilterParameters namedGroupsFilter;
+    private @Nullable FilterParameters namedGroupsFilter;
 
     /**
      * The optional explicitly configured signature schemes for this configuration. Signature schemes control which
      * signature algorithms are available during the TLS handshake, including post-quantum signature algorithms such as
      * ML-DSA.
      */
-    private SignatureSchemesParameters signatureSchemes;
+    private @Nullable SignatureSchemesParameters signatureSchemes;
 
     /**
      * The optional signature schemes filter configuration for this configuration.
      */
-    private FilterParameters signatureSchemesFilter;
+    private @Nullable FilterParameters signatureSchemesFilter;
 
     /**
      * The optional {@link SSLSessionContext} timeout time for {@link javax.net.ssl.SSLSession}s in seconds.
      */
-    private String sessionTimeout;
+    private @Nullable String sessionTimeout;
 
     protected List<SNIServerName> getSNIHostNames() {
         return Collections.emptyList();
@@ -223,7 +262,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * <p/>
      * These values override any filters supplied in {@link #setCipherSuitesFilter(FilterParameters)}
      */
-    public CipherSuitesParameters getCipherSuites() {
+    public @Nullable CipherSuitesParameters getCipherSuites() {
         return cipherSuites;
     }
 
@@ -236,8 +275,21 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      *
      * @param cipherSuites the suite configuration
      */
-    public void setCipherSuites(CipherSuitesParameters cipherSuites) {
+    public void setCipherSuites(@Nullable CipherSuitesParameters cipherSuites) {
         this.cipherSuites = cipherSuites;
+    }
+
+    @Override
+    public void setCamelContext(CamelContext context) {
+        super.setCamelContext(context);
+        // the filter patterns may use property placeholders
+        for (FilterParameters filter : new FilterParameters[] {
+                getCipherSuitesFilter(), getSecureSocketProtocolsFilter(), getNamedGroupsFilter(),
+                getSignatureSchemesFilter() }) {
+            if (filter != null) {
+                filter.setCamelContext(context);
+            }
+        }
     }
 
     /**
@@ -248,7 +300,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * These values are ignored if {@link #setCipherSuites(CipherSuitesParameters)} is called with a non {@code null}
      * argument.
      */
-    public FilterParameters getCipherSuitesFilter() {
+    public @Nullable FilterParameters getCipherSuitesFilter() {
         return cipherSuitesFilter;
     }
 
@@ -262,7 +314,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      *
      * @param cipherSuitesFilter the filter configuration
      */
-    public void setCipherSuitesFilter(FilterParameters cipherSuitesFilter) {
+    public void setCipherSuitesFilter(@Nullable FilterParameters cipherSuitesFilter) {
         this.cipherSuitesFilter = cipherSuitesFilter;
     }
 
@@ -273,7 +325,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * <p/>
      * These values override any filters supplied in {@link #setSecureSocketProtocolsFilter(FilterParameters)}
      */
-    public SecureSocketProtocolsParameters getSecureSocketProtocols() {
+    public @Nullable SecureSocketProtocolsParameters getSecureSocketProtocols() {
         return secureSocketProtocols;
     }
 
@@ -284,7 +336,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * <p/>
      * These values override any filters supplied in {@link #setSecureSocketProtocolsFilter(FilterParameters)}
      */
-    public void setSecureSocketProtocols(SecureSocketProtocolsParameters secureSocketProtocols) {
+    public void setSecureSocketProtocols(@Nullable SecureSocketProtocolsParameters secureSocketProtocols) {
         this.secureSocketProtocols = secureSocketProtocols;
     }
 
@@ -296,7 +348,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * These values are ignored if {@link #setSecureSocketProtocols(SecureSocketProtocolsParameters)} is called with a
      * non-{@code null} argument.
      */
-    public FilterParameters getSecureSocketProtocolsFilter() {
+    public @Nullable FilterParameters getSecureSocketProtocolsFilter() {
         return secureSocketProtocolsFilter;
     }
 
@@ -310,7 +362,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      *
      * @param secureSocketProtocolsFilter the filter configuration
      */
-    public void setSecureSocketProtocolsFilter(FilterParameters secureSocketProtocolsFilter) {
+    public void setSecureSocketProtocolsFilter(@Nullable FilterParameters secureSocketProtocolsFilter) {
         this.secureSocketProtocolsFilter = secureSocketProtocolsFilter;
     }
 
@@ -324,7 +376,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * <p/>
      * These values override any filters supplied in {@link #setNamedGroupsFilter(FilterParameters)}
      */
-    public NamedGroupsParameters getNamedGroups() {
+    public @Nullable NamedGroupsParameters getNamedGroups() {
         return namedGroups;
     }
 
@@ -340,7 +392,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      *
      * @param namedGroups the named groups configuration
      */
-    public void setNamedGroups(NamedGroupsParameters namedGroups) {
+    public void setNamedGroups(@Nullable NamedGroupsParameters namedGroups) {
         this.namedGroups = namedGroups;
     }
 
@@ -352,7 +404,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * These values are ignored if {@link #setNamedGroups(NamedGroupsParameters)} is called with a non {@code null}
      * argument.
      */
-    public FilterParameters getNamedGroupsFilter() {
+    public @Nullable FilterParameters getNamedGroupsFilter() {
         return namedGroupsFilter;
     }
 
@@ -366,7 +418,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      *
      * @param namedGroupsFilter the filter configuration
      */
-    public void setNamedGroupsFilter(FilterParameters namedGroupsFilter) {
+    public void setNamedGroupsFilter(@Nullable FilterParameters namedGroupsFilter) {
         this.namedGroupsFilter = namedGroupsFilter;
     }
 
@@ -380,7 +432,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * <p/>
      * These values override any filters supplied in {@link #setSignatureSchemesFilter(FilterParameters)}
      */
-    public SignatureSchemesParameters getSignatureSchemes() {
+    public @Nullable SignatureSchemesParameters getSignatureSchemes() {
         return signatureSchemes;
     }
 
@@ -396,7 +448,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      *
      * @param signatureSchemes the signature schemes configuration
      */
-    public void setSignatureSchemes(SignatureSchemesParameters signatureSchemes) {
+    public void setSignatureSchemes(@Nullable SignatureSchemesParameters signatureSchemes) {
         this.signatureSchemes = signatureSchemes;
     }
 
@@ -408,7 +460,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * These values are ignored if {@link #setSignatureSchemes(SignatureSchemesParameters)} is called with a non
      * {@code null} argument.
      */
-    public FilterParameters getSignatureSchemesFilter() {
+    public @Nullable FilterParameters getSignatureSchemesFilter() {
         return signatureSchemesFilter;
     }
 
@@ -422,14 +474,14 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      *
      * @param signatureSchemesFilter the filter configuration
      */
-    public void setSignatureSchemesFilter(FilterParameters signatureSchemesFilter) {
+    public void setSignatureSchemesFilter(@Nullable FilterParameters signatureSchemesFilter) {
         this.signatureSchemesFilter = signatureSchemesFilter;
     }
 
     /**
      * Returns the optional {@link SSLSessionContext} timeout time for {@link javax.net.ssl.SSLSession}s in seconds.
      */
-    public String getSessionTimeout() {
+    public @Nullable String getSessionTimeout() {
         return sessionTimeout;
     }
 
@@ -438,7 +490,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      *
      * @param sessionTimeout the timeout value or {@code null} to use the default
      */
-    public void setSessionTimeout(String sessionTimeout) {
+    public void setSessionTimeout(@Nullable String sessionTimeout) {
         this.sessionTimeout = sessionTimeout;
     }
 
@@ -465,6 +517,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @throws GeneralSecurityException if there is an error configuring the context
      */
     protected void configureSSLContext(SSLContext context) throws GeneralSecurityException {
+        Objects.requireNonNull(context, "context");
         LOG.trace("Configuring client and server side SSLContext parameters on SSLContext [{}]...", context);
 
         if (this.getSessionTimeout() != null) {
@@ -505,6 +558,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @return         the needed configurers
      */
     protected List<Configurer<SSLEngine>> getSSLEngineConfigurers(SSLContext context) {
+        Objects.requireNonNull(context, "context");
 
         final List<String> enabledCipherSuites = this.getCipherSuites() == null
                 ? null : this.parsePropertyValues(this.getCipherSuites().getCipherSuite());
@@ -661,6 +715,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @see            #getSSLSocketFactorySSLSocketConfigurers(SSLContext)
      */
     protected List<Configurer<SSLSocketFactory>> getSSLSocketFactoryConfigurers(SSLContext context) {
+        Objects.requireNonNull(context, "context");
 
         final List<Configurer<SSLSocket>> sslSocketConfigurers = this.getSSLSocketFactorySSLSocketConfigurers(context);
 
@@ -695,6 +750,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @see            #getSSLServerSocketFactorySSLServerSocketConfigurers(SSLContext)
      */
     protected List<Configurer<SSLServerSocketFactory>> getSSLServerSocketFactoryConfigurers(SSLContext context) {
+        Objects.requireNonNull(context, "context");
 
         final List<Configurer<SSLServerSocket>> sslServerSocketConfigurers
                 = this.getSSLServerSocketFactorySSLServerSocketConfigurers(context);
@@ -727,6 +783,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @return         the needed configurers
      */
     protected List<Configurer<SSLSocket>> getSSLSocketFactorySSLSocketConfigurers(SSLContext context) {
+        Objects.requireNonNull(context, "context");
         final List<String> enabledCipherSuites = this.getCipherSuites() == null
                 ? null : this.parsePropertyValues(this.getCipherSuites().getCipherSuite());
 
@@ -883,6 +940,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @return         the needed configurers
      */
     protected List<Configurer<SSLServerSocket>> getSSLServerSocketFactorySSLServerSocketConfigurers(SSLContext context) {
+        Objects.requireNonNull(context, "context");
         final List<String> enabledCipherSuites = this.getCipherSuites() == null
                 ? null : this.parsePropertyValues(this.getCipherSuites().getCipherSuite());
 
@@ -941,7 +999,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
             public SSLServerSocket configure(SSLServerSocket socket) {
 
                 Collection<String> filteredCipherSuites = BaseSSLContextParameters.this
-                        .filter(enabledCipherSuites, Arrays.asList(socket.getSupportedCipherSuites()),
+                        .filter(enabledCipherSuites, Arrays.asList(socket.getSSLParameters().getCipherSuites()),
                                 Arrays.asList(socket.getEnabledCipherSuites()),
                                 enabledCipherSuitePatterns, defaultEnabledCipherSuitePatterns,
                                 !allowPassthrough);
@@ -951,7 +1009,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
                             socket,
                             enabledCipherSuites,
                             enabledCipherSuitePatterns,
-                            socket.getSupportedCipherSuites(),
+                            socket.getSSLParameters().getCipherSuites(),
                             socket.getEnabledCipherSuites(),
                             defaultEnabledCipherSuitePatterns,
                             filteredCipherSuites);
@@ -960,7 +1018,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
                 socket.setEnabledCipherSuites(filteredCipherSuites.toArray(new String[0]));
 
                 Collection<String> filteredSecureSocketProtocols = BaseSSLContextParameters.this
-                        .filter(enabledSecureSocketProtocols, Arrays.asList(socket.getSupportedProtocols()),
+                        .filter(enabledSecureSocketProtocols, Arrays.asList(socket.getSSLParameters().getProtocols()),
                                 Arrays.asList(socket.getEnabledProtocols()),
                                 enabledSecureSocketProtocolsPatterns, defaultEnabledSecureSocketProtocolsPatterns,
                                 !allowPassthrough);
@@ -970,7 +1028,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
                             socket,
                             enabledSecureSocketProtocols,
                             enabledSecureSocketProtocolsPatterns,
-                            socket.getSupportedProtocols(),
+                            socket.getSSLParameters().getProtocols(),
                             socket.getEnabledProtocols(),
                             defaultEnabledSecureSocketProtocolsPatterns,
                             filteredSecureSocketProtocols);
@@ -1033,8 +1091,10 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
     protected void configureSessionContext(
             SSLSessionContext sessionContext, String sessionTimeout)
             throws GeneralSecurityException {
+        Objects.requireNonNull(sessionTimeout, "sessionTimeout");
 
-        int sessionTimeoutInt = Integer.parseInt(this.parsePropertyValue(sessionTimeout));
+        String resolvedTimeout = this.parsePropertyValue(sessionTimeout);
+        int sessionTimeoutInt = Integer.parseInt(resolvedTimeout != null ? resolvedTimeout : sessionTimeout);
 
         if (sessionContext != null) {
             sessionContext.setSessionTimeout(sessionTimeoutInt);
@@ -1071,8 +1131,8 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @see                    #filter(Collection, Collection, List, List)
      */
     protected Collection<String> filter(
-            Collection<String> explicitValues, Collection<String> availableValues,
-            Collection<String> currentValues, Patterns patterns, Patterns defaultPatterns,
+            @Nullable Collection<String> explicitValues, Collection<String> availableValues,
+            Collection<String> currentValues, @Nullable Patterns patterns, Patterns defaultPatterns,
             boolean applyDefaults) {
 
         final List<Pattern> enabledIncludePatterns;
@@ -1112,7 +1172,7 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @return                 the filtered values
      */
     protected Collection<String> filter(
-            Collection<String> explicitValues, Collection<String> availableValues,
+            @Nullable Collection<String> explicitValues, Collection<String> availableValues,
             List<Pattern> includePatterns, List<Pattern> excludePatterns) {
         Collection<String> returnValues;
 
@@ -1123,8 +1183,10 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
         } else {
             returnValues = new LinkedList<>();
 
+            // a filter with only exclude patterns includes all the other values
+            boolean includeAll = includePatterns.isEmpty() && !excludePatterns.isEmpty();
             for (String value : availableValues) {
-                if (this.matchesOneOf(value, includePatterns)
+                if ((includeAll || this.matchesOneOf(value, includePatterns))
                         && !this.matchesOneOf(value, excludePatterns)) {
                     returnValues.add(value);
                 }
@@ -1141,6 +1203,8 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @param patterns the patterns to try to match against
      */
     protected boolean matchesOneOf(String value, List<Pattern> patterns) {
+        Objects.requireNonNull(value, "value");
+        Objects.requireNonNull(patterns, "patterns");
         boolean matches = false;
 
         for (Pattern pattern : patterns) {
@@ -1164,9 +1228,9 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      *
      * @return                            the filtered named groups array, or {@code null} if no configuration is needed
      */
-    private String[] resolveNamedGroups(
-            String[] currentNamedGroups, List<String> enabledNamedGroups,
-            Patterns enabledNamedGroupsPatterns) {
+    private String @Nullable [] resolveNamedGroups(
+            String @Nullable [] currentNamedGroups, @Nullable List<String> enabledNamedGroups,
+            @Nullable Patterns enabledNamedGroupsPatterns) {
 
         if (enabledNamedGroups == null && enabledNamedGroupsPatterns == null) {
             return null;
@@ -1178,11 +1242,13 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
 
         Collection<String> filteredNamedGroups;
         if (enabledNamedGroups != null) {
-            filteredNamedGroups = new ArrayList<>(enabledNamedGroups);
-        } else {
+            filteredNamedGroups = normalizeValues(enabledNamedGroups);
+        } else if (enabledNamedGroupsPatterns != null) {
             filteredNamedGroups = this.filter(
                     null, Arrays.asList(currentNamedGroups),
                     enabledNamedGroupsPatterns.getIncludes(), enabledNamedGroupsPatterns.getExcludes());
+        } else {
+            filteredNamedGroups = new ArrayList<>();
         }
 
         return filteredNamedGroups.toArray(new String[0]);
@@ -1199,25 +1265,37 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
      * @return                                 the filtered signature schemes array, or {@code null} if no configuration
      *                                         is needed
      */
-    private String[] resolveSignatureSchemes(
-            String[] currentSignatureSchemes, List<String> enabledSignatureSchemes,
-            Patterns enabledSignatureSchemesPatterns) {
+    private String @Nullable [] resolveSignatureSchemes(
+            String @Nullable [] currentSignatureSchemes, @Nullable List<String> enabledSignatureSchemes,
+            @Nullable Patterns enabledSignatureSchemesPatterns) {
 
         if (enabledSignatureSchemes == null && enabledSignatureSchemesPatterns == null) {
             return null;
         }
 
+        if (currentSignatureSchemes == null && enabledSignatureSchemes == null) {
+            // the JVM does not tell its default signature schemes (null), so there is nothing to filter, and
+            // configuring an empty list would fail every handshake
+            if (!signatureSchemesFilterWarned) {
+                signatureSchemesFilterWarned = true;
+                LOG.warn("The signature schemes filter cannot be applied as the JVM does not provide its default"
+                         + " signature schemes. Configure the signature schemes explicitly instead of using a filter.");
+            }
+            return null;
+        }
         if (currentSignatureSchemes == null) {
             currentSignatureSchemes = new String[0];
         }
 
         Collection<String> filteredSignatureSchemes;
         if (enabledSignatureSchemes != null) {
-            filteredSignatureSchemes = new ArrayList<>(enabledSignatureSchemes);
-        } else {
+            filteredSignatureSchemes = normalizeValues(enabledSignatureSchemes);
+        } else if (enabledSignatureSchemesPatterns != null) {
             filteredSignatureSchemes = this.filter(
                     null, Arrays.asList(currentSignatureSchemes),
                     enabledSignatureSchemesPatterns.getIncludes(), enabledSignatureSchemesPatterns.getExcludes());
+        } else {
+            filteredSignatureSchemes = new ArrayList<>();
         }
 
         return filteredSignatureSchemes.toArray(new String[0]);
@@ -1245,7 +1323,8 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
     protected static final class SSLContextDecorator extends SSLContext {
 
         public SSLContextDecorator(SSLContextSpiDecorator decorator) {
-            super(decorator, decorator.getDelegate().getProvider(), decorator.getDelegate().getProtocol());
+            super(Objects.requireNonNull(decorator, "decorator"), decorator.getDelegate().getProvider(),
+                  decorator.getDelegate().getProtocol());
             LOG.debug("SSLContextDecorator [{}] decorating SSLContext [{}].", this, decorator.getDelegate());
         }
 
@@ -1281,18 +1360,19 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
                                       List<Configurer<SSLEngine>> sslEngineConfigurers,
                                       List<Configurer<SSLSocketFactory>> sslSocketFactoryConfigurers,
                                       List<Configurer<SSLServerSocketFactory>> sslServerSocketFactoryConfigurers) {
-            this.context = context;
-            this.sslEngineConfigurers = sslEngineConfigurers;
-            this.sslSocketFactoryConfigurers = sslSocketFactoryConfigurers;
-            this.sslServerSocketFactoryConfigurers = sslServerSocketFactoryConfigurers;
+            this.context = Objects.requireNonNull(context, "context");
+            this.sslEngineConfigurers = Objects.requireNonNull(sslEngineConfigurers, "sslEngineConfigurers");
+            this.sslSocketFactoryConfigurers
+                    = Objects.requireNonNull(sslSocketFactoryConfigurers, "sslSocketFactoryConfigurers");
+            this.sslServerSocketFactoryConfigurers
+                    = Objects.requireNonNull(sslServerSocketFactoryConfigurers, "sslServerSocketFactoryConfigurers");
         }
 
         @Override
         protected SSLEngine engineCreateSSLEngine() {
             SSLEngine engine = this.context.createSSLEngine();
             LOG.debug("SSLEngine [{}] created from SSLContext [{}].", engine, context);
-            this.configureSSLEngine(engine);
-            return engine;
+            return this.configureSSLEngine(engine);
         }
 
         @Override
@@ -1406,8 +1486,9 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
 
         public SSLServerSocketFactoryDecorator(SSLServerSocketFactory sslServerSocketFactory,
                                                List<Configurer<SSLServerSocket>> sslServerSocketConfigurers) {
-            this.sslServerSocketFactory = sslServerSocketFactory;
-            this.sslServerSocketConfigurers = sslServerSocketConfigurers;
+            this.sslServerSocketFactory = Objects.requireNonNull(sslServerSocketFactory, "sslServerSocketFactory");
+            this.sslServerSocketConfigurers
+                    = Objects.requireNonNull(sslServerSocketConfigurers, "sslServerSocketConfigurers");
         }
 
         @Override
@@ -1468,8 +1549,8 @@ public abstract class BaseSSLContextParameters extends JsseParameters {
 
         public SSLSocketFactoryDecorator(SSLSocketFactory sslSocketFactory,
                                          List<Configurer<SSLSocket>> sslSocketConfigurers) {
-            this.sslSocketFactory = sslSocketFactory;
-            this.sslSocketConfigurers = sslSocketConfigurers;
+            this.sslSocketFactory = Objects.requireNonNull(sslSocketFactory, "sslSocketFactory");
+            this.sslSocketConfigurers = Objects.requireNonNull(sslSocketConfigurers, "sslSocketConfigurers");
         }
 
         @Override

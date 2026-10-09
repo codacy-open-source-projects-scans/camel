@@ -26,6 +26,7 @@ import com.azure.identity.DefaultAzureCredentialBuilder;
 import com.azure.messaging.servicebus.ServiceBusSenderClient;
 import org.apache.camel.FailedToCreateProducerException;
 import org.apache.camel.ResolveEndpointFailedException;
+import org.apache.camel.component.azure.common.CredentialType;
 import org.apache.camel.component.azure.servicebus.client.ServiceBusClientFactory;
 import org.apache.camel.test.junit6.CamelTestSupport;
 import org.junit.jupiter.api.Test;
@@ -103,6 +104,37 @@ class ServiceBusEndpointTest extends CamelTestSupport {
         assertEquals("testString", endpoint.getConfiguration().getConnectionString());
         assertEquals(true, endpoint.getConfiguration().isBinary());
         assertEquals("session-1", endpoint.getConfiguration().getSessionId());
+    }
+
+    @Test
+    void testCreateEndpointDefaultMaxConcurrentSessions() throws Exception {
+        final String uri = "azure-servicebus://testTopicOrQueue";
+        final String remaining = "testTopicOrQueue";
+        final Map<String, Object> params = new HashMap<>();
+        params.put("connectionString", "testString");
+
+        final ServiceBusEndpoint endpoint
+                = (ServiceBusEndpoint) context.getComponent("azure-servicebus", ServiceBusComponent.class)
+                        .createEndpoint(uri, remaining, params);
+
+        assertEquals(1, endpoint.getConfiguration().getMaxConcurrentSessions());
+    }
+
+    @Test
+    void testCreateEndpointWithMaxConcurrentSessions() throws Exception {
+        final String uri = "azure-servicebus://testTopicOrQueue";
+        final String remaining = "testTopicOrQueue";
+        final Map<String, Object> params = new HashMap<>();
+        params.put("connectionString", "testString");
+        params.put("sessionEnabled", "true");
+        params.put("maxConcurrentSessions", "5");
+
+        final ServiceBusEndpoint endpoint
+                = (ServiceBusEndpoint) context.getComponent("azure-servicebus", ServiceBusComponent.class)
+                        .createEndpoint(uri, remaining, params);
+
+        assertTrue(endpoint.getConfiguration().isSessionEnabled());
+        assertEquals(5, endpoint.getConfiguration().getMaxConcurrentSessions());
     }
 
     @Test

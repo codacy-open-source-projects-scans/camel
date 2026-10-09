@@ -50,6 +50,25 @@ Camel committers and experienced Camel contributors are may also use Maven Daemo
 To build Camel maven has to be configured to use more memory, which is done automatically via
 the `.mvn/jvm.config` file.
 
+[NOTE]
+====
+The build uses the Develocity Maven extension (`.mvn/extensions.xml`). Its *local* build cache
+(`.mvn/develocity.xml`) is disabled by default, because a cached goal is replayed instead of run:
+a module can then be reported as built and tested even though its tests did not run again, and a
+jar in `~/.m2` may not reflect a source change you just made. Remote caching is always disabled.
+
+If you want incremental local builds to reuse unchanged module outputs, you can opt in to the local
+build cache by setting the following environment variable (e.g. in your shell profile):
+
+[source,bash]
+----
+export DEVELOCITY_LOCAL_CACHE_ENABLED=true
+----
+
+With the cache enabled, you can still force a real build of a single run with
+`-Ddevelocity.cache.local.enabled=false`.
+====
+
 == A normal build
 
 Beware this runs all the unit tests which takes many hours.
@@ -138,3 +157,30 @@ For instance, if you do some code changes in the camel-ftp component, following 
 cd camel-ftp
 mvn clean install -Psourcecheck
 ----
+
+== Checking dependency hygiene
+
+The opt-in `-Pdep-check` profile leverages https://github.com/maveniverse/pilot[`pilot:dependencies`] for bytecode-level detection of *used-but-undeclared* and *unused-but-declared* dependencies.
+It is non-blocking by default (report mode), so it only prints findings without failing the build.
+
+The mojo requires compiled classes and packaged JARs for all reactor modules.
+Run `package -DskipTests` first:
+
+[source,bash]
+----
+# Full reactor — report mode (default, includes test-scope)
+./mvnw package -DskipTests -Dlicense.skip eu.maveniverse.maven.plugins:pilot-plugin:0.4.0:dependencies -Pdep-check
+
+# Single module (after a full reactor package)
+cd components/camel-ftp
+./mvnw eu.maveniverse.maven.plugins:pilot-plugin:0.4.0:dependencies -Pdep-check
+----
+
+To fail the build on findings:
+
+[source,bash]
+----
+./mvnw package -DskipTests -Dlicense.skip eu.maveniverse.maven.plugins:pilot-plugin:0.4.0:dependencies -Pdep-check -Dpilot.action=check
+----
+
+CI also runs this check automatically on pull requests targeting `main` (see the *Dependency Analysis* workflow).

@@ -9,7 +9,6 @@
 :component-header: Only producer is supported
 //Manually maintained attributes
 :group: AI
-:camel-spring-boot-name: milvus
 
 *Since Camel {since}*
 
@@ -178,6 +177,7 @@ As an example, you could think about these routes:
 [tabs]
 ====
 Java::
++
 [source,java]
 ----
     protected RoutesBuilder createRouteBuilder() {
@@ -214,4 +214,3 @@ The transformer only supports insert/upsert objects, so the only operation you c
 otherwise the transformer will fail with an error log.
 
 
-include::spring-boot:partial$starter.adoc[]

@@ -30,10 +30,10 @@ import org.junit.jupiter.api.Test;
  * Unit test with poll enrich
  */
 public class MailPollEnrichNoMailTest extends CamelTestSupport {
-    private static final MailboxUser bill = Mailbox.getOrCreateUser("bill", "secret");
+    private static final MailboxUser bill = Mailbox.getOrCreateUser("MailPollEnrichNoMailTest-bill", "secret");
 
     @Override
-    public void doPreSetup() throws Exception {
+    public void setupResources() throws Exception {
         prepareMailbox();
     }
 
@@ -59,7 +59,7 @@ public class MailPollEnrichNoMailTest extends CamelTestSupport {
 
     private void prepareMailbox() throws Exception {
         // connect to mailbox
-        Mailbox.clearAll();
+        Mailbox.clearAll(bill);
         JavaMailSender sender = new DefaultJavaMailSender();
         Store store = sender.getSession().getStore("imap");
         store.connect("localhost", Mailbox.getPort(Protocol.imap), bill.getLogin(), bill.getPassword());

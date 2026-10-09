@@ -24,6 +24,7 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,10 +50,12 @@ import org.apache.camel.NoSuchPropertyException;
 import org.apache.camel.NoTypeConversionAvailableException;
 import org.apache.camel.Route;
 import org.apache.camel.RuntimeCamelException;
+import org.apache.camel.SafeCopyProperty;
 import org.apache.camel.StreamCache;
 import org.apache.camel.TypeConversionException;
 import org.apache.camel.VariableAware;
 import org.apache.camel.WrappedFile;
+import org.apache.camel.spi.BrowsableVariableRepository;
 import org.apache.camel.spi.NormalizedEndpointUri;
 import org.apache.camel.spi.UnitOfWork;
 import org.apache.camel.spi.VariableRepository;
@@ -391,6 +394,9 @@ public final class ExchangeHelper {
         result.setRollbackOnlyLast(source.isRollbackOnlyLast());
         resultExtension.setNotifyEvent(sourceExtension.isNotifyEvent());
         resultExtension.setRedeliveryExhausted(sourceExtension.isRedeliveryExhausted());
+        resultExtension.setRedeliveryCounter(sourceExtension.getRedeliveryCounter());
+        resultExtension.setRedeliveryMaxCounter(sourceExtension.getRedeliveryMaxCounter());
+        resultExtension.setSagaLongRunningAction(sourceExtension.getSagaLongRunningAction());
         resultExtension.setErrorHandlerHandled(sourceExtension.getErrorHandlerHandled());
         resultExtension.setFailureHandled(sourceExtension.isFailureHandled());
 
@@ -841,6 +847,14 @@ public final class ExchangeHelper {
         }
     }
 
+    private static void setClaimCheckRepository(Exchange target, Exchange source) {
+        // the claim check repository is scoped per exchange, so the copy must not share it (as in Exchange.copy())
+        final Object repo = source.getProperty(ExchangePropertyKey.CLAIM_CHECK_REPOSITORY);
+        if (repo instanceof SafeCopyProperty scp) {
+            target.setProperty(ExchangePropertyKey.CLAIM_CHECK_REPOSITORY, scp.safeCopy());
+        }
+    }
+
     /**
      * Copies the exchange but the copy will be tied to the given context
      *
@@ -851,6 +865,7 @@ public final class ExchangeHelper {
         Exchange answer = exchange.getExchangeExtension().createCopyWithProperties(context);
 
         setMessageHistory(answer, exchange);
+        setClaimCheckRepository(answer, exchange);
 
         answer.setIn(exchange.getIn().copy());
         if (exchange.hasOut()) {
@@ -875,8 +890,11 @@ public final class ExchangeHelper {
             exchange.setIn(newMessage);
         }
 
-        // need to de-reference old from the exchange so it can be GC
-        if (old instanceof MessageSupport messageSupport) {
+        // need to de-reference old from the exchange so it can be GC, but only if the exchange no longer
+        // references it: with outOnly and no OUT message yet, old is the (untouched) IN message and detaching it
+        // would leave IN without an exchange reference. Use hasOut() before getOut() as getOut() lazily creates OUT.
+        if (old != exchange.getIn() && !(exchange.hasOut() && old == exchange.getOut())
+                && old instanceof MessageSupport messageSupport) {
             messageSupport.setExchange(null);
         }
     }
@@ -1049,7 +1067,8 @@ public final class ExchangeHelper {
             } else {
                 // value is not a suitable type, try to convert value to a string
                 String text = exchange.getContext().getTypeConverter().convertTo(String.class, exchange, value);
-                scanner = new Scanner(text, delimiter);
+                // a null value (such as no message body) has no tokens
+                scanner = new Scanner(text != null ? text : "", delimiter);
             }
         }
         return scanner;
@@ -1084,6 +1103,35 @@ public final class ExchangeHelper {
     public static Route getRoute(Exchange exchange) {
         UnitOfWork uow = exchange.getUnitOfWork();
         return uow != null ? uow.getRoute() : null;
+    }
+
+    /**
+     * Captures where the Exchange failed - the route id, node id, and source location - as the
+     * {@link Exchange#FAILURE_ROUTE_ID}, {@link Exchange#FAILURE_NODE_ID} and {@link Exchange#FAILURE_LOCATION}
+     * properties, based on the current route and the last entry in the message history.
+     * <p/>
+     * This must be called as soon as the exception is caught (handled or not), before any exception handler
+     * (onException, doCatch, dead letter channel, ...) has a chance to run any of its own processing steps - otherwise
+     * those steps would also be recorded in the message history, and the last entry would no longer point to the node
+     * that actually failed.
+     *
+     * @param exchange the exchange that failed
+     */
+    @SuppressWarnings("unchecked")
+    public static void captureFailureOrigin(Exchange exchange) {
+        Route rc = getRoute(exchange);
+        if (rc != null) {
+            exchange.setProperty(ExchangePropertyKey.FAILURE_ROUTE_ID, rc.getRouteId());
+        }
+        List<MessageHistory> history = exchange.getProperty(ExchangePropertyKey.MESSAGE_HISTORY, List.class);
+        if (history != null && !history.isEmpty()) {
+            MessageHistory last = history.get(history.size() - 1);
+            if (last.getNode() != null) {
+                exchange.setProperty(ExchangePropertyKey.FAILURE_NODE_ID, last.getNode().getId());
+                exchange.setProperty(ExchangePropertyKey.FAILURE_LOCATION,
+                        LoggerHelper.getLineNumberLoggerName(last.getNode()));
+            }
+        }
     }
 
     /**
@@ -1190,13 +1238,56 @@ public final class ExchangeHelper {
         }
         final VariableAware va = getVariableAware(exchange, repo);
 
+        // the headers are stored as header:name.key (in a route or group repository the name is id:name, so the key
+        // is header:id:name.key). Remove the headers of a previous message stored in this variable, so a header that
+        // this message does not have is not kept with its old value
+        String prefix = "header:" + name + ".";
+        removeVariables(exchange, repo, prefix);
+
         // set body and headers as variables
         Object body = message.getBody();
         va.setVariable(name, body);
         for (Map.Entry<String, Object> header : message.getHeaders().entrySet()) {
-            String key = "header:" + name + "." + header.getKey();
+            String key = prefix + header.getKey();
             Object value = header.getValue();
             va.setVariable(key, value);
+        }
+    }
+
+    private static void removeVariables(Exchange exchange, VariableRepository repo, String prefix) {
+        // the route and group repositories only scan the map of the id parsed from the prefix instead of copying
+        // the whole repository. For a prefix like header:<routeId>:<var>. that id is always header (CAMEL-25050),
+        // so the scan covers the shared header map of all routes or groups
+        if (repo instanceof RouteVariableRepository route) {
+            route.removeVariablesWithPrefix(prefix);
+            return;
+        } else if (repo instanceof GroupVariableRepository group) {
+            group.removeVariablesWithPrefix(prefix);
+            return;
+        }
+
+        Map<String, Object> variables = null;
+        if (repo == null) {
+            if (exchange.hasVariables()) {
+                variables = exchange.getVariables();
+            }
+        } else if (repo instanceof BrowsableVariableRepository browsable) {
+            variables = browsable.getVariables();
+        }
+        if (variables != null) {
+            List<String> keys = new ArrayList<>();
+            for (String key : variables.keySet()) {
+                if (key.startsWith(prefix)) {
+                    keys.add(key);
+                }
+            }
+            for (String key : keys) {
+                if (repo != null) {
+                    repo.removeVariable(key);
+                } else {
+                    exchange.removeVariable(key);
+                }
+            }
         }
     }
 

@@ -16,6 +16,7 @@
  */
 package org.apache.camel.component.beanclass;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.apache.camel.Endpoint;
@@ -25,6 +26,7 @@ import org.apache.camel.component.bean.ConstantBeanHolder;
 import org.apache.camel.component.bean.ConstantTypeBeanHolder;
 import org.apache.camel.component.bean.ParameterMappingStrategy;
 import org.apache.camel.component.bean.ParameterMappingStrategyHelper;
+import org.apache.camel.spi.annotations.Component;
 import org.apache.camel.util.PropertiesHelper;
 
 /**
@@ -33,7 +35,7 @@ import org.apache.camel.util.PropertiesHelper;
  * <p/>
  * This component is an extension to the {@link org.apache.camel.component.bean.BeanComponent}.
  */
-@org.apache.camel.spi.annotations.Component("class")
+@Component("class")
 public class ClassComponent extends BeanComponent {
 
     private ParameterMappingStrategy parameterMappingStrategy;
@@ -53,7 +55,9 @@ public class ClassComponent extends BeanComponent {
 
         // the bean.xxx options is for the bean
         Map<String, Object> options = PropertiesHelper.extractProperties(parameters, "bean.");
-        endpoint.setParameters(options);
+        // store a copy because setProperties below removes bound entries from the original map,
+        // but BeanEndpoint needs the options to apply them per-exchange for prototype scope
+        endpoint.setParameters(options.isEmpty() ? options : new LinkedHashMap<>(options));
 
         BeanHolder holder;
 

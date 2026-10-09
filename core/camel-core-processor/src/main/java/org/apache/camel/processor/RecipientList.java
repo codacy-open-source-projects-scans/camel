@@ -32,9 +32,11 @@ import org.apache.camel.spi.ErrorHandlerAware;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.ProducerCache;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.cache.DefaultProducerCache;
 import org.apache.camel.support.cache.EmptyProducerCache;
 import org.apache.camel.support.service.ServiceHelper;
+import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.StringHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,19 +47,21 @@ import static org.apache.camel.util.ObjectHelper.notNull;
  * Implements a dynamic <a href="http://camel.apache.org/recipient-list.html">Recipient List</a> pattern where the list
  * of actual endpoints to send a message exchange to are dependent on some dynamic expression.
  */
-public class RecipientList extends BaseProcessorSupport implements IdAware, RouteIdAware, ErrorHandlerAware {
+public class RecipientList extends BaseProcessorSupport implements IdAware, RouteIdAware, StepIdAware, ErrorHandlerAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(RecipientList.class);
 
     private final CamelContext camelContext;
     private String id;
     private String routeId;
+    private String stepId;
     private Processor errorHandler;
     private ProducerCache producerCache;
     private final Expression expression;
     private final String delimiter;
     private boolean parallelProcessing;
     private boolean synchronous;
+    private String allowedSchemes;
     private boolean parallelAggregate;
     private boolean stopOnException;
     private boolean ignoreInvalidEndpoints;
@@ -92,7 +96,7 @@ public class RecipientList extends BaseProcessorSupport implements IdAware, Rout
 
     public RecipientList(CamelContext camelContext, Expression expression, String delimiter) {
         notNull(camelContext, "camelContext");
-        org.apache.camel.util.ObjectHelper.notNull(expression, "expression");
+        ObjectHelper.notNull(expression, "expression");
         StringHelper.notEmpty(delimiter, "delimiter");
         this.camelContext = camelContext;
         this.expression = expression;
@@ -158,6 +162,16 @@ public class RecipientList extends BaseProcessorSupport implements IdAware, Rout
     }
 
     @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
+    @Override
     public void setErrorHandler(Processor errorHandler) {
         this.errorHandler = errorHandler;
     }
@@ -209,6 +223,7 @@ public class RecipientList extends BaseProcessorSupport implements IdAware, Rout
         recipientListProcessor.setErrorHandler(errorHandler);
         recipientListProcessor.setAggregateExecutorService(aggregateExecutorService);
         recipientListProcessor.setIgnoreInvalidEndpoints(isIgnoreInvalidEndpoints());
+        recipientListProcessor.setAllowedSchemes(allowedSchemes);
         recipientListProcessor.setCacheSize(getCacheSize());
         recipientListProcessor.setId(getId());
         recipientListProcessor.setRouteId(getRouteId());
@@ -271,6 +286,10 @@ public class RecipientList extends BaseProcessorSupport implements IdAware, Rout
 
     public void setSynchronous(boolean synchronous) {
         this.synchronous = synchronous;
+    }
+
+    public void setAllowedSchemes(String allowedSchemes) {
+        this.allowedSchemes = allowedSchemes;
     }
 
     public boolean isParallelAggregate() {

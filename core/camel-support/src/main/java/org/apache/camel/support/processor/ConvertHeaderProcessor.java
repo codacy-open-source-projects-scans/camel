@@ -28,6 +28,7 @@ import org.apache.camel.Message;
 import org.apache.camel.NoSuchHeaderOrPropertyException;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.AsyncCallbackToCompletableFutureAdapter;
 import org.apache.camel.support.service.ServiceSupport;
 import org.apache.camel.util.IOHelper;
@@ -36,10 +37,12 @@ import org.apache.camel.util.ObjectHelper;
 /**
  * A processor which converts the message header to be of the given type
  */
-public class ConvertHeaderProcessor extends ServiceSupport implements AsyncProcessor, IdAware, RouteIdAware, DisabledAware {
+public class ConvertHeaderProcessor extends ServiceSupport
+        implements AsyncProcessor, IdAware, RouteIdAware, StepIdAware, DisabledAware {
 
     private String id;
     private String routeId;
+    private String stepId;
     private boolean disabled;
     private final String name;
     private final Expression headerName;
@@ -88,6 +91,16 @@ public class ConvertHeaderProcessor extends ServiceSupport implements AsyncProce
     }
 
     @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
+    @Override
     public boolean isDisabled() {
         return disabled;
     }
@@ -116,34 +129,46 @@ public class ConvertHeaderProcessor extends ServiceSupport implements AsyncProce
             return;
         }
 
-        String originalCharsetName = null;
-        if (charset != null) {
-            originalCharsetName = exchange.getProperty(ExchangePropertyKey.CHARSET_NAME, String.class);
-            // override existing charset with configured charset as that is what the user
-            // have explicit configured and expects to be used
-            exchange.setProperty(ExchangePropertyKey.CHARSET_NAME, charset);
-        }
         // use mandatory conversion
         Object value = old.getHeader(name);
         if (value == null && mandatory) {
             throw new NoSuchHeaderOrPropertyException(exchange, name, null, type);
         }
-        if (mandatory) {
-            value = exchange.getContext().getTypeConverter().mandatoryConvertTo(type, exchange, value);
-        } else {
-            value = exchange.getContext().getTypeConverter().convertTo(type, exchange, value);
-        }
-        old.setHeader(targetName, value);
 
-        // remove or restore charset when we are done as we should not propagate that,
-        // as that can lead to double converting later on
+        String originalCharsetName = null;
+        Object originalCharsetHeader = null;
         if (charset != null) {
-            if (originalCharsetName != null && !originalCharsetName.isEmpty()) {
-                exchange.setProperty(ExchangePropertyKey.CHARSET_NAME, originalCharsetName);
-            } else {
-                exchange.removeProperty(ExchangePropertyKey.CHARSET_NAME);
+            originalCharsetName = exchange.getProperty(ExchangePropertyKey.CHARSET_NAME, String.class);
+            // override existing charset with configured charset as that is what the user
+            // have explicit configured and expects to be used
+            exchange.setProperty(ExchangePropertyKey.CHARSET_NAME, charset);
+            // the charset header takes precedence over the property, so override it as well while converting
+            originalCharsetHeader = exchange.getIn().getHeader(Exchange.CHARSET_NAME);
+            if (originalCharsetHeader != null) {
+                exchange.getIn().setHeader(Exchange.CHARSET_NAME, charset);
             }
         }
+        try {
+            if (mandatory) {
+                value = exchange.getContext().getTypeConverter().mandatoryConvertTo(type, exchange, value);
+            } else {
+                value = exchange.getContext().getTypeConverter().convertTo(type, exchange, value);
+            }
+        } finally {
+            // remove or restore charset when we are done (also if the conversion failed) as we should not
+            // propagate that, as that can lead to double converting later on
+            if (charset != null) {
+                if (originalCharsetHeader != null) {
+                    exchange.getIn().setHeader(Exchange.CHARSET_NAME, originalCharsetHeader);
+                }
+                if (originalCharsetName != null && !originalCharsetName.isEmpty()) {
+                    exchange.setProperty(ExchangePropertyKey.CHARSET_NAME, originalCharsetName);
+                } else {
+                    exchange.removeProperty(ExchangePropertyKey.CHARSET_NAME);
+                }
+            }
+        }
+        old.setHeader(targetName, value);
     }
 
     @Override

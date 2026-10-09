@@ -16,12 +16,19 @@
  */
 package org.apache.camel.util;
 
+import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Properties;
 
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class OrderedPropertiesTest {
 
@@ -70,6 +77,85 @@ public class OrderedPropertiesTest {
         assertEquals("2", it.next());
         assertEquals("500", it.next());
         assertEquals("1234", it.next());
+    }
+
+    @Test
+    public void testContainsKey() {
+        Properties prop = new OrderedProperties();
+        prop.setProperty("foo", "bar");
+
+        assertTrue(prop.containsKey("foo"));
+        assertFalse(prop.containsKey("bar"));
+    }
+
+    @Test
+    public void testContainsValue() {
+        Properties prop = new OrderedProperties();
+        prop.setProperty("foo", "bar");
+
+        assertTrue(prop.containsValue("bar"));
+        assertFalse(prop.containsValue("foo"));
+    }
+
+    @Test
+    public void testContainsLegacy() {
+        Properties prop = new OrderedProperties();
+        prop.setProperty("foo", "bar");
+
+        assertTrue(prop.contains("bar"));
+        assertFalse(prop.contains("foo"));
+    }
+
+    @Test
+    public void testContainsKeyAfterRemove() {
+        Properties prop = new OrderedProperties();
+        prop.setProperty("foo", "bar");
+
+        assertTrue(prop.containsKey("foo"));
+
+        prop.remove("foo");
+
+        assertFalse(prop.containsKey("foo"));
+    }
+
+    @Test
+    public void testMapMethods() {
+        OrderedLocationProperties prop = new OrderedLocationProperties();
+        prop.put("app.properties", "b", "1");
+        prop.put("app.properties", "a", "2");
+
+        // forEach iterates the properties (in order)
+        List<Object> keys = new ArrayList<>();
+        prop.forEach((k, v) -> keys.add(k));
+        assertEquals(List.of("b", "a"), keys);
+
+        assertEquals("1", prop.getOrDefault("b", "x"));
+        assertEquals("x", prop.getOrDefault("c", "x"));
+
+        assertEquals("1", prop.putIfAbsent("b", "3"));
+        assertNull(prop.putIfAbsent("c", "3"));
+        assertEquals("3", prop.get("c"));
+
+        assertEquals("33", prop.compute("c", (k, v) -> v + "3"));
+        assertEquals("4", prop.computeIfAbsent("d", k -> "4"));
+        assertEquals("44", prop.merge("d", "4", (a, b) -> a + "" + b));
+        assertEquals("2", prop.replace("a", "22"));
+        assertTrue(prop.replace("a", "22", "222"));
+        assertEquals("222", prop.get("a"));
+        assertTrue(prop.remove("d", "44"));
+        assertFalse(prop.containsKey("d"));
+
+        List<Object> values = new ArrayList<>();
+        Enumeration<Object> e = prop.elements();
+        while (e.hasMoreElements()) {
+            values.add(e.nextElement());
+        }
+        assertEquals(List.of("1", "222", "33"), values);
+
+        OrderedLocationProperties other = new OrderedLocationProperties();
+        other.put("b", "1");
+        assertNotEquals(prop, other);
+        assertEquals(prop, prop);
     }
 
 }

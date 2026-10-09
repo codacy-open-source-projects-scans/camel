@@ -22,6 +22,7 @@ import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -74,6 +75,7 @@ import org.apache.camel.support.CamelContextHelper;
 import org.apache.camel.support.DefaultEndpoint;
 import org.apache.camel.support.ResourceHelper;
 import org.apache.camel.support.processor.RestBindingAdvice;
+import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.UnsafeUriCharactersEncoder;
@@ -175,6 +177,18 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
     private String mockIncludePattern;
     @UriParam(label = "consumer", description = "Sets the context-path to use for servicing the OpenAPI specification")
     private String apiContextPath;
+    @UriParam(label = "consumer,advanced", defaultValue = "platform", enums = "platform,camel",
+              description = "Who answers requests that match no operation in the OpenAPI specification: the HTTP layer"
+                            + " (platform) or Camel via the unmatched request handler (camel).")
+    private String unmatchedRequestHandling = "platform";
+    @UriParam(label = "consumer,security", displayName = "OAuth Profile",
+              description = "OAuth profile name passed to the HTTP consumer delegate for validating incoming"
+                            + " Authorization: Bearer tokens. The selected consumer component must support the"
+                            + " oauthProfile option; delegates that ignore unknown options will start without"
+                            + " endpoint protection.")
+    private String oauthProfile;
+
+    private volatile RestOpenApiProcessor openApiProcessor;
 
     public RestOpenApiEndpoint() {
         // help tooling instantiate endpoint
@@ -219,6 +233,7 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
         RestOpenApiProcessor openApiProcessor
                 = new RestOpenApiProcessor(this, doc, path, apiContextPath, restOpenapiProcessorStrategy);
         CamelContextAware.trySetCamelContext(openApiProcessor, getCamelContext());
+        this.openApiProcessor = openApiProcessor;
 
         // use an advice to call the processor that is responsible for routing to the route that matches the
         // operation id, and also do validation of the incoming request
@@ -228,6 +243,11 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
             RestBindingAdvice advice = ip.getAdvice(RestBindingAdvice.class);
             if (advice != null) {
                 ip.removeAdvice(advice);
+            }
+            // remove the advice from a previous start of the route, as the consumer is created again when restarted
+            RestOpenApiProcessorAdvice existing = ip.getAdvice(RestOpenApiProcessorAdvice.class);
+            if (existing != null) {
+                ip.removeAdvice(existing);
             }
             ip.addAdvice(new RestOpenApiProcessorAdvice(openApiProcessor));
         }
@@ -320,8 +340,25 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
         }
 
         if (factory != null) {
+            // fail closed: never start an unprotected consumer when oauthProfile is configured but the
+            // delegate factory does not declare that its consumers enforce it
+            if (isNotEmpty(oauthProfile) && !factory.supportsOAuthProfile()) {
+                throw new IllegalArgumentException(
+                        "The oauthProfile option is not supported by the resolved RestOpenApiConsumerFactory ("
+                                                   + factory.getClass().getName()
+                                                   + "); select a consumer component that enforces oauthProfile");
+            }
             RestConfiguration config = CamelContextHelper.getRestConfiguration(getCamelContext(), cname);
             Map<String, Object> copy = new HashMap<>(parameters); // defensive copy of the parameters
+            // pass oauthProfile to the delegate consumer, which is responsible for enforcing it
+            if (isNotEmpty(oauthProfile)) {
+                copy.put("oauthProfile", oauthProfile);
+            }
+            // forwards unmatchedRequestHandling to the platform-http delegate, which uses the option (Vert.x
+            // runtime) to register a catch-all route when Camel should answer unmatched requests
+            if ("camel".equalsIgnoreCase(unmatchedRequestHandling)) {
+                copy.put("unmatchedRequestHandling", unmatchedRequestHandling);
+            }
             // avoid duplicate context-path
             if (basePath.equals(config.getContextPath())) {
                 basePath = "";
@@ -375,6 +412,13 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
                 "The specified operation with ID: `" + operationId
                                            + "` cannot be found in the OpenApi specification loaded from `" + specificationUri
                                            + "`. Operations defined in the specification are: " + supportedOperations);
+    }
+
+    @Override
+    protected void doStop() throws Exception {
+        super.doStop();
+        ServiceHelper.stopService(openApiProcessor);
+        openApiProcessor = null;
     }
 
     public String getBasePath() {
@@ -502,6 +546,22 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
         this.apiContextPath = apiContextPath;
     }
 
+    public String getUnmatchedRequestHandling() {
+        return unmatchedRequestHandling;
+    }
+
+    public void setUnmatchedRequestHandling(String unmatchedRequestHandling) {
+        this.unmatchedRequestHandling = unmatchedRequestHandling;
+    }
+
+    public String getOauthProfile() {
+        return oauthProfile;
+    }
+
+    public void setOauthProfile(String oauthProfile) {
+        this.oauthProfile = oauthProfile;
+    }
+
     public String getBindingPackageScan() {
         return bindingPackageScan;
     }
@@ -521,8 +581,40 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
         boolean hasHost = params.containsKey("host");
         String basePath = determineBasePath(openapi);
         String componentEndpointUri = "rest:" + method + ":" + basePath + ":" + uriTemplate;
+
+        // include all distinguishing options in the URI so each unique combination
+        // gets its own cached endpoint and avoids cross-contamination (CAMEL-24113)
+        StringBuilder query = new StringBuilder();
         if (hasHost) {
-            componentEndpointUri += "?host=" + params.get("host");
+            query.append("host=").append(params.get("host"));
+        }
+        if (params.containsKey("producerComponentName")) {
+            if (!query.isEmpty()) {
+                query.append('&');
+            }
+            query.append("producerComponentName=").append(params.get("producerComponentName"));
+        }
+        if (params.containsKey("consumes")) {
+            if (!query.isEmpty()) {
+                query.append('&');
+            }
+            query.append("consumes=").append(params.get("consumes"));
+        }
+        if (params.containsKey("produces")) {
+            if (!query.isEmpty()) {
+                query.append('&');
+            }
+            query.append("produces=").append(params.get("produces"));
+        }
+        if (params.containsKey("queryParameters")) {
+            if (!query.isEmpty()) {
+                query.append('&');
+            }
+            query.append("queryParameters=")
+                    .append(UnsafeUriCharactersEncoder.encode(params.get("queryParameters").toString()));
+        }
+        if (!query.isEmpty()) {
+            componentEndpointUri += "?" + query;
         }
 
         Endpoint endpoint = camelContext.getEndpoint(componentEndpointUri);
@@ -557,9 +649,14 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
             return restConfigurationBasePath;
         }
 
-        final String specificationBasePath = RestOpenApiHelper.getBasePathFromOpenApi(openapi);
-        if (isNotEmpty(specificationBasePath)) {
-            return specificationBasePath;
+        // Only fall back to DEFAULT_BASE_PATH when there are no servers entries at all.
+        // When servers are present but the URL has no path, getBasePathFromOpenApi returns ""
+        // which isNotEmpty() would wrongly treat as absent — so we use != null here.
+        if (openapi != null && openapi.getServers() != null && !openapi.getServers().isEmpty()) {
+            final String specificationBasePath = RestOpenApiHelper.getBasePathFromOpenApi(openapi);
+            if (specificationBasePath != null) {
+                return specificationBasePath;
+            }
         }
 
         return RestOpenApiComponent.DEFAULT_BASE_PATH;
@@ -587,7 +684,7 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
         // what we consume is what the API defined by OpenApi specification
         // produces
         List<String> specificationLevelConsumers = new ArrayList<>();
-        Set<String> operationLevelConsumers = new java.util.HashSet<>();
+        Set<String> operationLevelConsumers = new HashSet<>();
         if (operation.getResponses() != null) {
             for (ApiResponse response : operation.getResponses().values()) {
                 if (response.getContent() != null) {
@@ -605,7 +702,7 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
 
         // what we produce is what the API defined by OpenApi specification consumes
         List<String> specificationLevelProducers = new ArrayList<>();
-        Set<String> operationLevelProducers = new java.util.HashSet<>();
+        Set<String> operationLevelProducers = new HashSet<>();
         if (operation.getRequestBody() != null && operation.getRequestBody().getContent() != null) {
             operationLevelProducers.addAll(operation.getRequestBody().getContent().keySet());
         }
@@ -645,13 +742,12 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
         if (this.parameters != null) {
             if (operation.getParameters() != null) {
                 for (Map.Entry<String, Object> entry : this.parameters.entrySet()) {
-                    for (Parameter param : operation.getParameters()) {
-                        // skip parameters that are part of the operation as path as otherwise
-                        // it will be duplicated as query parameter as well
-                        boolean clash = "path".equals(param.getIn()) && entry.getKey().equals(param.getName());
-                        if (!clash) {
-                            nestedParameters.put(entry.getKey(), entry.getValue());
-                        }
+                    // skip parameters that are part of the operation as path as otherwise
+                    // it will be duplicated as query parameter as well
+                    boolean clash = operation.getParameters().stream()
+                            .anyMatch(p -> "path".equals(p.getIn()) && entry.getKey().equals(p.getName()));
+                    if (!clash) {
+                        nestedParameters.put(entry.getKey(), entry.getValue());
                     }
                 }
             } else {
@@ -738,16 +834,15 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
         }
 
         throw new IllegalStateException(
-                "Unable to determine destination host for requests. The OpenApi specification"
+                "Unable to determine destination host for requests. The OpenAPI specification"
                                         + " does not specify `scheme` and `host` parameters, the specification URI is not absolute with `http` or"
                                         + " `https` scheme, and no RestConfigurations configured with `scheme`, `host` and `port` were found for `"
-                                        + (determineComponentName() != null
-                                                ? determineComponentName() : "default" + "` component")
-                                        + " and there is no global RestConfiguration with those properties");
+                                        + (determineComponentName() != null ? determineComponentName() : "default")
+                                        + "` component and there is no global RestConfiguration with those properties");
     }
 
     private Set<URI> getURIs(List<Server> servers) {
-        Set<URI> uris = new java.util.HashSet<>();
+        Set<URI> uris = new HashSet<>();
         if (servers != null) {
             for (Server server : servers) {
                 try {
@@ -826,6 +921,7 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
             OpenAPI openAPI, Operation operation, String method, String uriTemplate) {
         DefaultRequestValidator answer = new DefaultRequestValidator();
         answer.setOperation(new RestOpenApiOperation(operation, method, uriTemplate));
+        answer.setEndpointParameters(parameters);
         return answer;
     }
 
@@ -937,14 +1033,14 @@ public final class RestOpenApiEndpoint extends DefaultEndpoint {
             }
         } catch (Exception e) {
             throw new IllegalArgumentException(
-                    "The given OpenApi specification cannot be loaded from: " + uri, e);
+                    "Failed to load OpenAPI specification from: " + uri, e);
         } finally {
             IOHelper.close(is);
         }
 
         // In theory there should be a message in the parse result, but it has disappeared...
         throw new IllegalArgumentException(
-                "The given OpenApi specification cannot be loaded from: " + uri);
+                "Could not deserialize OpenAPI specification from: " + uri);
     }
 
     static String pickBestScheme(final String specificationScheme, final List<String> schemes) {

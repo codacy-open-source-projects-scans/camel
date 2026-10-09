@@ -19,11 +19,9 @@ package org.apache.camel.component.nats.integration;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Flaky on GitHub Actions")
 public class NatsProducerReplyToIT extends NatsITSupport {
 
     protected String startUri = "direct:start";
@@ -39,9 +37,12 @@ public class NatsProducerReplyToIT extends NatsITSupport {
         resultEndpoint = context.getEndpoint(resultUri, MockEndpoint.class);
         resultEndpoint.expectedBodiesReceivedInAnyOrder("Bye Camel", "Bye World");
 
+        waitForNatsConsumers(1);
+
         String out = template.requestBody(startUri, body1, String.class);
         String out2 = template.requestBody(startUri, body2, String.class);
 
+        resultEndpoint.setAssertPeriod(5000);
         resultEndpoint.assertIsSatisfied();
 
         assertEquals("Bye Camel", out);
@@ -54,7 +55,7 @@ public class NatsProducerReplyToIT extends NatsITSupport {
             public void configure() {
                 from(startUri).to(middleUri).to(resultUri);
 
-                from(middleUri)
+                from(middleUri + "?exchangePattern=InOut")
                         .transform(simple("Bye ${body}"));
             }
         };

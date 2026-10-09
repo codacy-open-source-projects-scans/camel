@@ -174,6 +174,56 @@ public interface JgroupsComponentBuilderFactory {
             doSetProperty("autowiredEnabled", autowiredEnabled);
             return this;
         }
+    
+        
+        /**
+         * Whether to start the consumer and accept any object deserialized from
+         * the cluster even when no pre-read deserialization control is
+         * configured. When false (the default) the consumer fails to start on
+         * an unauthenticated default channel unless a JVM-wide
+         * -Djdk.serialFilter, the JGroups jgroups.deserialization.filter system
+         * property, or an authenticated/encrypted channel is configured. Set to
+         * true to accept any serialized type and bypass the start-up guard;
+         * this also disables the post-read class check, so it is an insecure
+         * setting.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param acceptAllObjects the value to set
+         * @return the dsl builder
+         */
+        default JgroupsComponentBuilder acceptAllObjects(boolean acceptAllObjects) {
+            doSetProperty("acceptAllObjects", acceptAllObjects);
+            return this;
+        }
+    
+        /**
+         * Sets an ObjectInputFilter pattern (jdk.serialFilter syntax) applied
+         * as a defense-in-depth check on the class of the message body
+         * deserialized by org.jgroups.Message.getObject(). The pattern is
+         * evaluated after JGroups has deserialized the payload, so this option
+         * alone does not prevent gadget-chain execution that happens inside the
+         * JGroups receive path; to block such attacks, also configure the
+         * JVM-wide -Djdk.serialFilter and secure the channel with AUTH and
+         * encryption. When this option is not set and no JVM-wide filter is
+         * configured, a conservative default filter denying java.net. and
+         * otherwise allowing java., javax. and org.apache.camel. is applied.
+         * Use to accept any type.
+         * 
+         * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
+         * 
+         * Group: security
+         * 
+         * @param deserializationFilter the value to set
+         * @return the dsl builder
+         */
+        default JgroupsComponentBuilder deserializationFilter(java.lang.String deserializationFilter) {
+            doSetProperty("deserializationFilter", deserializationFilter);
+            return this;
+        }
     }
 
     class JgroupsComponentBuilderImpl
@@ -195,6 +245,8 @@ public interface JgroupsComponentBuilderFactory {
             case "enableViewMessages": ((JGroupsComponent) component).setEnableViewMessages((boolean) value); return true;
             case "lazyStartProducer": ((JGroupsComponent) component).setLazyStartProducer((boolean) value); return true;
             case "autowiredEnabled": ((JGroupsComponent) component).setAutowiredEnabled((boolean) value); return true;
+            case "acceptAllObjects": ((JGroupsComponent) component).setAcceptAllObjects((boolean) value); return true;
+            case "deserializationFilter": ((JGroupsComponent) component).setDeserializationFilter((java.lang.String) value); return true;
             default: return false;
             }
         }

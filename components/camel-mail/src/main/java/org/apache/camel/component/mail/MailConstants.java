@@ -37,19 +37,20 @@ public final class MailConstants {
     @Metadata(label = "consumer",
               description = "After processing a mail message, it can be copied to a mail folder with the given name.",
               javaType = "String")
-    public static final String MAIL_COPY_TO = "copyTo";
+    public static final String MAIL_COPY_TO = "CamelMailCopyTo";
     @Metadata(label = "consumer",
               description = "After processing a mail message, it can be moved to a mail folder with the given name.",
               javaType = "String")
-    public static final String MAIL_MOVE_TO = "moveTo";
+    public static final String MAIL_MOVE_TO = "CamelMailMoveTo";
     @Metadata(label = "consumer", description = "Deletes the messages after they have been processed.", javaType = "boolean")
-    public static final String MAIL_DELETE = "delete";
+    public static final String MAIL_DELETE = "CamelMailDelete";
     public static final String MAIL_ALTERNATIVE_BODY = "CamelMailAlternativeBody";
     public static final String MAIL_DEFAULT_FOLDER = "INBOX";
     public static final String MAIL_DEFAULT_FROM = "camel@localhost";
     @Metadata(description = "The message ID.", javaType = "String")
     public static final String MAIL_MESSAGE_ID = "CamelMailMessageId";
     public static final int MAIL_DEFAULT_CONNECTION_TIMEOUT = 30000;
+    public static final int MAIL_DEFAULT_MAX_MULTIPART_DEPTH = 20;
     public static final String MAIL_GENERATE_MISSING_ATTACHMENT_NAMES_NEVER = "never";
     public static final String MAIL_GENERATE_MISSING_ATTACHMENT_NAMES_UUID = "uuid";
     public static final String MAIL_HANDLE_DUPLICATE_ATTACHMENT_NAMES_NEVER = "never";

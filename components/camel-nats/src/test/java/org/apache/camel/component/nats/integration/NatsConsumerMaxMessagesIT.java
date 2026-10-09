@@ -20,9 +20,7 @@ import org.apache.camel.EndpointInject;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Flaky on GitHub Actions")
 public class NatsConsumerMaxMessagesIT extends NatsITSupport {
 
     @EndpointInject("mock:result")
@@ -31,6 +29,9 @@ public class NatsConsumerMaxMessagesIT extends NatsITSupport {
     @Test
     public void testMaxConsumer() throws InterruptedException {
         mockResultEndpoint.setExpectedMessageCount(5);
+
+        waitForNatsConsumers(1);
+
         template.sendBody("direct:send", "test");
         template.sendBody("direct:send", "test1");
         template.sendBody("direct:send", "test2");
@@ -43,6 +44,7 @@ public class NatsConsumerMaxMessagesIT extends NatsITSupport {
         template.sendBody("direct:send", "test9");
         template.sendBody("direct:send", "test10");
 
+        mockResultEndpoint.setAssertPeriod(5000);
         mockResultEndpoint.assertIsSatisfied();
     }
 
@@ -51,9 +53,9 @@ public class NatsConsumerMaxMessagesIT extends NatsITSupport {
         return new RouteBuilder() {
             @Override
             public void configure() {
-                from("direct:send").to("nats:test");
+                from("direct:send").to("nats:consumer-maxmessages");
 
-                from("nats:test?maxMessages=5").to(mockResultEndpoint);
+                from("nats:consumer-maxmessages?maxMessages=5").to(mockResultEndpoint);
             }
         };
     }

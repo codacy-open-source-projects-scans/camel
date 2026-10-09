@@ -22,6 +22,7 @@ package org.apache.camel.xml.out;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import javax.annotation.processing.Generated;
@@ -53,6 +54,9 @@ public class ModelWriter extends BaseWriter {
         super(writer, null);
     }
 
+    public void writeA2ASubTaskDefinition(A2ASubTaskDefinition def) throws IOException {
+        doWriteA2ASubTaskDefinition("a2aSubTask", def);
+    }
     public void writeAggregateDefinition(AggregateDefinition def) throws IOException {
         doWriteAggregateDefinition("aggregate", def);
     }
@@ -61,6 +65,9 @@ public class ModelWriter extends BaseWriter {
     }
     public void writeBeanFactoryDefinition(BeanFactoryDefinition def) throws IOException {
         doWriteBeanFactoryDefinition("beanFactory", def);
+    }
+    public void writeCacheDefinition(CacheDefinition def) throws IOException {
+        doWriteCacheDefinition("cache", def);
     }
     public void writeCatchDefinition(CatchDefinition def) throws IOException {
         doWriteCatchDefinition("doCatch", def);
@@ -314,6 +321,15 @@ public class ModelWriter extends BaseWriter {
     public void writeStopDefinition(StopDefinition def) throws IOException {
         doWriteStopDefinition("stop", def);
     }
+    public void writeSwitchCaseDefinition(SwitchCaseDefinition def) throws IOException {
+        doWriteSwitchCaseDefinition("case", def);
+    }
+    public void writeSwitchDefinition(SwitchDefinition def) throws IOException {
+        doWriteSwitchDefinition("switch", def);
+    }
+    public void writeSwitchOtherwiseDefinition(SwitchOtherwiseDefinition def) throws IOException {
+        doWriteSwitchOtherwiseDefinition("switchOtherwise", def);
+    }
     public void writeTemplatedRouteDefinition(TemplatedRouteDefinition def) throws IOException {
         doWriteTemplatedRouteDefinition("templatedRoute", def);
     }
@@ -509,6 +525,12 @@ public class ModelWriter extends BaseWriter {
     public void writeThriftDataFormat(ThriftDataFormat def) throws IOException {
         doWriteThriftDataFormat("thrift", def);
     }
+    public void writeToonDataFormat(ToonDataFormat def) throws IOException {
+        doWriteToonDataFormat("toon", def);
+    }
+    public void writeUblDataFormat(UblDataFormat def) throws IOException {
+        doWriteUblDataFormat("ubl", def);
+    }
     public void writeUniVocityCsvDataFormat(UniVocityCsvDataFormat def) throws IOException {
         doWriteUniVocityCsvDataFormat("univocityCsv", def);
     }
@@ -551,9 +573,6 @@ public class ModelWriter extends BaseWriter {
     public void writeSpringTransactionErrorHandlerDefinition(SpringTransactionErrorHandlerDefinition def) throws IOException {
         doWriteSpringTransactionErrorHandlerDefinition("springTransactionErrorHandler", def);
     }
-    public void writeCSimpleExpression(CSimpleExpression def) throws IOException {
-        doWriteCSimpleExpression("csimple", def);
-    }
     public void writeConstantExpression(ConstantExpression def) throws IOException {
         doWriteConstantExpression("constant", def);
     }
@@ -575,14 +594,14 @@ public class ModelWriter extends BaseWriter {
     public void writeHl7TerserExpression(Hl7TerserExpression def) throws IOException {
         doWriteHl7TerserExpression("hl7terser", def);
     }
+    public void writeJactlExpression(JactlExpression def) throws IOException {
+        doWriteJactlExpression("jactl", def);
+    }
     public void writeJavaExpression(JavaExpression def) throws IOException {
         doWriteJavaExpression("java", def);
     }
     public void writeJavaScriptExpression(JavaScriptExpression def) throws IOException {
         doWriteJavaScriptExpression("js", def);
-    }
-    public void writeJoorExpression(JoorExpression def) throws IOException {
-        doWriteJoorExpression("joor", def);
     }
     public void writeJqExpression(JqExpression def) throws IOException {
         doWriteJqExpression("jq", def);
@@ -602,8 +621,14 @@ public class ModelWriter extends BaseWriter {
     public void writeOgnlExpression(OgnlExpression def) throws IOException {
         doWriteOgnlExpression("ognl", def);
     }
+    public void writePython3Expression(Python3Expression def) throws IOException {
+        doWritePython3Expression("python3", def);
+    }
     public void writePythonExpression(PythonExpression def) throws IOException {
         doWritePythonExpression("python", def);
+    }
+    public void writeQuickjsExpression(QuickjsExpression def) throws IOException {
+        doWriteQuickjsExpression("quickjs", def);
     }
     public void writeRefExpression(RefExpression def) throws IOException {
         doWriteRefExpression("ref", def);
@@ -769,11 +794,22 @@ public class ModelWriter extends BaseWriter {
         doWriteOptionalIdentifiedDefinitionRef(null, def);
     }
 
+    protected void doWriteA2ASubTaskDefinition(String name, A2ASubTaskDefinition def) throws IOException {
+        startElement(name);
+        doWriteProcessorDefinitionAttributes(def);
+        doWriteAttribute("emitBefore", def.getEmitBefore(), null);
+        doWriteAttribute("emitAfter", def.getEmitAfter(), null);
+        doWriteAttribute("emitOnError", def.getEmitOnError(), null);
+        doWriteAttribute("failIfNoTaskContext", def.getFailIfNoTaskContext(), "false");
+        doWriteList(null, null, def.getOutputs(), this::doWriteProcessorDefinitionRef);
+        endElement(name);
+    }
     protected void doWriteAggregateDefinition(String name, AggregateDefinition def) throws IOException {
         startElement(name);
         doWriteProcessorDefinitionAttributes(def);
         doWriteAttribute("parallelProcessing", def.getParallelProcessing(), null);
         doWriteAttribute("optimisticLocking", def.getOptimisticLocking(), null);
+        doWriteAttribute("optimisticLockingSyncRetry", def.getOptimisticLockingSyncRetry(), "false");
         doWriteAttribute("executorService", def.getExecutorService(), null);
         doWriteAttribute("timeoutCheckerExecutorService", def.getTimeoutCheckerExecutorService(), null);
         doWriteAttribute("aggregateController", def.getAggregateController(), null);
@@ -847,6 +883,15 @@ public class ModelWriter extends BaseWriter {
         doWriteElement("script", def.getScript(), this::doWriteString);
         endElement(name);
     }
+    protected void doWriteCacheDefinition(String name, CacheDefinition def) throws IOException {
+        startElement(name);
+        doWriteProcessorDefinitionAttributes(def);
+        doWriteAttribute("keyValueRepository", def.getKeyValueRepository(), null);
+        doWriteAttribute("ttl", def.getTtl(), "-1");
+        doWriteAttribute("cacheNull", def.getCacheNull(), "false");
+        doWriteOutputExpressionNodeElements(def);
+        endElement(name);
+    }
     protected void doWriteCatchDefinition(String name, CatchDefinition def) throws IOException {
         startElement(name);
         doWriteProcessorDefinitionAttributes(def);
@@ -867,7 +912,7 @@ public class ModelWriter extends BaseWriter {
         startElement(name);
         doWriteProcessorDefinitionAttributes(def);
         doWriteAttribute("configuration", def.getConfiguration(), null);
-        doWriteAttribute("inheritErrorHandler", toString(def.getInheritErrorHandler()), "false");
+        doWriteAttribute("inheritErrorHandler", def.getInheritErrorHandler(), "false");
         doWriteElement("resilience4jConfiguration", def.getResilience4jConfiguration(), this::doWriteResilience4jConfigurationDefinition);
         doWriteElement("faultToleranceConfiguration", def.getFaultToleranceConfiguration(), this::doWriteFaultToleranceConfigurationDefinition);
         doWriteList(null, null, def.getOutputs(), this::doWriteProcessorDefinitionRef);
@@ -939,6 +984,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("uriDelimiter", def.getUriDelimiter(), ",");
         doWriteAttribute("ignoreInvalidEndpoints", def.getIgnoreInvalidEndpoints(), null);
         doWriteAttribute("cacheSize", def.getCacheSize(), null);
+        doWriteAttribute("allowedSchemes", def.getAllowedSchemes(), null);
         doWriteExpressionNodeElements(def);
         endElement(name);
     }
@@ -956,6 +1002,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("ignoreInvalidEndpoint", def.getIgnoreInvalidEndpoint(), null);
         doWriteAttribute("allowOptimisedComponents", def.getAllowOptimisedComponents(), "true");
         doWriteAttribute("autoStartComponents", def.getAutoStartComponents(), "true");
+        doWriteAttribute("allowedSchemes", def.getAllowedSchemes(), null);
         doWriteExpressionNodeElements(def);
         endElement(name);
     }
@@ -990,18 +1037,17 @@ public class ModelWriter extends BaseWriter {
     }
     protected void doWriteFaultToleranceConfigurationCommonAttributes(FaultToleranceConfigurationCommon def) throws IOException {
         doWriteIdentifiedTypeAttributes(def);
-        doWriteAttribute("delay", def.getDelay(), "5000");
-        doWriteAttribute("bulkheadWaitingTaskQueue", def.getBulkheadWaitingTaskQueue(), "10");
         doWriteAttribute("typedGuard", def.getTypedGuard(), null);
-        doWriteAttribute("failureRatio", def.getFailureRatio(), "50");
-        doWriteAttribute("timeoutDuration", def.getTimeoutDuration(), "1000");
-        doWriteAttribute("timeoutEnabled", def.getTimeoutEnabled(), "false");
-        doWriteAttribute("timeoutPoolSize", def.getTimeoutPoolSize(), "10");
+        doWriteAttribute("delay", def.getDelay(), "5000");
         doWriteAttribute("successThreshold", def.getSuccessThreshold(), "1");
         doWriteAttribute("requestVolumeThreshold", def.getRequestVolumeThreshold(), "20");
-        doWriteAttribute("bulkheadMaxConcurrentCalls", def.getBulkheadMaxConcurrentCalls(), "10");
-        doWriteAttribute("threadOffloadExecutorService", def.getThreadOffloadExecutorService(), null);
+        doWriteAttribute("failureRatio", def.getFailureRatio(), "50");
+        doWriteAttribute("timeoutEnabled", def.getTimeoutEnabled(), "false");
+        doWriteAttribute("timeoutDuration", def.getTimeoutDuration(), "1000");
         doWriteAttribute("bulkheadEnabled", def.getBulkheadEnabled(), "false");
+        doWriteAttribute("bulkheadMaxConcurrentCalls", def.getBulkheadMaxConcurrentCalls(), "10");
+        doWriteAttribute("bulkheadWaitingTaskQueue", def.getBulkheadWaitingTaskQueue(), "10");
+        doWriteAttribute("threadOffloadExecutorService", def.getThreadOffloadExecutorService(), null);
     }
     protected void doWriteFaultToleranceConfigurationCommon(String name, FaultToleranceConfigurationCommon def) throws IOException {
         startElement(name);
@@ -1152,6 +1198,7 @@ public class ModelWriter extends BaseWriter {
         doWriteProcessorDefinitionAttributes(def);
         doWriteAttribute("variableSend", def.getVariableSend(), null);
         doWriteAttribute("variableReceive", def.getVariableReceive(), null);
+        doWriteAttribute("allowNullBody", def.getAllowNullBody(), "false");
         doWriteElement(null, def.getDataFormatType(), (n, v) -> {
             switch (v.getClass().getSimpleName()) {
                 case "ASN1DataFormat" -> doWriteASN1DataFormat("asn1", (ASN1DataFormat) v);
@@ -1194,6 +1241,8 @@ public class ModelWriter extends BaseWriter {
                 case "SwiftMxDataFormat" -> doWriteSwiftMxDataFormat("swiftMx", (SwiftMxDataFormat) v);
                 case "SyslogDataFormat" -> doWriteSyslogDataFormat("syslog", (SyslogDataFormat) v);
                 case "TarFileDataFormat" -> doWriteTarFileDataFormat("tarFile", (TarFileDataFormat) v);
+                case "ToonDataFormat" -> doWriteToonDataFormat("toon", (ToonDataFormat) v);
+                case "UblDataFormat" -> doWriteUblDataFormat("ubl", (UblDataFormat) v);
                 case "ThriftDataFormat" -> doWriteThriftDataFormat("thrift", (ThriftDataFormat) v);
                 case "UniVocityCsvDataFormat" -> doWriteUniVocityCsvDataFormat("univocityCsv", (UniVocityCsvDataFormat) v);
                 case "UniVocityFixedDataFormat" -> doWriteUniVocityFixedDataFormat("univocityFixed", (UniVocityFixedDataFormat) v);
@@ -1359,6 +1408,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("ignoreInvalidEndpoint", def.getIgnoreInvalidEndpoint(), null);
         doWriteAttribute("allowOptimisedComponents", def.getAllowOptimisedComponents(), "true");
         doWriteAttribute("autoStartComponents", def.getAutoStartComponents(), "true");
+        doWriteAttribute("allowedSchemes", def.getAllowedSchemes(), null);
         doWriteExpressionNodeElements(def);
         endElement(name);
     }
@@ -1412,6 +1462,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("onPrepare", def.getOnPrepare(), null);
         doWriteAttribute("cacheSize", def.getCacheSize(), null);
         doWriteAttribute("shareUnitOfWork", def.getShareUnitOfWork(), null);
+        doWriteAttribute("allowedSchemes", def.getAllowedSchemes(), null);
         doWriteExpressionNodeElements(def);
         endElement(name);
     }
@@ -1491,27 +1542,31 @@ public class ModelWriter extends BaseWriter {
     }
     protected void doWriteResilience4jConfigurationCommonAttributes(Resilience4jConfigurationCommon def) throws IOException {
         doWriteIdentifiedTypeAttributes(def);
+        doWriteAttribute("circuitBreaker", def.getCircuitBreaker(), null);
+        doWriteAttribute("config", def.getConfig(), null);
         doWriteAttribute("failureRateThreshold", def.getFailureRateThreshold(), "50");
-        doWriteAttribute("bulkheadMaxWaitDuration", def.getBulkheadMaxWaitDuration(), "0");
-        doWriteAttribute("slowCallDurationThreshold", def.getSlowCallDurationThreshold(), "60");
-        doWriteAttribute("timeoutCancelRunningFuture", def.getTimeoutCancelRunningFuture(), "true");
-        doWriteAttribute("minimumNumberOfCalls", def.getMinimumNumberOfCalls(), "100");
-        doWriteAttribute("timeoutDuration", def.getTimeoutDuration(), "1000");
-        doWriteAttribute("timeoutEnabled", def.getTimeoutEnabled(), "false");
-        doWriteAttribute("timeoutExecutorService", def.getTimeoutExecutorService(), null);
         doWriteAttribute("permittedNumberOfCallsInHalfOpenState", def.getPermittedNumberOfCallsInHalfOpenState(), "10");
         doWriteAttribute("throwExceptionWhenHalfOpenOrOpenState", def.getThrowExceptionWhenHalfOpenOrOpenState(), "false");
-        doWriteAttribute("slowCallRateThreshold", def.getSlowCallRateThreshold(), "100");
-        doWriteAttribute("micrometerEnabled", def.getMicrometerEnabled(), "false");
-        doWriteAttribute("writableStackTraceEnabled", def.getWritableStackTraceEnabled(), "true");
-        doWriteAttribute("automaticTransitionFromOpenToHalfOpenEnabled", def.getAutomaticTransitionFromOpenToHalfOpenEnabled(), "false");
-        doWriteAttribute("circuitBreaker", def.getCircuitBreaker(), null);
         doWriteAttribute("slidingWindowSize", def.getSlidingWindowSize(), "100");
-        doWriteAttribute("config", def.getConfig(), null);
-        doWriteAttribute("bulkheadMaxConcurrentCalls", def.getBulkheadMaxConcurrentCalls(), "25");
         doWriteAttribute("slidingWindowType", def.getSlidingWindowType(), "COUNT_BASED");
+        doWriteAttribute("slidingWindowSynchronizationStrategy", def.getSlidingWindowSynchronizationStrategy(), "SYNCHRONIZED");
+        doWriteAttribute("minimumNumberOfCalls", def.getMinimumNumberOfCalls(), "100");
+        doWriteAttribute("writableStackTraceEnabled", def.getWritableStackTraceEnabled(), "true");
+        doWriteAttribute("waitDurationInOpenState", def.getWaitDurationInOpenState(), "60000");
+        doWriteAttribute("automaticTransitionFromOpenToHalfOpenEnabled", def.getAutomaticTransitionFromOpenToHalfOpenEnabled(), "false");
+        doWriteAttribute("maxWaitDurationInHalfOpenState", def.getMaxWaitDurationInHalfOpenState(), "0");
+        doWriteAttribute("slowCallRateThreshold", def.getSlowCallRateThreshold(), "100");
+        doWriteAttribute("slowCallDurationThreshold", def.getSlowCallDurationThreshold(), "60000");
         doWriteAttribute("bulkheadEnabled", def.getBulkheadEnabled(), "false");
-        doWriteAttribute("waitDurationInOpenState", def.getWaitDurationInOpenState(), "60");
+        doWriteAttribute("bulkheadMaxConcurrentCalls", def.getBulkheadMaxConcurrentCalls(), "25");
+        doWriteAttribute("bulkheadMaxWaitDuration", def.getBulkheadMaxWaitDuration(), "0");
+        doWriteAttribute("bulkheadFairCallHandlingEnabled", def.getBulkheadFairCallHandlingEnabled(), "true");
+        doWriteAttribute("asynchronous", def.getAsynchronous(), "false");
+        doWriteAttribute("timeoutEnabled", def.getTimeoutEnabled(), "false");
+        doWriteAttribute("timeoutExecutorService", def.getTimeoutExecutorService(), null);
+        doWriteAttribute("timeoutDuration", def.getTimeoutDuration(), "1000");
+        doWriteAttribute("timeoutCancelRunningFuture", def.getTimeoutCancelRunningFuture(), "true");
+        doWriteAttribute("micrometerEnabled", def.getMicrometerEnabled(), "false");
     }
     protected void doWriteResilience4jConfigurationCommonElements(Resilience4jConfigurationCommon def) throws IOException {
         doWriteList(null, "ignoreException", def.getIgnoreExceptions(), this::doWriteString);
@@ -1587,9 +1642,6 @@ public class ModelWriter extends BaseWriter {
     protected void doWriteRouteDefinition(String name, RouteDefinition def) throws IOException {
         startElement(name);
         doWriteProcessorDefinitionAttributes(def);
-        doWriteAttribute("template", toString(def.isTemplate()), null);
-        doWriteAttribute("kamelet", toString(def.isKamelet()), null);
-        doWriteAttribute("rest", toString(def.isRest()), null);
         doWriteAttribute("group", def.getGroup(), null);
         doWriteAttribute("nodePrefixId", def.getNodePrefixId(), null);
         doWriteAttribute("routeConfigurationId", def.getRouteConfigurationId(), null);
@@ -1630,7 +1682,7 @@ public class ModelWriter extends BaseWriter {
         startElement(name);
         doWriteAttribute("description", def.getDescription(), null);
         doWriteAttribute("name", def.getName(), null);
-        doWriteAttribute("required", toString(def.getRequired()), null);
+        doWriteAttribute("required", def.getRequired(), null);
         doWriteAttribute("defaultValue", def.getDefaultValue(), null);
         endElement(name);
     }
@@ -1652,6 +1704,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("uriDelimiter", def.getUriDelimiter(), ",");
         doWriteAttribute("ignoreInvalidEndpoints", def.getIgnoreInvalidEndpoints(), null);
         doWriteAttribute("cacheSize", def.getCacheSize(), null);
+        doWriteAttribute("allowedSchemes", def.getAllowedSchemes(), null);
         doWriteExpressionNodeElements(def);
         endElement(name);
     }
@@ -1758,6 +1811,12 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("executorService", def.getExecutorService(), null);
         doWriteAttribute("onPrepare", def.getOnPrepare(), null);
         doWriteAttribute("shareUnitOfWork", def.getShareUnitOfWork(), null);
+        doWriteAttribute("group", def.getGroup(), null);
+        doWriteAttribute("errorThreshold", def.getErrorThreshold(), null);
+        doWriteAttribute("maxFailedRecords", def.getMaxFailedRecords(), null);
+        doWriteAttribute("resumeStrategy", def.getResumeStrategy(), null);
+        doWriteAttribute("watermarkKey", def.getWatermarkKey(), null);
+        doWriteAttribute("watermarkExpression", def.getWatermarkExpression(), null);
         doWriteOutputExpressionNodeElements(def);
         endElement(name);
     }
@@ -1770,6 +1829,26 @@ public class ModelWriter extends BaseWriter {
     protected void doWriteStopDefinition(String name, StopDefinition def) throws IOException {
         startElement(name);
         doWriteProcessorDefinitionAttributes(def);
+        endElement(name);
+    }
+    protected void doWriteSwitchCaseDefinition(String name, SwitchCaseDefinition def) throws IOException {
+        startElement(name);
+        doWriteOptionalIdentifiedDefinitionAttributes(def);
+        doWriteAttribute("value", def.getValue(), null);
+        doWriteAttribute("uri", def.getUri(), null);
+        endElement(name);
+    }
+    protected void doWriteSwitchDefinition(String name, SwitchDefinition def) throws IOException {
+        startElement(name);
+        doWriteProcessorDefinitionAttributes(def);
+        doWriteElement("selector", def.getSelector(), this::doWriteExpressionSubElementDefinition);
+        doWriteList(null, "case", def.getCases(), this::doWriteSwitchCaseDefinition);
+        doWriteElement("otherwise", def.getOtherwise(), this::doWriteSwitchOtherwiseDefinition);
+        endElement(name);
+    }
+    protected void doWriteSwitchOtherwiseDefinition(String name, SwitchOtherwiseDefinition def) throws IOException {
+        startElement(name);
+        doWriteAttribute("uri", def.getUri(), null);
         endElement(name);
     }
     protected void doWriteTemplatedRouteDefinition(String name, TemplatedRouteDefinition def) throws IOException {
@@ -1861,6 +1940,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("ignoreInvalidEndpoint", def.getIgnoreInvalidEndpoint(), null);
         doWriteAttribute("allowOptimisedComponents", def.getAllowOptimisedComponents(), "true");
         doWriteAttribute("autoStartComponents", def.getAutoStartComponents(), "true");
+        doWriteAttribute("allowedSchemes", def.getAllowedSchemes(), null);
     }
     protected void doWriteToDynamicDefinition(String name, ToDynamicDefinition def) throws IOException {
         startElement(name);
@@ -1909,7 +1989,23 @@ public class ModelWriter extends BaseWriter {
     protected void doWriteTryDefinition(String name, TryDefinition def) throws IOException {
         startElement(name);
         doWriteProcessorDefinitionAttributes(def);
-        doWriteList(null, null, def.getOutputs(), this::doWriteProcessorDefinitionRef);
+        List<ProcessorDefinition<?>> outputs = new ArrayList<>(def.getOutputs());
+        for (CatchDefinition clause : def.getCatchClauses()) {
+            if (!outputs.contains(clause)) {
+                int index = outputs.size();
+                for (int i = 0; i < outputs.size(); i++) {
+                    if (outputs.get(i) instanceof FinallyDefinition) {
+                        index = i;
+                        break;
+                    }
+                }
+                outputs.add(index, clause);
+            }
+        }
+        if (def.getFinallyClause() != null && !outputs.contains(def.getFinallyClause())) {
+            outputs.add(def.getFinallyClause());
+        }
+        doWriteList(null, null, outputs, this::doWriteProcessorDefinitionRef);
         endElement(name);
     }
     protected void doWriteUnmarshalDefinition(String name, UnmarshalDefinition def) throws IOException {
@@ -1960,6 +2056,8 @@ public class ModelWriter extends BaseWriter {
                 case "SwiftMxDataFormat" -> doWriteSwiftMxDataFormat("swiftMx", (SwiftMxDataFormat) v);
                 case "SyslogDataFormat" -> doWriteSyslogDataFormat("syslog", (SyslogDataFormat) v);
                 case "TarFileDataFormat" -> doWriteTarFileDataFormat("tarFile", (TarFileDataFormat) v);
+                case "ToonDataFormat" -> doWriteToonDataFormat("toon", (ToonDataFormat) v);
+                case "UblDataFormat" -> doWriteUblDataFormat("ubl", (UblDataFormat) v);
                 case "ThriftDataFormat" -> doWriteThriftDataFormat("thrift", (ThriftDataFormat) v);
                 case "UniVocityCsvDataFormat" -> doWriteUniVocityCsvDataFormat("univocityCsv", (UniVocityCsvDataFormat) v);
                 case "UniVocityFixedDataFormat" -> doWriteUniVocityFixedDataFormat("univocityFixed", (UniVocityFixedDataFormat) v);
@@ -2114,9 +2212,9 @@ public class ModelWriter extends BaseWriter {
     protected void doWriteAvroDataFormat(String name, AvroDataFormat def) throws IOException {
         startElement(name);
         doWriteIdentifiedTypeAttributes(def);
-        doWriteAttribute("unmarshalType", def.getUnmarshalTypeName(), null);
         doWriteAttribute("collectionType", def.getCollectionTypeName(), null);
         doWriteAttribute("jsonView", def.getJsonViewTypeName(), null);
+        doWriteAttribute("unmarshalType", def.getUnmarshalTypeName(), null);
         doWriteAttribute("instanceClassName", def.getInstanceClassName(), null);
         doWriteAttribute("library", toString(def.getLibrary()), "avroJackson");
         doWriteAttribute("objectMapper", def.getObjectMapper(), null);
@@ -2134,6 +2232,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("contentTypeHeader", def.getContentTypeHeader(), "true");
         doWriteAttribute("schemaResolver", def.getSchemaResolver(), null);
         doWriteAttribute("autoDiscoverSchemaResolver", def.getAutoDiscoverSchemaResolver(), "true");
+        doWriteAttribute("serializablePackages", def.getSerializablePackages(), null);
         endElement(name);
     }
     protected void doWriteBarcodeDataFormat(String name, BarcodeDataFormat def) throws IOException {
@@ -2289,6 +2388,8 @@ public class ModelWriter extends BaseWriter {
                 case "SwiftMxDataFormat" -> doWriteSwiftMxDataFormat("swiftMx", (SwiftMxDataFormat) v);
                 case "SyslogDataFormat" -> doWriteSyslogDataFormat("syslog", (SyslogDataFormat) v);
                 case "TarFileDataFormat" -> doWriteTarFileDataFormat("tarFile", (TarFileDataFormat) v);
+                case "ToonDataFormat" -> doWriteToonDataFormat("toon", (ToonDataFormat) v);
+                case "UblDataFormat" -> doWriteUblDataFormat("ubl", (UblDataFormat) v);
                 case "ThriftDataFormat" -> doWriteThriftDataFormat("thrift", (ThriftDataFormat) v);
                 case "UniVocityCsvDataFormat" -> doWriteUniVocityCsvDataFormat("univocityCsv", (UniVocityCsvDataFormat) v);
                 case "UniVocityFixedDataFormat" -> doWriteUniVocityFixedDataFormat("univocityFixed", (UniVocityFixedDataFormat) v);
@@ -2398,6 +2499,7 @@ public class ModelWriter extends BaseWriter {
         doWriteIdentifiedTypeAttributes(def);
         doWriteAttribute("parser", def.getParser(), null);
         doWriteAttribute("validate", def.getValidate(), "true");
+        doWriteAttribute("targetFormat", def.getTargetFormat(), null);
         endElement(name);
     }
     protected void doWriteIcalDataFormat(String name, IcalDataFormat def) throws IOException {
@@ -2542,6 +2644,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("compressionAlgorithm", def.getCompressionAlgorithm(), null);
         doWriteAttribute("hashAlgorithm", def.getHashAlgorithm(), null);
         doWriteAttribute("signatureVerificationOption", def.getSignatureVerificationOption(), null);
+        doWriteAttribute("requireIntegrityProtection", def.getRequireIntegrityProtection(), "true");
         endElement(name);
     }
     protected void doWritePQCDataFormat(String name, PQCDataFormat def) throws IOException {
@@ -2551,7 +2654,6 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("symmetricKeyAlgorithm", def.getSymmetricKeyAlgorithm(), "AES");
         doWriteAttribute("symmetricKeyLength", def.getSymmetricKeyLength(), "128");
         doWriteAttribute("keyPair", def.getKeyPair(), null);
-        doWriteAttribute("bufferSize", def.getBufferSize(), "4096");
         doWriteAttribute("provider", def.getProvider(), null);
         doWriteAttribute("keyGenerator", def.getKeyGenerator(), null);
         endElement(name);
@@ -2599,6 +2701,7 @@ public class ModelWriter extends BaseWriter {
         startElement(name);
         doWriteIdentifiedTypeAttributes(def);
         doWriteAttribute("smooksConfig", def.getSmooksConfig(), null);
+        doWriteAttribute("allowExternalEntities", def.getAllowExternalEntities(), "false");
         endElement(name);
     }
     protected void doWriteSoapDataFormat(String name, SoapDataFormat def) throws IOException {
@@ -2648,6 +2751,22 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("instanceClass", def.getInstanceClass(), null);
         doWriteAttribute("contentTypeFormat", def.getContentTypeFormat(), "binary");
         doWriteAttribute("contentTypeHeader", def.getContentTypeHeader(), "true");
+        endElement(name);
+    }
+    protected void doWriteToonDataFormat(String name, ToonDataFormat def) throws IOException {
+        startElement(name);
+        doWriteIdentifiedTypeAttributes(def);
+        doWriteAttribute("indent", def.getIndent(), "2");
+        doWriteAttribute("delimiter", def.getDelimiter(), "COMMA");
+        doWriteAttribute("lengthMarker", def.getLengthMarker(), "false");
+        doWriteAttribute("strict", def.getStrict(), "true");
+        doWriteAttribute("contentTypeHeader", def.getContentTypeHeader(), "true");
+        endElement(name);
+    }
+    protected void doWriteUblDataFormat(String name, UblDataFormat def) throws IOException {
+        startElement(name);
+        doWriteIdentifiedTypeAttributes(def);
+        doWriteAttribute("prettyPrint", def.getPrettyPrint(), "false");
         endElement(name);
     }
     protected void doWriteUniVocityAbstractDataFormatAttributes(UniVocityAbstractDataFormat def) throws IOException {
@@ -2711,7 +2830,7 @@ public class ModelWriter extends BaseWriter {
         startElement(name);
         doWriteIdentifiedTypeAttributes(def);
         doWriteAttribute("namespace", def.getNamespaceRef(), null);
-        doWriteAttribute("xmlCipherAlgorithm", def.getXmlCipherAlgorithm(), "AES-256-GCM");
+        doWriteAttribute("xmlCipherAlgorithm", def.getXmlCipherAlgorithm(), "AES_256_GCM");
         doWriteAttribute("passPhrase", def.getPassPhrase(), null);
         doWriteAttribute("passPhraseByte", toString(def.getPassPhraseByte()), null);
         doWriteAttribute("secureTag", def.getSecureTag(), null);
@@ -2822,14 +2941,6 @@ public class ModelWriter extends BaseWriter {
         doWriteDefaultErrorHandlerDefinitionElements(def);
         endElement(name);
     }
-    protected void doWriteCSimpleExpression(String name, CSimpleExpression def) throws IOException {
-        startElement(name);
-        doWriteTypedExpressionDefinitionAttributes(def);
-        doWriteAttribute("trimResult", def.getTrimResult(), "false");
-        doWriteAttribute("pretty", def.getPretty(), "false");
-        doWriteValue(def.getExpression());
-        endElement(name);
-    }
     protected void doWriteConstantExpression(String name, ConstantExpression def) throws IOException {
         startElement(name);
         doWriteTypedExpressionDefinitionAttributes(def);
@@ -2853,6 +2964,7 @@ public class ModelWriter extends BaseWriter {
     protected void doWriteExpressionDefinitionAttributes(ExpressionDefinition def) throws IOException {
         doWriteAttribute("id", def.getId(), null);
         doWriteAttribute("trim", def.getTrim(), "true");
+        doWriteAttribute("resolveResource", def.getResolveResource(), "false");
     }
     protected void doWriteExpressionDefinition(String name, ExpressionDefinition def) throws IOException {
         startElement(name);
@@ -2878,6 +2990,12 @@ public class ModelWriter extends BaseWriter {
         doWriteValue(def.getExpression());
         endElement(name);
     }
+    protected void doWriteJactlExpression(String name, JactlExpression def) throws IOException {
+        startElement(name);
+        doWriteTypedExpressionDefinitionAttributes(def);
+        doWriteValue(def.getExpression());
+        endElement(name);
+    }
     protected void doWriteJavaExpression(String name, JavaExpression def) throws IOException {
         startElement(name);
         doWriteTypedExpressionDefinitionAttributes(def);
@@ -2889,14 +3007,6 @@ public class ModelWriter extends BaseWriter {
     protected void doWriteJavaScriptExpression(String name, JavaScriptExpression def) throws IOException {
         startElement(name);
         doWriteTypedExpressionDefinitionAttributes(def);
-        doWriteValue(def.getExpression());
-        endElement(name);
-    }
-    protected void doWriteJoorExpression(String name, JoorExpression def) throws IOException {
-        startElement(name);
-        doWriteTypedExpressionDefinitionAttributes(def);
-        doWriteAttribute("preCompile", def.getPreCompile(), "true");
-        doWriteAttribute("singleQuotes", def.getSingleQuotes(), "true");
         doWriteValue(def.getExpression());
         endElement(name);
     }
@@ -2942,12 +3052,16 @@ public class ModelWriter extends BaseWriter {
         doWriteValue(def.getExpression());
         endElement(name);
     }
+    protected void doWriteNamespaceAwareExpressionAttributes(NamespaceAwareExpression def) throws IOException {
+        doWriteSingleInputTypedExpressionDefinitionAttributes(def);
+        doWriteAttribute("namespacesRef", def.getNamespacesRef(), null);
+    }
     protected void doWriteNamespaceAwareExpressionElements(NamespaceAwareExpression def) throws IOException {
         doWriteList(null, "namespace", def.getNamespace(), this::doWritePropertyDefinition);
     }
     protected void doWriteNamespaceAwareExpression(String name, NamespaceAwareExpression def) throws IOException {
         startElement(name);
-        doWriteSingleInputTypedExpressionDefinitionAttributes(def);
+        doWriteNamespaceAwareExpressionAttributes(def);
         doWriteValue(def.getExpression());
         doWriteNamespaceAwareExpressionElements(def);
         endElement(name);
@@ -2958,7 +3072,19 @@ public class ModelWriter extends BaseWriter {
         doWriteValue(def.getExpression());
         endElement(name);
     }
+    protected void doWritePython3Expression(String name, Python3Expression def) throws IOException {
+        startElement(name);
+        doWriteTypedExpressionDefinitionAttributes(def);
+        doWriteValue(def.getExpression());
+        endElement(name);
+    }
     protected void doWritePythonExpression(String name, PythonExpression def) throws IOException {
+        startElement(name);
+        doWriteTypedExpressionDefinitionAttributes(def);
+        doWriteValue(def.getExpression());
+        endElement(name);
+    }
+    protected void doWriteQuickjsExpression(String name, QuickjsExpression def) throws IOException {
         startElement(name);
         doWriteTypedExpressionDefinitionAttributes(def);
         doWriteValue(def.getExpression());
@@ -3035,7 +3161,7 @@ public class ModelWriter extends BaseWriter {
     }
     protected void doWriteXMLTokenizerExpression(String name, XMLTokenizerExpression def) throws IOException {
         startElement(name);
-        doWriteSingleInputTypedExpressionDefinitionAttributes(def);
+        doWriteNamespaceAwareExpressionAttributes(def);
         doWriteAttribute("mode", def.getMode(), "i");
         doWriteAttribute("group", def.getGroup(), null);
         doWriteValue(def.getExpression());
@@ -3044,7 +3170,7 @@ public class ModelWriter extends BaseWriter {
     }
     protected void doWriteXPathExpression(String name, XPathExpression def) throws IOException {
         startElement(name);
-        doWriteSingleInputTypedExpressionDefinitionAttributes(def);
+        doWriteNamespaceAwareExpressionAttributes(def);
         doWriteAttribute("documentType", def.getDocumentTypeName(), null);
         doWriteAttribute("resultQName", def.getResultQName(), "NODESET");
         doWriteAttribute("saxon", def.getSaxon(), null);
@@ -3059,7 +3185,7 @@ public class ModelWriter extends BaseWriter {
     }
     protected void doWriteXQueryExpression(String name, XQueryExpression def) throws IOException {
         startElement(name);
-        doWriteSingleInputTypedExpressionDefinitionAttributes(def);
+        doWriteNamespaceAwareExpressionAttributes(def);
         doWriteAttribute("configurationRef", def.getConfigurationRef(), null);
         doWriteValue(def.getExpression());
         doWriteNamespaceAwareExpressionElements(def);
@@ -3077,7 +3203,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("roundRobin", def.getRoundRobin(), null);
         doWriteAttribute("sticky", def.getSticky(), null);
         doWriteAttribute("maximumFailoverAttempts", def.getMaximumFailoverAttempts(), "-1");
-        doWriteAttribute("inheritErrorHandler", toString(def.getInheritErrorHandler()), "true");
+        doWriteAttribute("inheritErrorHandler", def.getInheritErrorHandler(), "true");
         doWriteList(null, "exception", def.getExceptions(), this::doWriteString);
         endElement(name);
     }
@@ -3171,6 +3297,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("apiContextPath", def.getApiContextPath(), null);
         doWriteAttribute("routeId", def.getRouteId(), null);
         doWriteAttribute("missingOperation", def.getMissingOperation(), "fail");
+        doWriteAttribute("unmatchedRequestHandling", def.getUnmatchedRequestHandling(), "platform");
         doWriteAttribute("mockIncludePattern", def.getMockIncludePattern(), "classpath:camel-mock/**");
         endElement(name);
     }
@@ -3186,7 +3313,7 @@ public class ModelWriter extends BaseWriter {
         doWriteAttribute("name", def.getName(), null);
         doWriteAttribute("type", toString(def.getType()), "path");
         doWriteAttribute("defaultValue", def.getDefaultValue(), null);
-        doWriteAttribute("required", toString(def.getRequired()), "true");
+        doWriteAttribute("required", def.getRequired(), "true");
         doWriteAttribute("collectionFormat", toString(def.getCollectionFormat()), "csv");
         doWriteAttribute("arrayType", def.getArrayType(), "string");
         doWriteAttribute("dataType", def.getDataType(), "string");
@@ -3468,6 +3595,8 @@ public class ModelWriter extends BaseWriter {
                 case "SwiftMxDataFormat" -> doWriteSwiftMxDataFormat("swiftMx", (SwiftMxDataFormat) v);
                 case "SyslogDataFormat" -> doWriteSyslogDataFormat("syslog", (SyslogDataFormat) v);
                 case "TarFileDataFormat" -> doWriteTarFileDataFormat("tarFile", (TarFileDataFormat) v);
+                case "ToonDataFormat" -> doWriteToonDataFormat("toon", (ToonDataFormat) v);
+                case "UblDataFormat" -> doWriteUblDataFormat("ubl", (UblDataFormat) v);
                 case "ThriftDataFormat" -> doWriteThriftDataFormat("thrift", (ThriftDataFormat) v);
                 case "UniVocityCsvDataFormat" -> doWriteUniVocityCsvDataFormat("univocityCsv", (UniVocityCsvDataFormat) v);
                 case "UniVocityFixedDataFormat" -> doWriteUniVocityFixedDataFormat("univocityFixed", (UniVocityFixedDataFormat) v);
@@ -3574,8 +3703,10 @@ public class ModelWriter extends BaseWriter {
     protected void doWriteOptionalIdentifiedDefinitionRef(String n, OptionalIdentifiedDefinition v) throws IOException {
         if (v != null) {
             switch (v.getClass().getSimpleName()) {
+                case "A2ASubTaskDefinition" -> doWriteA2ASubTaskDefinition("a2aSubTask", (A2ASubTaskDefinition) v);
                 case "AggregateDefinition" -> doWriteAggregateDefinition("aggregate", (AggregateDefinition) v);
                 case "BeanDefinition" -> doWriteBeanDefinition("bean", (BeanDefinition) v);
+                case "CacheDefinition" -> doWriteCacheDefinition("cache", (CacheDefinition) v);
                 case "CatchDefinition" -> doWriteCatchDefinition("doCatch", (CatchDefinition) v);
                 case "ChoiceDefinition" -> doWriteChoiceDefinition("choice", (ChoiceDefinition) v);
                 case "CircuitBreakerDefinition" -> doWriteCircuitBreakerDefinition("circuitBreaker", (CircuitBreakerDefinition) v);
@@ -3642,6 +3773,8 @@ public class ModelWriter extends BaseWriter {
                 case "SplitDefinition" -> doWriteSplitDefinition("split", (SplitDefinition) v);
                 case "StepDefinition" -> doWriteStepDefinition("step", (StepDefinition) v);
                 case "StopDefinition" -> doWriteStopDefinition("stop", (StopDefinition) v);
+                case "SwitchCaseDefinition" -> doWriteSwitchCaseDefinition("case", (SwitchCaseDefinition) v);
+                case "SwitchDefinition" -> doWriteSwitchDefinition("switch", (SwitchDefinition) v);
                 case "TemplatedRoutesDefinition" -> doWriteTemplatedRoutesDefinition("templatedRoutes", (TemplatedRoutesDefinition) v);
                 case "ThreadPoolProfileDefinition" -> doWriteThreadPoolProfileDefinition("threadPoolProfile", (ThreadPoolProfileDefinition) v);
                 case "ThreadsDefinition" -> doWriteThreadsDefinition("threads", (ThreadsDefinition) v);
@@ -3681,8 +3814,10 @@ public class ModelWriter extends BaseWriter {
     protected void doWriteProcessorDefinitionRef(String n, ProcessorDefinition v) throws IOException {
         if (v != null) {
             switch (v.getClass().getSimpleName()) {
+                case "A2ASubTaskDefinition" -> doWriteA2ASubTaskDefinition("a2aSubTask", (A2ASubTaskDefinition) v);
                 case "AggregateDefinition" -> doWriteAggregateDefinition("aggregate", (AggregateDefinition) v);
                 case "BeanDefinition" -> doWriteBeanDefinition("bean", (BeanDefinition) v);
+                case "CacheDefinition" -> doWriteCacheDefinition("cache", (CacheDefinition) v);
                 case "CatchDefinition" -> doWriteCatchDefinition("doCatch", (CatchDefinition) v);
                 case "ChoiceDefinition" -> doWriteChoiceDefinition("choice", (ChoiceDefinition) v);
                 case "CircuitBreakerDefinition" -> doWriteCircuitBreakerDefinition("circuitBreaker", (CircuitBreakerDefinition) v);
@@ -3738,6 +3873,7 @@ public class ModelWriter extends BaseWriter {
                 case "SplitDefinition" -> doWriteSplitDefinition("split", (SplitDefinition) v);
                 case "StepDefinition" -> doWriteStepDefinition("step", (StepDefinition) v);
                 case "StopDefinition" -> doWriteStopDefinition("stop", (StopDefinition) v);
+                case "SwitchDefinition" -> doWriteSwitchDefinition("switch", (SwitchDefinition) v);
                 case "ThreadsDefinition" -> doWriteThreadsDefinition("threads", (ThreadsDefinition) v);
                 case "ThrottleDefinition" -> doWriteThrottleDefinition("throttle", (ThrottleDefinition) v);
                 case "ThrowExceptionDefinition" -> doWriteThrowExceptionDefinition("throwException", (ThrowExceptionDefinition) v);
@@ -3813,7 +3949,6 @@ public class ModelWriter extends BaseWriter {
     protected void doWriteExpressionDefinitionRef(String n, ExpressionDefinition v) throws IOException {
         if (v != null) {
             switch (v.getClass().getSimpleName()) {
-                case "CSimpleExpression" -> doWriteCSimpleExpression("csimple", (CSimpleExpression) v);
                 case "ConstantExpression" -> doWriteConstantExpression("constant", (ConstantExpression) v);
                 case "DatasonnetExpression" -> doWriteDatasonnetExpression("datasonnet", (DatasonnetExpression) v);
                 case "ExchangePropertyExpression" -> doWriteExchangePropertyExpression("exchangeProperty", (ExchangePropertyExpression) v);
@@ -3821,16 +3956,18 @@ public class ModelWriter extends BaseWriter {
                 case "GroovyExpression" -> doWriteGroovyExpression("groovy", (GroovyExpression) v);
                 case "HeaderExpression" -> doWriteHeaderExpression("header", (HeaderExpression) v);
                 case "Hl7TerserExpression" -> doWriteHl7TerserExpression("hl7terser", (Hl7TerserExpression) v);
+                case "JactlExpression" -> doWriteJactlExpression("jactl", (JactlExpression) v);
                 case "JavaExpression" -> doWriteJavaExpression("java", (JavaExpression) v);
                 case "JavaScriptExpression" -> doWriteJavaScriptExpression("js", (JavaScriptExpression) v);
-                case "JoorExpression" -> doWriteJoorExpression("joor", (JoorExpression) v);
                 case "JqExpression" -> doWriteJqExpression("jq", (JqExpression) v);
                 case "JsonPathExpression" -> doWriteJsonPathExpression("jsonpath", (JsonPathExpression) v);
                 case "LanguageExpression" -> doWriteLanguageExpression("language", (LanguageExpression) v);
                 case "MethodCallExpression" -> doWriteMethodCallExpression("method", (MethodCallExpression) v);
                 case "MvelExpression" -> doWriteMvelExpression("mvel", (MvelExpression) v);
                 case "OgnlExpression" -> doWriteOgnlExpression("ognl", (OgnlExpression) v);
+                case "Python3Expression" -> doWritePython3Expression("python3", (Python3Expression) v);
                 case "PythonExpression" -> doWritePythonExpression("python", (PythonExpression) v);
+                case "QuickjsExpression" -> doWriteQuickjsExpression("quickjs", (QuickjsExpression) v);
                 case "RefExpression" -> doWriteRefExpression("ref", (RefExpression) v);
                 case "SimpleExpression" -> doWriteSimpleExpression("simple", (SimpleExpression) v);
                 case "SpELExpression" -> doWriteSpELExpression("spel", (SpELExpression) v);

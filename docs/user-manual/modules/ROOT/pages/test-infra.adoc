@@ -114,6 +114,7 @@ This registration is done in the `registerProperties` methods during the service
 
 Registering the properties in the concrete service implementation:
 
+._Java-only: registering service properties for test infrastructure_
 [source,java]
 ----
     public void registerProperties() {
@@ -171,14 +172,43 @@ Camel version when used outside the Camel Core project.
 
 On the test class, add a member variable for the service and annotate it with the `@RegisterExtension` to let JUnit manage its lifecycle.
 
+._Java-only: registering a test infrastructure service as a JUnit extension_
 [source,java]
 ----
 @RegisterExtension
-static MyService service = MyServiceServiceFactory.createService();
+static MyService service = MyServiceServiceFactory.createSingletonService();
 ----
+
+==== Singleton Services
+
+Most service factories provide a `createSingletonService()` method that returns a JVM-wide singleton instance.
+This is the **recommended** approach for integration tests. The singleton ensures that the Testcontainers service
+(or embedded service) is started only once per JVM and reused across all test classes, rather than starting a
+new container for each test class.
+
+Benefits of singleton services:
+
+* **Faster test execution** — containers start once and are reused, avoiding repeated startup overhead.
+* **Parallel test support** — when running tests in parallel (e.g., with https://github.com/apache/maven-mvnd[mvnd]),
+  singletons prevent multiple test classes from starting conflicting containers on the same ports.
+* **Lower resource usage** — a single container instance serves all test classes instead of each class managing its own.
+
+The singleton is backed by a lazy holder idiom and includes a JVM shutdown hook that stops the container when
+the JVM exits. JUnit's `@RegisterExtension` lifecycle calls to `shutdown()` are treated as no-ops on a
+singleton, so the service stays alive across test classes.
+
+[NOTE]
+====
+When using singleton services, tests must be careful about shared state. For example, use unique topic or
+queue names per test class, or clean up data between tests to avoid interference.
+====
+
+Use `createService()` only when a test genuinely needs its own isolated service instance (e.g., it reconfigures
+the container in a way that would break other tests).
 
 More complex test services can be created using something similar to:
 
+._Java-only: creating a complex test service with builder pattern_
 [source,java]
 ----
 @RegisterExtension
@@ -201,6 +231,7 @@ When using these properties in Spring XML files, you may use those properties.
 It's also possible to use these properties in the test code itself. For example, when setting up the test url for the
 Camel component:
 
+._Java-only: using test infrastructure properties in a Camel route_
 [source,java]
 ----
     protected RouteBuilder createRouteBuilder() throws Exception {
@@ -219,6 +250,7 @@ When combining the different modules of the test infra, you may need to ensure t
 
 For instance:
 
+._Java-only: controlling execution order of test extensions_
 [source,java]
 ----
     @Order(1)

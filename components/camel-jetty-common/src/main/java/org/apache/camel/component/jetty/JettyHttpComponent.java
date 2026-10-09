@@ -101,8 +101,8 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
     protected String sslKeyPassword;
     protected String sslPassword;
     protected String sslKeystore;
-    protected Map<Integer, Connector> sslSocketConnectors;
-    protected Map<Integer, Connector> socketConnectors;
+    protected Map<Integer, ServerConnector> sslSocketConnectors;
+    protected Map<Integer, ServerConnector> socketConnectors;
     protected Map<String, Object> sslSocketConnectorProperties;
     protected Map<String, Object> socketConnectorProperties;
     protected Integer minThreads;
@@ -135,11 +135,11 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
 
     static class ConnectorRef {
         final Server server;
-        final Connector connector;
+        final ServerConnector connector;
         final CamelServlet servlet;
         int refCount;
 
-        ConnectorRef(Server server, Connector connector, CamelServlet servlet) {
+        ConnectorRef(Server server, ServerConnector connector, CamelServlet servlet) {
             this.server = server;
             this.connector = connector;
             this.servlet = servlet;
@@ -156,6 +156,10 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
 
         public int getRefCount() {
             return refCount;
+        }
+
+        public ServerConnector getConnector() {
+            return connector;
         }
     }
 
@@ -197,6 +201,10 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
 
         // extract filterInit. parameters
         Map filterInitParameters = PropertiesHelper.extractProperties(parameters, "filterInit.");
+        if (Boolean.TRUE.equals(enableCors)) {
+            // has to happen before the map is handed to the endpoint below, which is skipped when it is empty
+            applyCorsDefaults(filterInitParameters);
+        }
 
         URI addressUri = new URI(UnsafeUriCharactersEncoder.encodeHttpURI(remaining));
         URI endpointUri = URISupport.createRemainingURI(addressUri, parameters);
@@ -338,7 +346,7 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
             throws Exception {
         if (connectorRef == null) {
             Server server = createServer();
-            Connector connector = getConnector(server, endpoint);
+            ServerConnector connector = getConnector(server, endpoint);
             if ("localhost".equalsIgnoreCase(endpoint.getHttpUri().getHost())) {
                 LOG.warn("You use localhost interface! It means that no external connections will be available. "
                          + "Don't you want to use 0.0.0.0 instead (all network interfaces)? {}",
@@ -408,16 +416,48 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
         }
     }
 
-    private void enableSessionSupport(Server server, String connectorKey) {
+    private void enableSessionSupport(Server server, String connectorKey) throws Exception {
         ServletContextHandler context = server.getDescendant(ServletContextHandler.class);
         if (context.getSessionHandler() == null) {
             SessionHandler sessionHandler = new SessionHandler();
             if (context.isStarted()) {
-                throw new IllegalStateException(
-                        "Server has already been started. Cannot enabled sessionSupport on " + connectorKey);
+                LOG.debug("Restarting Jetty server to enable session support on {}", connectorKey);
+                server.stop();
+                context.setSessionHandler(sessionHandler);
+                server.start();
             } else {
                 context.setSessionHandler(sessionHandler);
             }
+        }
+    }
+
+    /**
+     * Supplies the CORS defaults Camel wants, for the init parameters the operator did not set.
+     * <p>
+     * {@code new CrossOriginFilter()} with no init parameters takes Jetty's own defaults, which are
+     * {@code allowedOrigins=*} together with {@code allowCredentials=true}. Since the filter reflects the request's
+     * origin rather than sending {@code *}, that is the credentialed any-origin configuration the fetch specification
+     * refuses to express - reflection being the usual way around that rule. An option named "enable CORS" should not
+     * mean "every origin, with credentials".
+     * <p>
+     * Credentials therefore default to off. Reflection of the origin is left as it was, so enabling CORS keeps working
+     * for requests that carry no credentials; an operator who needs credentialed cross-origin requests sets
+     * {@code filterInit.allowCredentials=true} and is expected to name the origins in {@code filterInit.allowedOrigins}
+     * at the same time, which is warned about here if they do not.
+     */
+    @SuppressWarnings("unchecked")
+    private void applyCorsDefaults(Map<String, Object> filterInitParameters) {
+        Object configuredCredentials = filterInitParameters.get(CrossOriginFilter.ALLOW_CREDENTIALS_PARAM);
+        if (configuredCredentials == null) {
+            filterInitParameters.put(CrossOriginFilter.ALLOW_CREDENTIALS_PARAM, "false");
+            return;
+        }
+        Object configuredOrigins = filterInitParameters.get(CrossOriginFilter.ALLOWED_ORIGINS_PARAM);
+        if (Boolean.parseBoolean(configuredCredentials.toString())
+                && (configuredOrigins == null || "*".equals(configuredOrigins.toString().trim()))) {
+            LOG.warn("enableCORS is configured with {}=true and no specific {}."
+                     + " Every origin will be able to make credentialed cross-origin requests to this endpoint.",
+                    CrossOriginFilter.ALLOW_CREDENTIALS_PARAM, CrossOriginFilter.ALLOWED_ORIGINS_PARAM);
         }
     }
 
@@ -603,8 +643,8 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
         this.errorHandler = errorHandler;
     }
 
-    protected Connector getConnector(Server server, JettyHttpEndpoint endpoint) {
-        Connector connector;
+    protected ServerConnector getConnector(Server server, JettyHttpEndpoint endpoint) {
+        ServerConnector connector;
         if ("https".equals(endpoint.getProtocol())) {
             connector = getSslSocketConnector(server, endpoint);
         } else {
@@ -613,8 +653,8 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
         return connector;
     }
 
-    protected Connector getSocketConnector(Server server, JettyHttpEndpoint endpoint) {
-        Connector answer = null;
+    protected ServerConnector getSocketConnector(Server server, JettyHttpEndpoint endpoint) {
+        ServerConnector answer = null;
         if (socketConnectors != null) {
             answer = socketConnectors.get(endpoint.getPort());
         }
@@ -624,8 +664,8 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
         return answer;
     }
 
-    protected Connector getSslSocketConnector(Server server, JettyHttpEndpoint endpoint) {
-        Connector answer = null;
+    protected ServerConnector getSslSocketConnector(Server server, JettyHttpEndpoint endpoint) {
+        ServerConnector answer = null;
         if (sslSocketConnectors != null) {
             answer = sslSocketConnectors.get(endpoint.getPort());
         }
@@ -635,7 +675,7 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
         return answer;
     }
 
-    protected Connector createConnector(Server server, JettyHttpEndpoint endpoint) {
+    protected ServerConnector createConnector(Server server, JettyHttpEndpoint endpoint) {
 
         // now we just use the SelectChannelConnector as the default connector
         SslContextFactory.Server sslcf = null;
@@ -680,7 +720,7 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
         return createConnectorJettyInternal(server, endpoint, sslcf);
     }
 
-    protected abstract AbstractConnector createConnectorJettyInternal(
+    protected abstract ServerConnector createConnectorJettyInternal(
             Server server, JettyHttpEndpoint endpoint, SslContextFactory.Server sslcf);
 
     private SslContextFactory createSslContextFactory(SSLContextParameters ssl, boolean client)
@@ -742,7 +782,7 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
         return false;
     }
 
-    public Map<Integer, Connector> getSslSocketConnectors() {
+    public Map<Integer, ServerConnector> getSslSocketConnectors() {
         return sslSocketConnectors;
     }
 
@@ -750,7 +790,7 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
      * A map which contains per port number specific SSL connectors.
      */
     @Metadata(description = "A map which contains per port number specific SSL connectors.", label = "security")
-    public void setSslSocketConnectors(Map<Integer, Connector> connectors) {
+    public void setSslSocketConnectors(Map<Integer, ServerConnector> connectors) {
         sslSocketConnectors = connectors;
     }
 
@@ -759,11 +799,11 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
      */
     @Metadata(description = "A map which contains per port number specific HTTP connectors. Uses the same principle as sslSocketConnectors.",
               label = "security")
-    public void setSocketConnectors(Map<Integer, Connector> socketConnectors) {
+    public void setSocketConnectors(Map<Integer, ServerConnector> socketConnectors) {
         this.socketConnectors = socketConnectors;
     }
 
-    public Map<Integer, Connector> getSocketConnectors() {
+    public Map<Integer, ServerConnector> getSocketConnectors() {
         return socketConnectors;
     }
 
@@ -1448,4 +1488,11 @@ public abstract class JettyHttpComponent extends HttpCommonComponent
         }
     }
 
+    ServerConnector findServerConnector(JettyHttpEndpoint endpoint) {
+        var connectorRef = CONNECTORS.get(getConnectorKey(endpoint));
+        if (connectorRef != null) {
+            return connectorRef.getConnector();
+        }
+        return null;
+    }
 }

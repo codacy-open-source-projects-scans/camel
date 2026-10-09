@@ -9,7 +9,6 @@
 :component-header: Both producer and consumer are supported
 //Manually maintained attributes
 :group: Azure
-:camel-spring-boot-name: azure-servicebus
 
 *Since Camel {since}*
 
@@ -25,14 +24,14 @@ You must have a valid Windows Azure Storage account. More information is availab
 https://docs.microsoft.com/azure/[Azure Documentation Portal].
 
 [source,xml]
-------------------------------------------------------------
+----
 <dependency>
     <groupId>org.apache.camel</groupId>
     <artifactId>camel-azure-servicebus</artifactId>
     <version>x.x.x</version>
     <!-- use the same version as your Camel core version -->
 </dependency>
-------------------------------------------------------------
+----
 
 
 // component options: START
@@ -55,6 +54,22 @@ To use this component, you have three options to provide the required Azure auth
 *CONNECTION_STRING*:
 
 - Provide `connectionString` string it is the simplest option to get started.
+
+[IMPORTANT]
+====
+The `SharedAccessKey` part of a connection string is a Base64-encoded value that often contains characters with a
+special meaning in URIs (such as `+`, `/` or `=`). When the `connectionString` is configured directly in an endpoint
+URI (including the Endpoint DSL), wrap the value with `RAW()` so it is not URI-decoded, otherwise authentication
+fails with `status-code: 401 ... InvalidSignature: The token has an invalid signature`:
+
+[source,java]
+----
+from("azure-servicebus:myQueue?connectionString=RAW(Endpoint=sb://myhost.servicebus.windows.net/;SharedAccessKeyName=test;SharedAccessKey=aBc+dEf/123=)")
+    .to("mock:result");
+----
+
+See xref:manual::endpoint.adoc#_configuring_parameter_values_using_raw_values_such_as_passwords[Configuring parameter values using raw values] for more details.
+====
 
 *TOKEN_CREDENTIAL*:
 
@@ -89,8 +104,9 @@ In the consumer, the returned message body will be of type `String`.
 
 - `sendMessages`
 
+._Java-only: building a batch message list with a Processor_
 [source,java]
---------------------------------------------------------------------------------
+----
 from("direct:start")
   .process(exchange -> {
          final List<Object> inputBatch = new LinkedList<>();
@@ -103,10 +119,11 @@ from("direct:start")
        })
   .to("azure-servicebus:test//?connectionString=test")
   .to("mock:result");
---------------------------------------------------------------------------------
+----
 
+._Java-only: sending a batch message with a session ID_
 [source,java]
---------------------------------------------------------------------------------
+----
 from("direct:start")
   .process(exchange -> {
          final List<Object> inputBatch = new LinkedList<>();
@@ -119,13 +136,14 @@ from("direct:start")
        })
   .to("azure-servicebus:test//?connectionString=test&sessionId=123")
   .to("mock:result");
---------------------------------------------------------------------------------
+----
 
 
 - `scheduleMessages`
 
+._Java-only: scheduling messages with a Processor and ServiceBusConstants_
 [source,java]
---------------------------------------------------------------------------------
+----
 from("direct:start")
   .process(exchange -> {
          final List<Object> inputBatch = new LinkedList<>();
@@ -139,22 +157,86 @@ from("direct:start")
        })
   .to("azure-servicebus:test//?connectionString=test&producerOperation=scheduleMessages")
   .to("mock:result");
---------------------------------------------------------------------------------
+----
 
 - `receiveMessages`
 
+[tabs]
+====
+Java::
++
 [source,java]
---------------------------------------------------------------------------------
+----
 from("azure-servicebus:test//?connectionString=test")
   .log("${body}")
   .to("mock:result");
---------------------------------------------------------------------------------
+----
 
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="azure-servicebus:test//?connectionString=test"/>
+  <log message="${body}"/>
+  <to uri="mock:result"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: azure-servicebus:test//
+      parameters:
+        connectionString: test
+      steps:
+        - log:
+            message: "${body}"
+        - to:
+            uri: mock:result
+----
+====
+
+[tabs]
+====
+Java::
++
 [source,java]
---------------------------------------------------------------------------------
+----
 from("azure-servicebus:test//?connectionString=test&sessionEnabled=true")
   .log("${body}")
   .to("mock:result");
---------------------------------------------------------------------------------
+----
 
-include::spring-boot:partial$starter.adoc[]
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="azure-servicebus:test//?connectionString=test&amp;sessionEnabled=true"/>
+  <log message="${body}"/>
+  <to uri="mock:result"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: azure-servicebus:test//
+      parameters:
+        connectionString: test
+        sessionEnabled: true
+      steps:
+        - log:
+            message: "${body}"
+        - to:
+            uri: mock:result
+----
+====
+

@@ -23,6 +23,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.health.HealthCheck;
 import org.apache.camel.health.HealthCheckHelper;
 import org.apache.camel.health.WritableHealthCheckRepository;
@@ -183,11 +184,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.associateFaces(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Associate Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Associate Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "associateFaces operation requires AssociateFacesRequest in POJO mode");
             }
         } else {
             AssociateFacesRequest.Builder builder = AssociateFacesRequest.builder();
@@ -216,7 +220,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.associateFaces(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Associate Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Associate Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -232,11 +236,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.compareFaces(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Compare Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Compare Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "compareFaces operation requires CompareFacesRequest in POJO mode");
             }
         } else {
             CompareFacesRequest.Builder builder = CompareFacesRequest.builder();
@@ -260,7 +267,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.compareFaces(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Compare Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Compare Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -276,11 +283,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.createCollection(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create Collection command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create Collection command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createCollection operation requires CreateCollectionRequest in POJO mode");
             }
         } else {
             CreateCollectionRequest.Builder builder = CreateCollectionRequest.builder();
@@ -292,7 +302,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.createCollection(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create Collection command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create Collection command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -308,11 +318,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.createUser(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create User command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create User command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createUser operation requires CreateUserRequest in POJO mode");
             }
         } else {
             CreateUserRequest.Builder builder = CreateUserRequest.builder();
@@ -333,7 +346,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.createUser(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create User command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create User command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -349,11 +362,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.deleteCollection(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete Collection command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete Collection command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteCollection operation requires DeleteCollectionRequest in POJO mode");
             }
         } else {
             DeleteCollectionRequest.Builder builder = DeleteCollectionRequest.builder();
@@ -365,7 +381,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.deleteCollection(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete Collection command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete Collection command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -381,11 +397,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.deleteFaces(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteFaces operation requires DeleteFacesRequest in POJO mode");
             }
         } else {
             DeleteFacesRequest.Builder builder = DeleteFacesRequest.builder();
@@ -401,7 +420,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.deleteFaces(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -417,11 +436,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.deleteUser(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete User command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete User command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteUser operation requires DeleteUserRequest in POJO mode");
             }
         } else {
             DeleteUserRequest.Builder builder = DeleteUserRequest.builder();
@@ -442,7 +464,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.deleteUser(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete User command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete User command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -458,11 +480,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.describeCollection(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Collection command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Collection command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeCollection operation requires DescribeCollectionRequest in POJO mode");
             }
         } else {
             DescribeCollectionRequest.Builder builder = DescribeCollectionRequest.builder();
@@ -474,7 +499,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.describeCollection(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Collection command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Collection command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -490,11 +515,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.detectFaces(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "detectFaces operation requires DetectFacesRequest in POJO mode");
             }
         } else {
             DetectFacesRequest.Builder builder = DetectFacesRequest.builder();
@@ -510,7 +538,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.detectFaces(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -526,11 +554,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.detectLabels(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Labels command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Labels command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "detectLabels operation requires DetectLabelsRequest in POJO mode");
             }
         } else {
             DetectLabelsRequest.Builder builder = DetectLabelsRequest.builder();
@@ -560,7 +591,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.detectLabels(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Labels command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Labels command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -576,11 +607,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.detectModerationLabels(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Moderation Labels command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Moderation Labels command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "detectModerationLabels operation requires DetectModerationLabelsRequest in POJO mode");
             }
         } else {
             DetectModerationLabelsRequest.Builder builder = DetectModerationLabelsRequest.builder();
@@ -605,7 +639,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.detectModerationLabels(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Moderation Labels command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Moderation Labels command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -628,6 +662,9 @@ public class Rekognition2Producer extends DefaultProducer {
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "detectProtectiveEquipment operation requires DetectProtectiveEquipmentRequest in POJO mode");
             }
         } else {
             DetectProtectiveEquipmentRequest.Builder builder = DetectProtectiveEquipmentRequest.builder();
@@ -646,7 +683,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.detectProtectiveEquipment(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Protective Equipment command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Protective Equipment command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -662,11 +699,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.detectText(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Text command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Text command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "detectText operation requires DetectTextRequest in POJO mode");
             }
         } else {
             DetectTextRequest.Builder builder = DetectTextRequest.builder();
@@ -683,7 +723,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.detectText(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Text command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Text command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -699,11 +739,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.disassociateFaces(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Disassociate Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Disassociate Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "disassociateFaces operation requires DisassociateFacesRequest in POJO mode");
             }
         } else {
             DisassociateFacesRequest.Builder builder = DisassociateFacesRequest.builder();
@@ -728,7 +771,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.disassociateFaces(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Disassociate Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Disassociate Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -744,11 +787,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.getCelebrityInfo(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Celebrity Info command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Celebrity Info command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getCelebrityInfo operation requires GetCelebrityInfoRequest in POJO mode");
             }
         } else {
             GetCelebrityInfoRequest.Builder builder = GetCelebrityInfoRequest.builder();
@@ -760,7 +806,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.getCelebrityInfo(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Celebrity Info command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Celebrity Info command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -776,11 +822,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.getMediaAnalysisJob(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Media Analysis Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Media Analysis Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getMediaAnalysisJob operation requires GetMediaAnalysisJobRequest in POJO mode");
             }
         } else {
             GetMediaAnalysisJobRequest.Builder builder = GetMediaAnalysisJobRequest.builder();
@@ -792,7 +841,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.getMediaAnalysisJob(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Media Analysis Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Media Analysis Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -808,11 +857,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.indexFaces(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Index Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Index Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "indexFaces operation requires IndexFacesRequest in POJO mode");
             }
         } else {
             IndexFacesRequest.Builder builder = IndexFacesRequest.builder();
@@ -845,7 +897,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.indexFaces(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Index Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Index Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -861,11 +913,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.listCollections(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Collections command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Collections command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listCollections operation requires ListCollectionsRequest in POJO mode");
             }
         } else {
             ListCollectionsRequest.Builder builder = ListCollectionsRequest.builder();
@@ -881,7 +936,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.listCollections(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Collections command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Collections command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -897,11 +952,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.listMediaAnalysisJobs(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Media Analysis Jobs command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Media Analysis Jobs command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listMediaAnalysisJobs operation requires ListMediaAnalysisJobsRequest in POJO mode");
             }
         } else {
             ListMediaAnalysisJobsRequest.Builder builder = ListMediaAnalysisJobsRequest.builder();
@@ -917,7 +975,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.listMediaAnalysisJobs(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Media Analysis Jobs command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Media Analysis Jobs command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -933,11 +991,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.listFaces(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listFaces operation requires ListFacesRequest in POJO mode");
             }
         } else {
             ListFacesRequest.Builder builder = ListFacesRequest.builder();
@@ -965,7 +1026,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.listFaces(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -981,11 +1042,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.listUsers(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Users command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Users command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listUsers operation requires ListUsersRequest in POJO mode");
             }
         } else {
             ListUsersRequest.Builder builder = ListUsersRequest.builder();
@@ -1005,7 +1069,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.listUsers(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Users command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Users command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -1021,11 +1085,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.recognizeCelebrities(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Recognize Celebrities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Recognize Celebrities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "recognizeCelebrities operation requires RecognizeCelebritiesRequest in POJO mode");
             }
         } else {
             RecognizeCelebritiesRequest.Builder builder = RecognizeCelebritiesRequest.builder();
@@ -1037,7 +1104,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.recognizeCelebrities(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Recognize Celebrities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Recognize Celebrities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -1053,11 +1120,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.searchFaces(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Search Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Search Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "searchFaces operation requires SearchFacesRequest in POJO mode");
             }
         } else {
             SearchFacesRequest.Builder builder = SearchFacesRequest.builder();
@@ -1081,7 +1151,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.searchFaces(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Search Faces command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Search Faces command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -1097,11 +1167,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.searchFacesByImage(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Search Faces By Image command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Search Faces By Image command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "searchFacesByImage operation requires SearchFacesByImageRequest in POJO mode");
             }
         } else {
             SearchFacesByImageRequest.Builder builder = SearchFacesByImageRequest.builder();
@@ -1129,7 +1202,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.searchFacesByImage(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Search Faces By Image command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Search Faces By Image command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -1145,11 +1218,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.searchUsers(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Search Users command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Search Users command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "searchUsers operation requires SearchUsersRequest in POJO mode");
             }
         } else {
             SearchUsersRequest.Builder builder = SearchUsersRequest.builder();
@@ -1177,7 +1253,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.searchUsers(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Search Users command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Search Users command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -1193,11 +1269,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.searchUsersByImage(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Search Users By Image command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Search Users By Image command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "searchUsersByImage operation requires SearchUsersByImageRequest in POJO mode");
             }
         } else {
             SearchUsersByImageRequest.Builder builder = SearchUsersByImageRequest.builder();
@@ -1225,7 +1304,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.searchUsersByImage(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Search Users By Image command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Search Users By Image command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -1241,11 +1320,14 @@ public class Rekognition2Producer extends DefaultProducer {
                 try {
                     result = rekognitionClient.startMediaAnalysisJob(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Start Media Analysis Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Start Media Analysis Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "startMediaAnalysisJob operation requires StartMediaAnalysisJobRequest in POJO mode");
             }
         } else {
             StartMediaAnalysisJobRequest.Builder builder = StartMediaAnalysisJobRequest.builder();
@@ -1280,7 +1362,7 @@ public class Rekognition2Producer extends DefaultProducer {
             try {
                 result = rekognitionClient.startMediaAnalysisJob(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Start Media Analysis Job command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Start Media Analysis Job command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);

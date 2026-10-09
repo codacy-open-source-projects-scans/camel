@@ -23,10 +23,13 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.RedisServerCommands;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.SetOperations;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,6 +47,8 @@ public class SpringRedisIdempotentRepositoryTest {
     private RedisConnection redisConnection;
     @Mock
     private SetOperations<String, String> setOperations;
+    @Mock
+    private RedisServerCommands redisServerCommands;
 
     private SpringRedisIdempotentRepository idempotentRepository;
 
@@ -52,6 +57,7 @@ public class SpringRedisIdempotentRepositoryTest {
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
         when(redisTemplate.getConnectionFactory()).thenReturn(redisConnectionFactory);
         when(redisTemplate.getConnectionFactory().getConnection()).thenReturn(redisConnection);
+        when(redisConnection.serverCommands()).thenReturn(redisServerCommands);
         idempotentRepository = SpringRedisIdempotentRepository.redisIdempotentRepository(redisTemplate, REPOSITORY);
     }
 
@@ -59,6 +65,21 @@ public class SpringRedisIdempotentRepositoryTest {
     public void shouldAddKey() {
         idempotentRepository.add(KEY);
         verify(setOperations).add(REPOSITORY, KEY);
+    }
+
+    @Test
+    public void shouldReturnTrueWhenKeyIsAdded() {
+        when(setOperations.add(REPOSITORY, KEY)).thenReturn(1L);
+
+        assertTrue(idempotentRepository.add(KEY));
+    }
+
+    @Test
+    public void shouldReturnFalseWhenKeyIsAlreadyInTheSet() {
+        // another consumer added the key already: SADD adds nothing
+        when(setOperations.add(REPOSITORY, KEY)).thenReturn(0L);
+
+        assertFalse(idempotentRepository.add(KEY));
     }
 
     @Test
@@ -74,9 +95,32 @@ public class SpringRedisIdempotentRepositoryTest {
     }
 
     @Test
+    public void shouldReturnTrueWhenKeyIsRemoved() {
+        when(setOperations.remove(REPOSITORY, KEY)).thenReturn(1L);
+
+        assertTrue(idempotentRepository.remove(KEY));
+    }
+
+    @Test
+    public void shouldReturnFalseWhenKeyIsNotInTheSet() {
+        // SREM removes nothing
+        when(setOperations.remove(REPOSITORY, KEY)).thenReturn(0L);
+
+        assertFalse(idempotentRepository.remove(KEY));
+    }
+
+    @Test
+    public void shouldReturnFalseWhenRemoveHasNoResult() {
+        // Spring Data Redis returns null inside a pipeline or a transaction
+        when(setOperations.remove(REPOSITORY, KEY)).thenReturn(null);
+
+        assertFalse(idempotentRepository.remove(KEY));
+    }
+
+    @Test
     public void shouldClearRepository() {
         idempotentRepository.clear();
-        verify(redisConnection).flushDb();
+        verify(redisConnection.serverCommands()).flushDb();
     }
 
     @Test

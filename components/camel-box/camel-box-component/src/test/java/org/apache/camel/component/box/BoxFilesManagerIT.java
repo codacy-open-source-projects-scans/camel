@@ -18,6 +18,9 @@ package org.apache.camel.component.box;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URL;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -25,6 +28,7 @@ import com.box.sdk.BoxAPIConnection;
 import com.box.sdk.BoxAPIException;
 import com.box.sdk.BoxFile;
 import com.box.sdk.BoxFile.ThumbnailFileType;
+import com.box.sdk.BoxFileVersion;
 import com.box.sdk.BoxFolder;
 import com.box.sdk.BoxSharedLink;
 import com.box.sdk.Metadata;
@@ -50,7 +54,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 @EnabledIf(value = "org.apache.camel.component.box.AbstractBoxITSupport#hasCredentials",
            disabledReason = "Box credentials were not provided")
-public class BoxFilesManagerIT extends AbstractBoxITSupport {
+class BoxFilesManagerIT extends AbstractBoxITSupport {
 
     private static final Logger LOG = LoggerFactory.getLogger(BoxFilesManagerIT.class);
     private static final String PATH_PREFIX = BoxApiCollection.getCollection()
@@ -66,7 +70,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
 
     @Test
     public void testCopyFile() {
-        com.box.sdk.BoxFile result = null;
+        BoxFile result = null;
 
         try {
             final Map<String, Object> headers = new HashMap<>();
@@ -102,7 +106,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
         // parameter type is String
         headers.put("CamelBox.typeName", null);
 
-        final com.box.sdk.Metadata result = requestBodyAndHeaders("direct://CREATEFILEMETADATA", null, headers);
+        final Metadata result = requestBodyAndHeaders("direct://CREATEFILEMETADATA", null, headers);
 
         assertNotNull(result, "createFileMetadata result");
         assertEquals("bar", result.getString("/foo"), "createFileMetadata result");
@@ -121,16 +125,27 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
         // parameter type is com.box.sdk.BoxSharedLink.Permissions
         headers.put("CamelBox.permissions", null);
 
-        final com.box.sdk.BoxSharedLink result = requestBodyAndHeaders("direct://CREATEFILESHAREDLINK", null, headers);
+        final BoxSharedLink result = requestBodyAndHeaders("direct://CREATEFILESHAREDLINK", null, headers);
 
         assertNotNull(result, "createFileSharedLink result");
         LOG.debug("createFileSharedLink: {}", result);
     }
 
     @Test
-    public void testDeleteFile() {
+    void testDeleteFile() {
+        assertNotNull(testFile.getID(), "test file should have an ID before deletion");
         // using String message body for single parameter "fileId"
         requestBody("direct://DELETEFILE", testFile.getID());
+
+        // Verify the file no longer exists (same pattern as testDeleteFileMetadata)
+        try {
+            testFile.getInfo();
+        } catch (BoxAPIException e) {
+            if (e.getResponseCode() == 404) {
+                return;
+            }
+        }
+        fail("deleteFile file still accessible");
     }
 
     @Test
@@ -183,7 +198,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
         // parameter type is com.box.sdk.ProgressListener
         headers.put("CamelBox.listener", null);
 
-        final java.io.OutputStream result = requestBodyAndHeaders("direct://DOWNLOADFILE", null, headers);
+        final OutputStream result = requestBodyAndHeaders("direct://DOWNLOADFILE", null, headers);
 
         assertNotNull(result, "downloadFile result");
         LOG.debug("downloadFile: {}", result);
@@ -203,7 +218,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
         // parameter type is com.box.sdk.ProgressListener
         headers.put("CamelBox.listener", null);
 
-        final java.io.OutputStream result = requestBodyAndHeaders("direct://DOWNLOADPREVIOUSFILEVERSION", null,
+        final OutputStream result = requestBodyAndHeaders("direct://DOWNLOADPREVIOUSFILEVERSION", null,
                 headers);
 
         assertNotNull(result, "downloadPreviousFileVersion result");
@@ -213,7 +228,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
     @Test
     public void testGetDownloadURL() {
         // using String message body for single parameter "fileId"
-        final java.net.URL result = requestBody("direct://GETDOWNLOADURL", testFile.getID());
+        final URL result = requestBody("direct://GETDOWNLOADURL", testFile.getID());
 
         assertNotNull(result, "getDownloadURL result");
         LOG.debug("getDownloadURL: {}", result);
@@ -227,7 +242,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
         // parameter type is String[]
         headers.put("CamelBox.fields", null);
 
-        final com.box.sdk.BoxFile.Info result = requestBodyAndHeaders("direct://GETFILEINFO", null, headers);
+        final BoxFile.Info result = requestBodyAndHeaders("direct://GETFILEINFO", null, headers);
 
         assertNotNull(result, "getFileInfo result");
         LOG.debug("getFileInfo: {}", result);
@@ -243,7 +258,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
         // parameter type is String
         headers.put("CamelBox.typeName", null);
 
-        final com.box.sdk.Metadata result = requestBodyAndHeaders("direct://GETFILEMETADATA", null, headers);
+        final Metadata result = requestBodyAndHeaders("direct://GETFILEMETADATA", null, headers);
 
         assertNotNull(result, "getFileMetadata result");
         LOG.debug("getFileMetadata: {}", result);
@@ -252,7 +267,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
     @Test
     public void testGetFilePreviewLink() {
         // using String message body for single parameter "fileId"
-        final java.net.URL result = requestBody("direct://GETFILEPREVIEWLINK", testFile.getID());
+        final URL result = requestBody("direct://GETFILEPREVIEWLINK", testFile.getID());
 
         assertNotNull(result, "getFilePreviewLink result");
         LOG.debug("getFilePreviewLink: {}", result);
@@ -284,7 +299,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
     public void testGetFileVersions() {
         // using String message body for single parameter "fileId"
         @SuppressWarnings("rawtypes")
-        final java.util.Collection result = requestBody("direct://GETFILEVERSIONS", testFile.getID());
+        final Collection result = requestBody("direct://GETFILEVERSIONS", testFile.getID());
 
         assertNotNull(result, "getFileVersions result");
         LOG.debug("getFileVersions: {}", result);
@@ -292,7 +307,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
 
     @Test
     public void testMoveFile() {
-        com.box.sdk.BoxFile result = null;
+        BoxFile result = null;
 
         try {
             final Map<String, Object> headers = new HashMap<>();
@@ -326,7 +341,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
         // parameter type is Integer
         headers.put("CamelBox.version", 1);
 
-        final com.box.sdk.BoxFileVersion result = requestBodyAndHeaders("direct://PROMOTEFILEVERSION", null, headers);
+        final BoxFileVersion result = requestBodyAndHeaders("direct://PROMOTEFILEVERSION", null, headers);
 
         assertNotNull(result, "promoteFileVersion result");
         LOG.debug("promoteFileVersion: {}", result);
@@ -335,7 +350,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
     @Test
     public void testRenameFile() {
 
-        com.box.sdk.BoxFile result = null;
+        BoxFile result = null;
 
         try {
             final Map<String, Object> headers = new HashMap<>();
@@ -367,7 +382,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
         // parameter type is com.box.sdk.BoxFile.Info
         headers.put("CamelBox.info", info);
 
-        final com.box.sdk.BoxFile result = requestBodyAndHeaders("direct://UPDATEFILEINFO", null, headers);
+        final BoxFile result = requestBodyAndHeaders("direct://UPDATEFILEINFO", null, headers);
 
         assertNotNull(result, "updateFileInfo result");
         assertEquals(CAMEL_TEST_FILE_DESCRIPTION, result.getInfo().getDescription(), "updateFileInfo info");
@@ -388,7 +403,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
         //metada has to contain some value, otherwise response result will be error code 400
         metadata.add("/foo", "bar");
 
-        final com.box.sdk.Metadata result = requestBodyAndHeaders("direct://UPDATEFILEMETADATA", null, headers);
+        final Metadata result = requestBodyAndHeaders("direct://UPDATEFILEMETADATA", null, headers);
 
         assertNotNull(result, "updateFileMetadata result");
         assertNotNull(result.getString("/foo"), "updateFileMetadata property foo");
@@ -398,7 +413,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
 
     @Test
     public void testUploadFile() {
-        com.box.sdk.BoxFile result = null;
+        BoxFile result = null;
 
         try {
             final Map<String, Object> headers = new HashMap<>();
@@ -426,7 +441,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
 
     @Test
     public void testUploadOverwriteFile() {
-        com.box.sdk.BoxFile result = null;
+        BoxFile result = null;
 
         try {
             final Map<String, Object> headers = new HashMap<String, Object>();
@@ -455,7 +470,7 @@ public class BoxFilesManagerIT extends AbstractBoxITSupport {
 
     @Test
     public void testUploadNewFileVersion() {
-        com.box.sdk.BoxFile result = null;
+        BoxFile result = null;
 
         try {
             final Map<String, Object> headers = new HashMap<>();

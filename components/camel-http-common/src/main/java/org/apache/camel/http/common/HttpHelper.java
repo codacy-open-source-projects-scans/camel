@@ -18,6 +18,7 @@ package org.apache.camel.http.common;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
@@ -32,16 +33,20 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
-import org.apache.camel.RuntimeExchangeException;
 import org.apache.camel.converter.stream.CachedOutputStream;
 import org.apache.camel.support.CamelObjectInputStream;
+import org.apache.camel.support.DeserializationFilterHelper;
 import org.apache.camel.support.http.HttpUtil;
 import org.apache.camel.util.CollectionHelper;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.URISupport;
 import org.apache.camel.util.UnsafeUriCharactersEncoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class HttpHelper {
+
+    private static final Logger LOG = LoggerFactory.getLogger(HttpHelper.class);
 
     private HttpHelper() {
         // Helper class
@@ -112,12 +117,31 @@ public final class HttpHelper {
      */
     public static Object deserializeJavaObjectFromStream(InputStream is, CamelContext context)
             throws ClassNotFoundException, IOException {
+        return deserializeJavaObjectFromStream(is, context, null);
+    }
+
+    /**
+     * Deserializes the input stream to a Java object, applying an {@link ObjectInputFilter} as a defense-in-depth
+     * measure against unsafe deserialization.
+     *
+     * @param  is                     input stream for the Java object
+     * @param  context                the camel context which could help us to apply the customer classloader
+     * @param  deserializationFilter  an {@link ObjectInputFilter} pattern (same syntax as {@code jdk.serialFilter}) to
+     *                                apply; when {@code null} or blank the JVM-wide {@code jdk.serialFilter} is used if
+     *                                present, otherwise
+     *                                {@link DeserializationFilterHelper#DEFAULT_DESERIALIZATION_FILTER} is applied
+     * @return                        the java object, or <tt>null</tt> if input stream was <tt>null</tt>
+     * @throws ClassNotFoundException is thrown if class not found
+     * @throws IOException            can be thrown
+     */
+    public static Object deserializeJavaObjectFromStream(InputStream is, CamelContext context, String deserializationFilter)
+            throws ClassNotFoundException, IOException {
         if (is == null) {
             return null;
         }
 
         Object answer;
-        ObjectInputStream ois = new CamelObjectInputStream(is, context);
+        ObjectInputStream ois = new CamelObjectInputStream(is, context, deserializationFilter);
         try {
             answer = ois.readObject();
         } finally {
@@ -186,12 +210,9 @@ public final class HttpHelper {
             uri = endpoint.getHttpUri().toASCIIString();
         }
 
-        // resolve placeholders in uri
-        try {
-            uri = exchange.getContext().resolvePropertyPlaceholders(uri);
-        } catch (Exception e) {
-            throw new RuntimeExchangeException("Cannot resolve property placeholders with uri: " + uri, exchange, e);
-        }
+        // NOTE: no placeholder resolution here. When uri came from the endpoint it was already resolved at
+        // build time, and when it came from the CamelHttpUri header it carries message content
+        // (see CAMEL-24282 / CAMEL-24418)
 
         // append HTTP_PATH to HTTP_URI if it is provided in the header
         String path = exchange.getIn().getHeader(Exchange.HTTP_PATH, String.class);
@@ -306,12 +327,8 @@ public final class HttpHelper {
         String queryString = exchange.getIn().getHeader(Exchange.HTTP_QUERY, String.class);
         // We need also check the HTTP_URI header query part
         String uriString = exchange.getIn().getHeader(Exchange.HTTP_URI, String.class);
-        // resolve placeholders in uriString
-        try {
-            uriString = exchange.getContext().resolvePropertyPlaceholders(uriString);
-        } catch (Exception e) {
-            throw new RuntimeExchangeException("Cannot resolve property placeholders with uri: " + uriString, exchange, e);
-        }
+        // NOTE: property placeholders are resolved at build time on the endpoint uri written in the route,
+        // never on this header value, which carries message content (see CAMEL-24282 / CAMEL-24418)
         if (uriString != null) {
             // in case the URI string contains unsafe characters
             uriString = UnsafeUriCharactersEncoder.encodeHttpURI(uriString);

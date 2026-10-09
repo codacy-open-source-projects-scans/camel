@@ -26,18 +26,24 @@ import org.apache.camel.spi.Metadata;
 /**
  * A route template parameter
  */
-@Metadata(label = "configuration")
+@Metadata(label = "configuration",
+          description = "Defines a parameter for a route template, with an optional default value and description")
 @XmlRootElement(name = "templateParameter")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class RouteTemplateParameterDefinition {
 
     @XmlAttribute(required = true)
+    @Metadata(description = "The name of the template parameter.")
     String name;
     @XmlAttribute
-    Boolean required;
+    @Metadata(description = "Whether this template parameter is required. A required parameter must have a value provided when creating a route from the template.",
+              javaType = "java.lang.Boolean")
+    String required;
     @XmlAttribute
+    @Metadata(description = "The default value of the template parameter. Used when no explicit value is provided when creating a route from the template.")
     String defaultValue;
     @XmlAttribute
+    @Metadata(description = "Description of the template parameter for documentation purposes.")
     String description;
 
     public RouteTemplateParameterDefinition() {
@@ -49,31 +55,31 @@ public class RouteTemplateParameterDefinition {
         this.defaultValue = defaultValue;
     }
 
+    /**
+     * Whether this template parameter is required, assuming required unless explicitly set to false.
+     * <p>
+     * Note that this does not resolve property placeholders; use
+     * {@code CamelContextHelper.parseBoolean(camelContext, getRequired())} where a
+     * {@link org.apache.camel.CamelContext} is available.
+     */
     public boolean isRequired() {
         // assumed to be required if not set explicit to false
-        return required == null || required;
+        return required == null || !"false".equalsIgnoreCase(required);
     }
 
     public String getName() {
         return name;
     }
 
-    /**
-     * The name of the parameter
-     */
     public void setName(String name) {
         this.name = name;
     }
 
-    public Boolean getRequired() {
+    public String getRequired() {
         return required;
     }
 
-    /**
-     * Whether the parameter is required or not. A parameter is required unless this option is set to false or a default
-     * value has been configured.
-     */
-    public void setRequired(Boolean required) {
+    public void setRequired(String required) {
         this.required = required;
     }
 
@@ -81,9 +87,6 @@ public class RouteTemplateParameterDefinition {
         return defaultValue;
     }
 
-    /**
-     * Default value of the parameter. If a default value is provided then the parameter is implied not to be required.
-     */
     public void setDefaultValue(String defaultValue) {
         this.defaultValue = defaultValue;
     }
@@ -92,9 +95,6 @@ public class RouteTemplateParameterDefinition {
         return description;
     }
 
-    /**
-     * Description of the parameter
-     */
     public void setDescription(String description) {
         this.description = description;
     }

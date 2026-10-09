@@ -37,6 +37,7 @@ import org.apache.camel.language.simple.types.SimpleParserException;
 import org.apache.camel.language.simple.types.SimpleToken;
 import org.apache.camel.language.simple.types.SimpleTokenType;
 import org.apache.camel.language.simple.types.TokenType;
+import org.apache.camel.language.simple.types.UnaryOperatorType;
 
 /**
  * Base class for Simple language parser.
@@ -45,16 +46,6 @@ import org.apache.camel.language.simple.types.TokenType;
  * descent parser</a>.
  */
 public abstract class BaseSimpleParser {
-
-    /**
-     * Marker used for start of generated code for csimple
-     */
-    public static final String CODE_START = "\"@@code[[";
-
-    /**
-     * Marker used for end of generated code for csimple
-     */
-    public static final String CODE_END = "]]code@@\"";
 
     protected final CamelContext camelContext;
     protected String expression;
@@ -208,10 +199,23 @@ public abstract class BaseSimpleParser {
     protected void prepareUnaryExpressions(List<SimpleNode> nodes) {
         Deque<SimpleNode> stack = new ArrayDeque<>();
 
+        UnaryExpression pending = null;
         for (SimpleNode node : nodes) {
+            if (pending != null) {
+                // a prefix operator works on the node that follows it (CAMEL-24984)
+                pending.acceptRight(node);
+                pending = null;
+                continue;
+            }
             if (node instanceof UnaryExpression token) {
                 // remember the logical operator
                 String operator = token.getOperator().toString();
+
+                if (token.getOperator() == UnaryOperatorType.NOT) {
+                    pending = token;
+                    stack.push(node);
+                    continue;
+                }
 
                 SimpleNode previous = stack.isEmpty() ? null : stack.pop();
                 if (previous == null) {
@@ -222,6 +226,10 @@ public abstract class BaseSimpleParser {
                 }
             }
             stack.push(node);
+        }
+        if (pending != null) {
+            throw new SimpleParserException(
+                    "Unary operator ! has no token to negate on its right hand side", pending.getToken().getIndex());
         }
 
         // replace nodes from the stack
@@ -479,11 +487,23 @@ public abstract class BaseSimpleParser {
             return;
         } else if (token == null) {
             // use the previous index as that is where the problem is
+            if (expect == TokenType.functionEnd) {
+                throw new SimpleParserException(
+                        "expected symbol " + expect + " but reached eol: missing } to close the function", previousIndex);
+            }
             throw new SimpleParserException("expected symbol " + expect + " but reached eol", previousIndex);
         } else {
             // use the previous index as that is where the problem is
+            String hint = "";
+            if (expect == TokenType.functionEnd && token.getType().isEol()) {
+                hint = ": missing } to close the function";
+            } else if (expect == TokenType.whiteSpace && token.getType().getType() == TokenType.singleQuote) {
+                hint = ": a literal that contains a single quote must be written with double quotes, e.g. \"it's\"";
+            } else if (expect == TokenType.whiteSpace) {
+                hint = ": operators and values must be separated by a space";
+            }
             throw new SimpleParserException(
-                    "expected symbol " + expect + " but was " + token.getType().getType(), previousIndex);
+                    "expected symbol " + expect + " but was " + token.getType().getType() + hint, previousIndex);
         }
     }
 

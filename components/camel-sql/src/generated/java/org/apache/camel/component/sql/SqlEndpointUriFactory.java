@@ -21,10 +21,12 @@ public class SqlEndpointUriFactory extends org.apache.camel.support.component.En
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(49);
+        Set<String> props = new HashSet<>(50);
         props.add("allowNamedParameters");
+        props.add("allowQueryFromHeader");
         props.add("alwaysPopulateStatement");
         props.add("backoffErrorThreshold");
         props.add("backoffIdleThreshold");
@@ -75,6 +77,7 @@ public class SqlEndpointUriFactory extends org.apache.camel.support.component.En
         props.add("usePlaceholder");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
         SECRET_PROPERTY_NAMES = Collections.emptySet();
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         Map<String, String> prefixes = new HashMap<>(2);
         prefixes.put("schedulerProperties", "scheduler.");
         prefixes.put("templateOptions", "template.");
@@ -91,7 +94,7 @@ public class SqlEndpointUriFactory extends org.apache.camel.support.component.En
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "query", null, true, copy);
         uri = buildQueryParameters(uri, copy, encode);
@@ -106,6 +109,11 @@ public class SqlEndpointUriFactory extends org.apache.camel.support.component.En
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

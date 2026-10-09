@@ -59,6 +59,16 @@ final class AttachmentHttpBinding extends DefaultHttpBinding {
             try {
                 parts = request.getParts();
                 for (Part part : parts) {
+                    // the whitelist accepts file name extensions, so it must be checked against the submitted
+                    // file name and not against Part.getName(), which is the multipart field name
+                    String fileName = part.getSubmittedFileName();
+                    if (!isFileNameAccepted(fileName)) {
+                        LOG.debug(
+                                "Cannot add file as attachment: {} because the file is not accepted according to fileNameExtWhitelist: {}",
+                                HttpHelper.sanitizeLog(fileName), getFileNameExtWhitelist());
+                        continue;
+                    }
+
                     DataSource ds = new PartDataSource(part);
                     Attachment attachment = new DefaultAttachment(ds);
                     for (String headerName : part.getHeaderNames()) {
@@ -67,16 +77,21 @@ final class AttachmentHttpBinding extends DefaultHttpBinding {
                         }
                     }
                     AttachmentMessage am = new DefaultAttachmentMessage(message);
-                    am.addAttachmentObject(part.getName(), attachment);
-                    String name = part.getSubmittedFileName();
-                    Object value = am.getAttachment(name);
-                    Map<String, Object> headers = message.getHeaders();
-                    if (getHeaderFilterStrategy() != null
-                            && !getHeaderFilterStrategy().applyFilterToExternalHeaders(name, value, message.getExchange())
-                            && name != null) {
-                        HttpHelper.appendHeader(headers, name, value);
+                    String name = part.getName();
+                    am.addAttachmentObject(name, attachment);
+                    // a file part is also exposed as a header carrying the DataHandler. The attachment is keyed on
+                    // the multipart field name, so the header must be looked up and named by that same key and not
+                    // by the client supplied file name. A plain form field carries no file name and is mapped by
+                    // populateRequestParameters instead, so it is left alone here.
+                    if (fileName != null && name != null) {
+                        Object value = am.getAttachment(name);
+                        Map<String, Object> headers = message.getHeaders();
+                        if (getHeaderFilterStrategy() != null
+                                && !getHeaderFilterStrategy().applyFilterToExternalHeaders(name, value,
+                                        message.getExchange())) {
+                            HttpHelper.appendHeader(headers, name, value);
+                        }
                     }
-
                 }
             } catch (Exception e) {
                 throw new RuntimeCamelException("Cannot populate attachments", e);

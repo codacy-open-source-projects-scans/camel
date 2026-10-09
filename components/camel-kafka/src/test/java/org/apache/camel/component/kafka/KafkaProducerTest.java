@@ -28,6 +28,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.IntNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.apache.camel.AggregationStrategy;
 import org.apache.camel.AsyncCallback;
 import org.apache.camel.CamelContext;
@@ -39,22 +42,28 @@ import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.impl.engine.DefaultHeadersMapFactory;
 import org.apache.camel.processor.aggregate.GroupedExchangeAggregationStrategy;
 import org.apache.camel.processor.aggregate.GroupedMessageAggregationStrategy;
+import org.apache.camel.spi.UnitOfWork;
 import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.support.DefaultMessage;
 import org.apache.kafka.clients.producer.Callback;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.ApiException;
+import org.apache.kafka.common.errors.SerializationException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isA;
@@ -135,7 +144,7 @@ public class KafkaProducerTest {
     public void processSendsMessageWithException() {
         endpoint.getConfiguration().setTopic("sometopic");
         // set up the exception here
-        org.apache.kafka.clients.producer.Producer kp = producer.getKafkaProducer();
+        Producer kp = producer.getKafkaProducer();
         Mockito.when(kp.send(any(ProducerRecord.class))).thenThrow(new ApiException());
         Mockito.when(exchange.getIn()).thenReturn(in);
         Mockito.when(exchange.getMessage()).thenReturn(in);
@@ -169,7 +178,7 @@ public class KafkaProducerTest {
         Mockito.when(exchange.getMessage()).thenReturn(in);
 
         // set up the exception here
-        org.apache.kafka.clients.producer.Producer kp = producer.getKafkaProducer();
+        Producer kp = producer.getKafkaProducer();
         Mockito.when(kp.send(any(ProducerRecord.class), any(Callback.class))).thenThrow(new ApiException());
 
         in.setHeader(KafkaConstants.PARTITION_KEY, 4);
@@ -183,6 +192,108 @@ public class KafkaProducerTest {
         Callback kafkaCallback = callBackCaptor.getValue();
         kafkaCallback.onCompletion(new RecordMetadata(null, 0, 0, 0, 0, 0), null);
         assertRecordMetadataExists();
+    }
+
+    @Test
+    void processAsyncMidBatchDispatchFailureDefersRoutingUntilInflightSendsComplete() {
+        // CAMEL-24783: when a later record in a batch fails to dispatch, the records already dispatched still have
+        // in-flight Kafka callbacks. Routing must not continue until those callbacks have run, otherwise they would
+        // mutate a continued - and, with exchange pooling, possibly recycled - exchange.
+        endpoint.getConfiguration().setTopic("sometopic");
+        Mockito.when(exchange.getIn()).thenReturn(in);
+        Mockito.when(exchange.getMessage()).thenReturn(in);
+
+        // the first record is accepted (its callback stays in flight), the second fails to dispatch mid-batch.
+        // Kafka's send(record, callback) throws synchronously for a SerializationException (and a closed-producer
+        // IllegalStateException or an InterruptException), whereas an ApiException is reported through the callback
+        // instead - so a synchronously thrown SerializationException is what this path actually sees.
+        Producer kp = producer.getKafkaProducer();
+        Future future = Mockito.mock(Future.class);
+        Mockito.when(kp.send(any(ProducerRecord.class), any(Callback.class)))
+                .thenReturn(future)
+                .thenThrow(new SerializationException("boom"));
+
+        ArrayNode node = JsonNodeFactory.instance.arrayNode();
+        node.add(1);
+        node.add(2);
+        in.setBody(node);
+
+        boolean sync = producer.process(exchange, callback);
+
+        // the dispatch failure is recorded, but routing is deferred while the first send is still in flight
+        Mockito.verify(exchange).setException(isA(SerializationException.class));
+        assertFalse(sync);
+        Mockito.verify(callback, Mockito.never()).done(Mockito.anyBoolean());
+
+        // the first record now completes on the Kafka sender thread; only now may routing continue, exactly once
+        ArgumentCaptor<Callback> callBackCaptor = ArgumentCaptor.forClass(Callback.class);
+        Mockito.verify(kp, Mockito.times(2)).send(any(ProducerRecord.class), callBackCaptor.capture());
+        callBackCaptor.getAllValues().get(0).onCompletion(new RecordMetadata(null, 0, 0, 0, 0, 0), null);
+
+        // done() is delivered from the worker pool
+        Mockito.verify(callback, Mockito.timeout(2000)).done(eq(false));
+    }
+
+    @Test
+    public void processAsyncCompletesCallbackWhenBeginTransactionFails() throws Exception {
+        // CAMEL-24780: a failure to begin the transaction must set the exception and complete the async
+        // callback rather than escaping process(), and it must not leave the unit of work flagged as
+        // transacted without a synchronization to commit or roll it back.
+        // Exercise the real init path: doStart() derives transactionId from transactionalId and calls
+        // initTransactions() on the mock (a no-op), so no reflection on the private field is needed.
+        endpoint.getConfiguration().setTransactionalId("test-tx");
+        endpoint.getConfiguration().setTopic("sometopic");
+        producer.doStart();
+
+        Producer kp = producer.getKafkaProducer();
+        Mockito.doThrow(new ApiException("cannot begin")).when(kp).beginTransaction();
+
+        UnitOfWork uow = Mockito.mock(UnitOfWork.class);
+        Mockito.when(uow.isTransactedBy(any())).thenReturn(false);
+        Mockito.when(exchange.getUnitOfWork()).thenReturn(uow);
+        Mockito.when(exchange.getIn()).thenReturn(in);
+        Mockito.when(exchange.getMessage()).thenReturn(in);
+
+        boolean sync = producer.process(exchange, callback);
+
+        assertTrue(sync);
+        Mockito.verify(exchange).setException(isA(ApiException.class));
+        Mockito.verify(callback).done(eq(true));
+        // begin failed, so the unit of work must be left untouched (no dangling transacted flag)
+        Mockito.verify(uow, Mockito.never()).beginTransactedBy(any());
+        Mockito.verify(uow, Mockito.never()).addSynchronization(any());
+    }
+
+    @Test
+    void transactionalProducerIsRecreatedAfterAFatalError() throws Exception {
+        // CAMEL-24782: a fatal transactional error closes the shared producer; the next transaction must rebuild it
+        // through the client factory instead of leaving the route wedged on a dead (closed) producer.
+        endpoint.getConfiguration().setTransactionalId("test-tx");
+        endpoint.getConfiguration().setTopic("sometopic");
+        producer.doStart();
+
+        Producer recreated = Mockito.mock(Producer.class);
+        KafkaClientFactory factory = Mockito.mock(KafkaClientFactory.class);
+        Mockito.when(factory.getProducer(any(Properties.class))).thenReturn(recreated);
+        endpoint.setKafkaClientFactory(factory);
+
+        // a previous transaction hit a fatal error and closed the shared producer
+        producer.markProducerClosedForRecreation();
+
+        UnitOfWork uow = Mockito.mock(UnitOfWork.class);
+        Mockito.when(uow.isTransactedBy(any())).thenReturn(false);
+        Mockito.when(exchange.getUnitOfWork()).thenReturn(uow);
+        Mockito.when(exchange.getIn()).thenReturn(in);
+        Mockito.when(exchange.getMessage()).thenReturn(in);
+        in.setHeader(KafkaConstants.PARTITION_KEY, 4);
+
+        producer.process(exchange, callback);
+
+        // the shared producer was rebuilt via the factory, re-initialised for transactions, and used for this exchange
+        Mockito.verify(factory).getProducer(any(Properties.class));
+        Mockito.verify(recreated).initTransactions();
+        Mockito.verify(recreated).beginTransaction();
+        assertSame(recreated, producer.getKafkaProducer());
     }
 
     @Test
@@ -477,6 +588,34 @@ public class KafkaProducerTest {
                 Arrays.asList("value-1", "value-2", "value-3"));
         assertRecordMetadataExists(3);
         assertRecordMetadataExistsForEachAggregatedMessage();
+    }
+
+    @Test
+    public void processSendsMessageWithScalarJsonNode() throws Exception {
+        endpoint.getConfiguration().setTopic("sometopic");
+        Mockito.when(exchange.getIn()).thenReturn(in);
+        Mockito.when(exchange.getMessage()).thenReturn(in);
+
+        in.setBody(IntNode.valueOf(42));
+        producer.process(exchange);
+
+        verifySendMessage("sometopic");
+    }
+
+    @Test
+    public void processSendsMessagesWithJsonArrayNode() throws Exception {
+        endpoint.getConfiguration().setTopic("sometopic");
+        Mockito.when(exchange.getIn()).thenReturn(in);
+        Mockito.when(exchange.getMessage()).thenReturn(in);
+
+        ArrayNode node = JsonNodeFactory.instance.arrayNode();
+        node.add(1);
+        node.add(2);
+
+        in.setBody(node);
+        producer.process(exchange);
+
+        verifySendMessages(Arrays.asList("sometopic", "sometopic"), null);
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })

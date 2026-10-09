@@ -15,11 +15,12 @@
 # limitations under the License.
 #
 
-FROM mirror.gcr.io/fedora:43 as samba
+ARG FROMIMAGE=mirror.gcr.io/fedora:43
+FROM $FROMIMAGE AS samba
 LABEL maintainer="orpiske@apache.org"
-ENV SAMBA_ROOT /opt/camel/samba
+ENV SAMBA_ROOT=/opt/camel/samba
 EXPOSE 139 445
-RUN dnf install -y samba && mkdir -p /data/rw /data/ro
+RUN dnf install -y samba && mkdir -p /data/rw /data/ro /data/no-delete /data/unix-security /data/fixed-delete /data/unix-owned
 ADD smb.conf /etc/samba/smb.conf
 ADD start.sh /usr/local/bin
 RUN chmod +x /usr/local/bin/start.sh

@@ -49,10 +49,14 @@ class PromptDefinitionsTest {
         List<PromptMessage> result = prompts.buildIntegration("poll an FTP server", null);
 
         String text = extractText(result);
-        assertThat(text).contains("camel_catalog_components");
-        assertThat(text).contains("camel_catalog_eips");
-        assertThat(text).contains("camel_catalog_component_doc");
-        assertThat(text).contains("camel_validate_yaml_dsl");
+        assertThat(text).contains("camel_catalog_find");
+        assertThat(text).contains("kind=\"eip\"");
+        assertThat(text).contains("camel_catalog_doc");
+        assertThat(text).contains("camel_validate_source");
+        assertThat(text).doesNotContain("camel_catalog_components")
+                .doesNotContain("camel_catalog_eips")
+                .doesNotContain("camel_catalog_component_doc")
+                .doesNotContain("camel_validate_yaml_dsl");
         assertThat(text).contains("camel_route_harden_context");
     }
 
@@ -90,12 +94,40 @@ class PromptDefinitionsTest {
     }
 
     @Test
-    void migrateProjectContainsPomContent() {
-        String pom = "<project><version>3.20.0</version></project>";
-        List<PromptMessage> result = prompts.migrateProject(pom, null);
+    void migrateProjectDoesNotInlinePomContent() {
+        // The prompt must not embed the full pom content; size should not scale with pomContent length.
+        String smallPom = "<project/>";
+        String largePom = "<project>" + "<dependency/>".repeat(1000) + "</project>";
+
+        int smallSize = extractText(prompts.migrateProject(smallPom, "4.18.0")).length();
+        int largeSize = extractText(prompts.migrateProject(largePom, "4.18.0")).length();
+
+        assertThat(largeSize).isEqualTo(smallSize);
+        assertThat(extractText(prompts.migrateProject(largePom, "4.18.0"))).doesNotContain(largePom);
+    }
+
+    @Test
+    void migrateProjectAcknowledgesSuppliedPom() {
+        List<PromptMessage> result = prompts.migrateProject("<project/>", "4.18.0");
 
         String text = extractText(result);
-        assertThat(text).contains(pom);
+        assertThat(text).contains("supplied as the `pomContent` argument");
+    }
+
+    @Test
+    void migrateProjectFallsBackToContextWhenPomOmitted() {
+        List<PromptMessage> result = prompts.migrateProject(null, "4.18.0");
+
+        String text = extractText(result);
+        assertThat(text).contains("conversation context");
+    }
+
+    @Test
+    void migrateProjectBlankPomFallsBackToContext() {
+        List<PromptMessage> result = prompts.migrateProject("  ", "4.18.0");
+
+        String text = extractText(result);
+        assertThat(text).contains("conversation context");
     }
 
     @Test

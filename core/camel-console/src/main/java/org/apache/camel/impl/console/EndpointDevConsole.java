@@ -20,17 +20,40 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import org.apache.camel.Endpoint;
 import org.apache.camel.spi.EndpointRegistry;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.RuntimeEndpointRegistry;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.console.AbstractDevConsole;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 
 @DevConsole(name = "endpoint", displayName = "Endpoints", description = "Endpoint Registry information")
 public class EndpointDevConsole extends AbstractDevConsole {
+
+    public record EndpointEntry(
+            @Metadata(description = "The endpoint URI") String uri,
+            @Metadata(description = "Whether the endpoint is remote") boolean remote,
+            @Metadata(description = "Whether the endpoint is a stub endpoint") boolean stub,
+            @Metadata(description = "Whether the endpoint is used as input or output (in or out) (only present when runtime endpoint registry statistics are available)") String direction,
+            @Metadata(description = "Usage of the endpoint (only present when runtime endpoint registry statistics are available)") Long hits,
+            @Metadata(description = "The route ID (only present when runtime endpoint registry statistics are available and the endpoint is associated with a route)") String routeId,
+            @Metadata(description = "Minimum message body size in bytes (only present when available)") Long minBodySize,
+            @Metadata(description = "Maximum message body size in bytes (only present when available)") Long maxBodySize,
+            @Metadata(description = "Mean message body size in bytes (only present when available)") Long meanBodySize,
+            @Metadata(description = "Minimum message headers size in bytes (only present when available)") Long minHeadersSize,
+            @Metadata(description = "Maximum message headers size in bytes (only present when available)") Long maxHeadersSize,
+            @Metadata(description = "Mean message headers size in bytes (only present when available)") Long meanHeadersSize) {
+    }
+
+    public record Response(
+            @Metadata(description = "Total number of endpoints") int size,
+            @Metadata(description = "Number of endpoints in the static registry") int staticSize,
+            @Metadata(description = "Number of endpoints in the dynamic registry") int dynamicSize,
+            @Metadata(description = "Maximum number of entries to store in the dynamic registry") int maximumCacheSize,
+            @Metadata(description = "The endpoints") List<EndpointEntry> endpoints) {
+    }
 
     public EndpointDevConsole() {
         super("camel", "endpoint", "Endpoints", "Endpoint Registry information");
@@ -61,11 +84,20 @@ public class EndpointDevConsole extends AbstractDevConsole {
                     // shadow-stub
                     uri = uri + " (stub)";
                 }
-                var stat = findStats(stats, e.getEndpointUri());
-                if (stat.isPresent()) {
-                    var st = stat.get();
-                    sb.append(String.format("%n    %s (remote: %s direction: %s, usage: %s)", uri, remote, st.getDirection(),
-                            st.getHits()));
+                List<RuntimeEndpointRegistry.Statistic> endpointStats = findStats(stats, e.getEndpointUri());
+                if (!endpointStats.isEmpty()) {
+                    for (RuntimeEndpointRegistry.Statistic st : endpointStats) {
+                        sb.append(String.format("%n    %s (remote: %s direction: %s, usage: %s)", uri, remote,
+                                st.getDirection(), st.getHits()));
+                        if (st.getMinBodySize() >= 0) {
+                            sb.append(String.format(" body: min/max/mean=%s/%s/%s",
+                                    st.getMinBodySize(), st.getMaxBodySize(), st.getMeanBodySize()));
+                        }
+                        if (st.getMinHeadersSize() >= 0) {
+                            sb.append(String.format(" headers: min/max/mean=%s/%s/%s",
+                                    st.getMinHeadersSize(), st.getMaxHeadersSize(), st.getMeanHeadersSize()));
+                        }
+                    }
                 } else {
                     sb.append(String.format("%n    %s (remote: %s)", uri, remote));
                 }
@@ -77,9 +109,7 @@ public class EndpointDevConsole extends AbstractDevConsole {
     }
 
     @Override
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        JsonObject root = new JsonObject();
-
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
         // runtime registry is optional but if enabled we have additional statistics to use in output
         List<RuntimeEndpointRegistry.Statistic> stats = null;
         RuntimeEndpointRegistry runtimeReg = getCamelContext().getRuntimeEndpointRegistry();
@@ -87,41 +117,54 @@ public class EndpointDevConsole extends AbstractDevConsole {
             stats = runtimeReg.getEndpointStatistics();
         }
         EndpointRegistry reg = getCamelContext().getEndpointRegistry();
-        root.put("size", reg.size());
-        root.put("staticSize", reg.staticSize());
-        root.put("dynamicSize", reg.dynamicSize());
-        root.put("maximumCacheSize", reg.getMaximumCacheSize());
 
-        final List<JsonObject> list = new ArrayList<>();
-        root.put("endpoints", list);
+        final List<EndpointEntry> list = new ArrayList<>();
         Collection<Endpoint> col = reg.getReadOnlyValues();
         for (Endpoint e : col) {
-            JsonObject jo = new JsonObject();
-            jo.put("uri", e.getEndpointUri());
-            jo.put("remote", e.isRemote());
             // NOTE: StubComponent is not available at compilation time.
             boolean stub = e.getComponent().getClass().getSimpleName().equals("StubComponent"); // NOSONAR
-            jo.put("stub", stub);
-            var stat = findStats(stats, e.getEndpointUri());
-            if (stat.isPresent()) {
-                var st = stat.get();
-                jo.put("direction", st.getDirection());
-                jo.put("hits", st.getHits());
-                jo.put("routeId", st.getRouteId());
+            boolean remote = e.isRemote();
+            List<RuntimeEndpointRegistry.Statistic> endpointStats = findStats(stats, e.getEndpointUri());
+            if (!endpointStats.isEmpty()) {
+                // emit one entry per direction so both in and out hits are captured
+                for (RuntimeEndpointRegistry.Statistic st : endpointStats) {
+                    Long minBodySize = null;
+                    Long maxBodySize = null;
+                    Long meanBodySize = null;
+                    if (st.getMinBodySize() >= 0) {
+                        minBodySize = st.getMinBodySize();
+                        maxBodySize = st.getMaxBodySize();
+                        meanBodySize = st.getMeanBodySize();
+                    }
+                    Long minHeadersSize = null;
+                    Long maxHeadersSize = null;
+                    Long meanHeadersSize = null;
+                    if (st.getMinHeadersSize() >= 0) {
+                        minHeadersSize = st.getMinHeadersSize();
+                        maxHeadersSize = st.getMaxHeadersSize();
+                        meanHeadersSize = st.getMeanHeadersSize();
+                    }
+                    list.add(new EndpointEntry(
+                            e.getEndpointUri(), remote, stub, st.getDirection(), st.getHits(), st.getRouteId(),
+                            minBodySize, maxBodySize, meanBodySize, minHeadersSize, maxHeadersSize, meanHeadersSize));
+                }
+            } else {
+                list.add(new EndpointEntry(
+                        e.getEndpointUri(), remote, stub, null, null, null, null, null, null, null, null, null));
             }
-            list.add(jo);
         }
 
-        return root;
+        Response response = new Response(reg.size(), reg.staticSize(), reg.dynamicSize(), reg.getMaximumCacheSize(), list);
+        return JsonRecordSupport.toJsonObject(response);
     }
 
-    private static Optional<RuntimeEndpointRegistry.Statistic> findStats(
+    private static List<RuntimeEndpointRegistry.Statistic> findStats(
             List<RuntimeEndpointRegistry.Statistic> stats, String uri) {
         if (stats == null) {
-            return Optional.empty();
+            return List.of();
         }
         return stats.stream()
                 .filter(s -> uri.equals(s.getUri()))
-                .findFirst();
+                .toList();
     }
 }

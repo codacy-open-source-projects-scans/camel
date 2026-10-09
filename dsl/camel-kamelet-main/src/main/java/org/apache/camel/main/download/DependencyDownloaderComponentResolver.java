@@ -95,8 +95,8 @@ public final class DependencyDownloaderComponentResolver extends DefaultComponen
             if (oa != null) {
                 downloadLoader(oa.getGroupId(), oa.getArtifactId(), oa.getVersion());
             }
-            // include producer component
-            ComponentModel http = catalog.componentModel("vertx-http");
+            // include the default producer component (camel-http, CAMEL-24849)
+            ComponentModel http = catalog.componentModel("http");
             if (http != null) {
                 downloadLoader(http.getGroupId(), http.getArtifactId(), http.getVersion());
             }
@@ -149,6 +149,12 @@ public final class DependencyDownloaderComponentResolver extends DefaultComponen
         // we are stubbing but need to accept the following
         if (Arrays.asList(ACCEPTED_STUB_NAMES).contains(name)) {
             return true;
+        }
+
+        // stub only remote components (resolved via catalog)
+        if ("component:remote".equals(stubPattern)) {
+            ComponentModel model = catalog.componentModel(name);
+            return model == null || !model.isRemote();
         }
 
         boolean stubbed = false;

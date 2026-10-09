@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.component.iggy.client.IggyClientConnectionPool;
+import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.support.BridgeExceptionHandlerToErrorHandler;
 import org.apache.camel.support.task.Tasks;
 import org.apache.camel.support.task.budget.Budgets;
@@ -33,6 +34,7 @@ import org.apache.iggy.consumergroup.Consumer;
 import org.apache.iggy.identifier.ConsumerId;
 import org.apache.iggy.identifier.StreamId;
 import org.apache.iggy.identifier.TopicId;
+import org.apache.iggy.message.Message;
 import org.apache.iggy.message.PolledMessages;
 import org.apache.iggy.message.PollingStrategy;
 import org.slf4j.Logger;
@@ -69,17 +71,7 @@ public class IggyFetchRecords implements Runnable {
         while (running) {
             if (iggyConsumer.isSuspending() || iggyConsumer.isSuspended()) {
                 LOG.trace("Consumer is suspended. Skipping message polling.");
-                // Use Camel's task API to avoid busy-waiting instead of Thread.sleep()
-                // We use initialDelay for the actual delay, and maxIterations(1) to run once
-                Tasks.foregroundTask()
-                        .withBudget(Budgets.iterationBudget()
-                                .withMaxIterations(1)
-                                .withInitialDelay(Duration.ofSeconds(1))
-                                .withInterval(Duration.ZERO)
-                                .build())
-                        .withName("IggySuspendedDelay")
-                        .build()
-                        .run(endpoint.getCamelContext(), () -> true);
+                delay("IggySuspendedDelay");
                 continue;
             }
 
@@ -103,37 +95,25 @@ public class IggyFetchRecords implements Runnable {
 
             PolledMessages polledMessages;
             IggyBaseClient client = iggyClientConnectionPool.borrowObject();
-            if (configuration.isAutoCommit()) {
-                polledMessages = client.messages()
-                        .pollMessages(streamId,
-                                topicId,
-                                Optional.ofNullable(configuration.getPartitionId()),
-                                Consumer.group(consumerId),
-                                resolvePollingStrategy(),
-                                configuration.getPollBatchSize(),
-                                configuration.isAutoCommit());
-            } else {
-                polledMessages = client.messages()
-                        .pollMessages(streamId,
-                                topicId,
-                                Optional.ofNullable(configuration.getPartitionId()),
-                                Consumer.group(consumerId),
-                                PollingStrategy.offset(offset),
-                                configuration.getPollBatchSize(),
-                                false);
-
-                // Update offset
-                offset = offset.add(BigInteger.valueOf(polledMessages.count()));
+            boolean polled = false;
+            try {
+                polledMessages = poll(client, streamId, topicId, consumerId);
+                polled = true;
+            } finally {
+                if (polled) {
+                    iggyClientConnectionPool.returnClient(client);
+                } else {
+                    // the client of a failed poll may be broken (connection lost): do not hand it out again
+                    iggyClientConnectionPool.invalidateClient(client);
+                }
             }
-
-            iggyClientConnectionPool.returnClient(client);
 
             LOG.debug("Fetched {} messages from partition {}, current offset {}",
                     polledMessages.count(),
                     polledMessages.partitionId(),
                     configuration.isAutoCommit() ? polledMessages.currentOffset() : offset);
 
-            for (org.apache.iggy.message.Message message : polledMessages.messages()) {
+            for (Message message : polledMessages.messages()) {
                 Exchange exchange = createExchange(message);
                 try {
                     iggyConsumer.getProcessor().process(exchange);
@@ -143,7 +123,52 @@ public class IggyFetchRecords implements Runnable {
             }
         } catch (Exception e) {
             bridgeExceptionHandlerToErrorHandler.handleException("Error polling messages from Iggy", e);
+            if (running) {
+                // do not poll a server that fails again in a tight loop
+                delay("IggyPollErrorDelay");
+            }
         }
+    }
+
+    private void delay(String name) {
+        // Use Camel's task API to avoid busy-waiting instead of Thread.sleep()
+        // We use initialDelay for the actual delay, and maxIterations(1) to run once
+        Tasks.foregroundTask()
+                .withBudget(Budgets.iterationBudget()
+                        .withMaxIterations(1)
+                        .withInitialDelay(Duration.ofSeconds(1))
+                        .withInterval(Duration.ZERO)
+                        .build())
+                .withName(name)
+                .build()
+                .run(endpoint.getCamelContext(), () -> true);
+    }
+
+    private PolledMessages poll(IggyBaseClient client, StreamId streamId, TopicId topicId, ConsumerId consumerId) {
+        PolledMessages polledMessages;
+        if (configuration.isAutoCommit()) {
+            polledMessages = client.messages()
+                    .pollMessages(streamId,
+                            topicId,
+                            Optional.ofNullable(configuration.getPartitionId()),
+                            Consumer.group(consumerId),
+                            resolvePollingStrategy(),
+                            configuration.getPollBatchSize(),
+                            configuration.isAutoCommit());
+        } else {
+            polledMessages = client.messages()
+                    .pollMessages(streamId,
+                            topicId,
+                            Optional.ofNullable(configuration.getPartitionId()),
+                            Consumer.group(consumerId),
+                            PollingStrategy.offset(offset),
+                            configuration.getPollBatchSize(),
+                            false);
+
+            // Update offset
+            offset = offset.add(BigInteger.valueOf(polledMessages.count()));
+        }
+        return polledMessages;
     }
 
     private PollingStrategy resolvePollingStrategy() {
@@ -157,7 +182,7 @@ public class IggyFetchRecords implements Runnable {
         }
     }
 
-    private Exchange createExchange(org.apache.iggy.message.Message message) {
+    private Exchange createExchange(Message message) {
         Exchange exchange = iggyConsumer.createExchange(true);
 
         exchange.getIn().setBody(new String(message.payload())); // TODO is it ok?
@@ -174,7 +199,13 @@ public class IggyFetchRecords implements Runnable {
                 hv -> hv.getValue().asString() // TODO this way `HeaderKind kind` will be lost
         ));
         if (!stringUserHeaders.isEmpty()) {
-            exchange.getIn().getHeaders().putAll(stringUserHeaders);
+            HeaderFilterStrategy headerFilterStrategy = endpoint.getHeaderFilterStrategy();
+            for (Map.Entry<String, Object> entry : stringUserHeaders.entrySet()) {
+                if (headerFilterStrategy == null
+                        || !headerFilterStrategy.applyFilterToExternalHeaders(entry.getKey(), entry.getValue(), exchange)) {
+                    exchange.getIn().setHeader(entry.getKey(), entry.getValue());
+                }
+            }
         }
 
         return exchange;

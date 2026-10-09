@@ -17,13 +17,14 @@ import org.apache.camel.spi.EndpointUriFactory;
 @Generated("org.apache.camel.maven.packaging.GenerateEndpointUriFactoryMojo")
 public class Jt400EndpointUriFactory extends org.apache.camel.support.component.EndpointUriFactorySupport implements EndpointUriFactory {
 
-    private static final String BASE = ":userID:password@systemName/QSYS.LIB/objectPath.type";
+    private static final String BASE = ":userID:password@systemName/objectPath";
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(39);
+        Set<String> props = new HashSet<>(38);
         props.add("backoffErrorThreshold");
         props.add("backoffIdleThreshold");
         props.add("backoffMultiplier");
@@ -33,6 +34,7 @@ public class Jt400EndpointUriFactory extends org.apache.camel.support.component.
         props.add("delay");
         props.add("exceptionHandler");
         props.add("exchangePattern");
+        props.add("fieldsLength");
         props.add("format");
         props.add("greedy");
         props.add("guiAvailable");
@@ -41,8 +43,7 @@ public class Jt400EndpointUriFactory extends org.apache.camel.support.component.
         props.add("lazyStartProducer");
         props.add("messageAction");
         props.add("objectPath");
-        props.add("outputFieldsIdxArray");
-        props.add("outputFieldsLengthArray");
+        props.add("outputFieldsIdx");
         props.add("password");
         props.add("pollStrategy");
         props.add("procedureName");
@@ -60,7 +61,6 @@ public class Jt400EndpointUriFactory extends org.apache.camel.support.component.
         props.add("startScheduler");
         props.add("systemName");
         props.add("timeUnit");
-        props.add("type");
         props.add("useFixedDelay");
         props.add("userID");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
@@ -68,6 +68,7 @@ public class Jt400EndpointUriFactory extends org.apache.camel.support.component.
         secretProps.add("password");
         secretProps.add("userID");
         SECRET_PROPERTY_NAMES = Collections.unmodifiableSet(secretProps);
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         Map<String, String> prefixes = new HashMap<>(1);
         prefixes.put("schedulerProperties", "scheduler.");
         MULTI_VALUE_PREFIXES = Collections.unmodifiableMap(prefixes);
@@ -83,13 +84,12 @@ public class Jt400EndpointUriFactory extends org.apache.camel.support.component.
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "userID", null, true, copy);
         uri = buildPathParameter(syntax, uri, "password", null, true, copy);
         uri = buildPathParameter(syntax, uri, "systemName", null, true, copy);
         uri = buildPathParameter(syntax, uri, "objectPath", null, true, copy);
-        uri = buildPathParameter(syntax, uri, "type", null, true, copy);
         uri = buildQueryParameters(uri, copy, encode);
         return uri;
     }
@@ -102,6 +102,11 @@ public class Jt400EndpointUriFactory extends org.apache.camel.support.component.
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

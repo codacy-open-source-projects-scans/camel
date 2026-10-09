@@ -44,10 +44,14 @@ public interface SalesforceEndpointBuilderFactory {
             return (AdvancedSalesforceEndpointConsumerBuilder) this;
         }
         /**
-         * APEX method name.
+         * HTTP verb used for the Apex REST invocation, such as GET, POST, PUT,
+         * PATCH or DELETE. Applies to the apexCall operation and defaults to
+         * GET. Can be overridden per message with the CamelSalesforceApexMethod
+         * header.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
+         * Default: GET
          * Group: common
          * 
          * @param apexMethod the value to set
@@ -136,7 +140,9 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * Bulk API Batch ID.
+         * Identifies a batch within a Bulk API v1 job. Required by getBatch,
+         * getRequest, getResults, getQueryResultIds and getQueryResult unless a
+         * BatchInfo message body supplies it. Not used by Bulk API 2.0.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -380,7 +386,11 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * Bulk API Job ID.
+         * Identifies the Bulk API job to act on, for Bulk API v1 operations
+         * such as getJob, closeJob, abortJob, createBatch and getResults, and
+         * for the bulk2 operations that target an existing job. Operations that
+         * accept a JobInfo or BatchInfo message body can take the id from there
+         * instead.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -972,7 +982,9 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * Bulk API Result ID.
+         * Identifies one result set of a completed Bulk API v1 query batch, as
+         * returned by the getQueryResultIds operation. Used only by
+         * getQueryResult, together with jobId and batchId.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -1634,10 +1646,14 @@ public interface SalesforceEndpointBuilderFactory {
         }
 
         /**
-         * APEX method name.
+         * HTTP verb used for the Apex REST invocation, such as GET, POST, PUT,
+         * PATCH or DELETE. Applies to the apexCall operation and defaults to
+         * GET. Can be overridden per message with the CamelSalesforceApexMethod
+         * header.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
+         * Default: GET
          * Group: common
          * 
          * @param apexMethod the value to set
@@ -1726,7 +1742,9 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * Bulk API Batch ID.
+         * Identifies a batch within a Bulk API v1 job. Required by getBatch,
+         * getRequest, getResults, getQueryResultIds and getQueryResult unless a
+         * BatchInfo message body supplies it. Not used by Bulk API 2.0.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -1970,7 +1988,11 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * Bulk API Job ID.
+         * Identifies the Bulk API job to act on, for Bulk API v1 operations
+         * such as getJob, closeJob, abortJob, createBatch and getResults, and
+         * for the bulk2 operations that target an existing job. Operations that
+         * accept a JobInfo or BatchInfo message body can take the id from there
+         * instead.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -2562,7 +2584,9 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * Bulk API Result ID.
+         * Identifies one result set of a completed Bulk API v1 query batch, as
+         * returned by the getQueryResultIds operation. Used only by
+         * getQueryResult, together with jobId and batchId.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -2802,7 +2826,12 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * APEX method URL.
+         * Path of the Apex REST resource to invoke, appended to
+         * /services/apexrest/ on the instance URL, for example MyApexClass/.
+         * The apexCall operation needs this value, which can be given as this
+         * option, in the endpoint path as apexCall/MyApexClass/, or in the
+         * CamelSalesforceApexUrl header. Placeholders written in curly braces
+         * are resolved from message headers of the same name.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -2813,6 +2842,44 @@ public interface SalesforceEndpointBuilderFactory {
          */
         default SalesforceEndpointProducerBuilder apexUrl(String apexUrl) {
             doSetProperty("apexUrl", apexUrl);
+            return this;
+        }
+        /**
+         * The approval request for the Salesforce Approval API. Options
+         * approval.actionType, approval.comments, approval.contextActorId,
+         * approval.contextId, approval.nextApproverIds,
+         * approval.processDefinitionNameOrId, approval.skipEntryCriteria are
+         * bound as nested properties.
+         * 
+         * The option is a:
+         * <code>org.apache.camel.component.salesforce.api.dto.approval.ApprovalRequest</code> type.
+         * 
+         * Group: producer
+         * 
+         * @param approval the value to set
+         * @return the dsl builder
+         */
+        default SalesforceEndpointProducerBuilder approval(org.apache.camel.component.salesforce.api.dto.approval.ApprovalRequest approval) {
+            doSetProperty("approval", approval);
+            return this;
+        }
+        /**
+         * The approval request for the Salesforce Approval API. Options
+         * approval.actionType, approval.comments, approval.contextActorId,
+         * approval.contextId, approval.nextApproverIds,
+         * approval.processDefinitionNameOrId, approval.skipEntryCriteria are
+         * bound as nested properties.
+         * 
+         * The option will be converted to a
+         * <code>org.apache.camel.component.salesforce.api.dto.approval.ApprovalRequest</code> type.
+         * 
+         * Group: producer
+         * 
+         * @param approval the value to set
+         * @return the dsl builder
+         */
+        default SalesforceEndpointProducerBuilder approval(String approval) {
+            doSetProperty("approval", approval);
             return this;
         }
         /**
@@ -3023,10 +3090,14 @@ public interface SalesforceEndpointBuilderFactory {
         }
 
         /**
-         * APEX method name.
+         * HTTP verb used for the Apex REST invocation, such as GET, POST, PUT,
+         * PATCH or DELETE. Applies to the apexCall operation and defaults to
+         * GET. Can be overridden per message with the CamelSalesforceApexMethod
+         * header.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
+         * Default: GET
          * Group: common
          * 
          * @param apexMethod the value to set
@@ -3115,7 +3186,9 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * Bulk API Batch ID.
+         * Identifies a batch within a Bulk API v1 job. Required by getBatch,
+         * getRequest, getResults, getQueryResultIds and getQueryResult unless a
+         * BatchInfo message body supplies it. Not used by Bulk API 2.0.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -3359,7 +3432,11 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * Bulk API Job ID.
+         * Identifies the Bulk API job to act on, for Bulk API v1 operations
+         * such as getJob, closeJob, abortJob, createBatch and getResults, and
+         * for the bulk2 operations that target an existing job. Operations that
+         * accept a JobInfo or BatchInfo message body can take the id from there
+         * instead.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -3951,7 +4028,9 @@ public interface SalesforceEndpointBuilderFactory {
             return this;
         }
         /**
-         * Bulk API Result ID.
+         * Identifies one result set of a completed Bulk API v1 query batch, as
+         * returned by the getQueryResultIds operation. Used only by
+         * getQueryResult, together with jobId and batchId.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -4283,7 +4362,7 @@ public interface SalesforceEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final SalesforceHeaderNameBuilder INSTANCE = new SalesforceHeaderNameBuilder();
+        public static final SalesforceHeaderNameBuilder INSTANCE = new SalesforceHeaderNameBuilder();
 
         /**
          * The Streaming API replayId.
@@ -4322,7 +4401,9 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceChangeEventSchema";
         }
         /**
-         * The event type.
+         * For change and platform events, the last segment of the configured
+         * topic name, such as AccountChangeEvent. For PushTopic messages, the
+         * Salesforce event type of the notification, such as created.
          * 
          * The option is a: {@code String} type.
          * 
@@ -4334,7 +4415,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceEventType";
         }
         /**
-         * The commit timestamp.
+         * Time of the Salesforce transaction that produced the change event,
+         * from the ChangeEventHeader.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4346,7 +4428,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceCommitTimestamp";
         }
         /**
-         * The commit user.
+         * Id of the Salesforce user whose transaction produced the change
+         * event, from the ChangeEventHeader.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4358,7 +4441,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceCommitUser";
         }
         /**
-         * The commit number.
+         * System change number of the Salesforce transaction that produced the
+         * change event, from the ChangeEventHeader.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4370,7 +4454,9 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceCommitNumber";
         }
         /**
-         * The record ids.
+         * Ids of the records affected by the change event, from the
+         * ChangeEventHeader. Holds more than one id when a single transaction
+         * changed several records.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4382,7 +4468,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceRecordIds";
         }
         /**
-         * The change type.
+         * Kind of change carried by the change event, from the
+         * ChangeEventHeader, for example CREATE or UPDATE.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4394,7 +4481,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceChangeType";
         }
         /**
-         * The change origin.
+         * Identifies the Salesforce API and client that made the change, from
+         * the ChangeEventHeader.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4406,7 +4494,9 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceChangeOrigin";
         }
         /**
-         * The transaction key.
+         * Key shared by every change event produced by the same Salesforce
+         * transaction, from the ChangeEventHeader. Use it to group events that
+         * belong to one transaction.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4418,7 +4508,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceTransactionKey";
         }
         /**
-         * The sequence number.
+         * Position of this change event within its Salesforce transaction, from
+         * the ChangeEventHeader.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4430,7 +4521,9 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceSequenceNumber";
         }
         /**
-         * Is transaction end.
+         * True when this change event is the last one of its Salesforce
+         * transaction, from the ChangeEventHeader. Use it together with
+         * CamelSalesforceTransactionKey to detect the end of a transaction.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4442,7 +4535,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceIsTransactionEnd";
         }
         /**
-         * The entity name.
+         * Name of the Salesforce object the change event applies to, such as
+         * Account, from the ChangeEventHeader.
          * 
          * The option is a: {@code Object} type.
          * 
@@ -4466,7 +4560,9 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforcePlatformEventSchema";
         }
         /**
-         * The created date.
+         * Creation time of the event. Platform events supply a ZonedDateTime
+         * taken from the event payload, while PushTopic notifications supply
+         * the raw createdDate value as a String.
          * 
          * The option is a: {@code java.time.ZonedDateTime} type.
          * 
@@ -4478,7 +4574,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceCreatedDate";
         }
         /**
-         * The topic name.
+         * Name of the PushTopic the message was received from. Set for
+         * PushTopic messages only.
          * 
          * The option is a: {@code String} type.
          * 
@@ -4490,7 +4587,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceTopicName";
         }
         /**
-         * The channel.
+         * Streaming API channel the message was received on, such as
+         * /topic/MyTopic or /data/AccountChangeEvent.
          * 
          * The option is a: {@code String} type.
          * 
@@ -4502,7 +4600,8 @@ public interface SalesforceEndpointBuilderFactory {
             return "CamelSalesforceChannel";
         }
         /**
-         * The client id.
+         * Client id of the Streaming API subscription that received the
+         * message. Set only when the server supplies one.
          * 
          * The option is a: {@code String} type.
          * 

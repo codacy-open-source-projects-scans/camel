@@ -31,7 +31,10 @@ import org.apache.camel.spi.Metadata;
 /**
  * Route messages based on dynamic rules
  */
-@Metadata(label = "eip,routing")
+@Metadata(label = "eip,routing",
+          aliases = { "dispatch" },
+          description = "Routes a message step-by-step through a series of endpoints, determined dynamically by calling an expression repeatedly."
+                        + " The expression is called after each hop and returns the next endpoint, or null to stop.")
 @XmlRootElement(name = "dynamicRouter")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class DynamicRouterDefinition<Type extends ProcessorDefinition<Type>> extends ExpressionNode {
@@ -39,14 +42,25 @@ public class DynamicRouterDefinition<Type extends ProcessorDefinition<Type>> ext
     public static final String DEFAULT_DELIMITER = ",";
 
     @XmlAttribute
-    @Metadata(defaultValue = ",")
+    @Metadata(defaultValue = ",",
+              description = "The delimiter used to separate endpoint URIs when the expression returns multiple endpoints. Default is comma.")
     private String uriDelimiter;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean")
+    @Metadata(label = "advanced", javaType = "java.lang.Boolean",
+              description = "If enabled then invalid endpoint URIs are ignored and logged instead of throwing an exception.")
     private String ignoreInvalidEndpoints;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Integer")
+    @Metadata(label = "advanced", javaType = "java.lang.Integer",
+              description = "Configures the cache size for ProducerCache which caches producers for reuse. The default cache size is 1000."
+                            + " Set to -1 to turn off caching.")
     private String cacheSize;
+    @XmlAttribute
+    @Metadata(label = "advanced,security",
+              description = "Sets an optional comma-separated allow-list of component schemes that the dynamic recipient"
+                            + " may resolve to (e.g. http,https). When set, a dynamic endpoint whose scheme is not in the"
+                            + " list is rejected. This is a defence-in-depth restriction, useful for low-code / Kamelet"
+                            + " deployments; by default (unset) any scheme is allowed.")
+    private String allowedSchemes;
 
     public DynamicRouterDefinition() {
     }
@@ -56,6 +70,7 @@ public class DynamicRouterDefinition<Type extends ProcessorDefinition<Type>> ext
         this.uriDelimiter = source.uriDelimiter;
         this.ignoreInvalidEndpoints = source.ignoreInvalidEndpoints;
         this.cacheSize = source.cacheSize;
+        this.allowedSchemes = source.allowedSchemes;
     }
 
     public DynamicRouterDefinition(Expression expression) {
@@ -87,13 +102,9 @@ public class DynamicRouterDefinition<Type extends ProcessorDefinition<Type>> ext
         return Collections.emptyList();
     }
 
-    /**
-     * Expression to call that returns the endpoint(s) to route to in the dynamic routing.
-     * <p/>
-     * <b>Important:</b> The expression will be called in a while loop fashion, until the expression returns
-     * <tt>null</tt> which means the dynamic router is finished.
-     */
     @Override
+    @Metadata(required = true,
+              description = "The expression to compute the next endpoint URI to route to. The expression is called iteratively until it returns null to indicate the end of routing.")
     public void setExpression(ExpressionDefinition expression) {
         // override to include javadoc what the expression is used for
         super.setExpression(expression);
@@ -120,6 +131,14 @@ public class DynamicRouterDefinition<Type extends ProcessorDefinition<Type>> ext
 
     public String getCacheSize() {
         return cacheSize;
+    }
+
+    public String getAllowedSchemes() {
+        return allowedSchemes;
+    }
+
+    public void setAllowedSchemes(String allowedSchemes) {
+        this.allowedSchemes = allowedSchemes;
     }
 
     public void setCacheSize(String cacheSize) {
@@ -151,6 +170,18 @@ public class DynamicRouterDefinition<Type extends ProcessorDefinition<Type>> ext
      */
     public DynamicRouterDefinition<Type> uriDelimiter(String uriDelimiter) {
         setUriDelimiter(uriDelimiter);
+        return this;
+    }
+
+    /**
+     * Sets an optional comma-separated allow-list of component schemes that the dynamic recipient may resolve to (e.g.
+     * http,https). When set, a dynamic endpoint whose scheme is not in the list is rejected. By default (unset) any
+     * scheme is allowed.
+     *
+     * @return the builder
+     */
+    public DynamicRouterDefinition<Type> allowedSchemes(String allowedSchemes) {
+        setAllowedSchemes(allowedSchemes);
         return this;
     }
 

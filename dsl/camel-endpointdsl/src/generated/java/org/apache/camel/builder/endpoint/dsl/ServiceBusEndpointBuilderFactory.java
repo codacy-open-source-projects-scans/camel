@@ -340,6 +340,38 @@ public interface ServiceBusEndpointBuilderFactory {
             return this;
         }
         /**
+         * Sets the maximum number of concurrent sessions to process at any
+         * given time. Only applies when sessionEnabled is true.
+         * 
+         * The option is a: <code>int</code> type.
+         * 
+         * Default: 1
+         * Group: consumer
+         * 
+         * @param maxConcurrentSessions the value to set
+         * @return the dsl builder
+         */
+        default ServiceBusEndpointConsumerBuilder maxConcurrentSessions(int maxConcurrentSessions) {
+            doSetProperty("maxConcurrentSessions", maxConcurrentSessions);
+            return this;
+        }
+        /**
+         * Sets the maximum number of concurrent sessions to process at any
+         * given time. Only applies when sessionEnabled is true.
+         * 
+         * The option will be converted to a <code>int</code> type.
+         * 
+         * Default: 1
+         * Group: consumer
+         * 
+         * @param maxConcurrentSessions the value to set
+         * @return the dsl builder
+         */
+        default ServiceBusEndpointConsumerBuilder maxConcurrentSessions(String maxConcurrentSessions) {
+            doSetProperty("maxConcurrentSessions", maxConcurrentSessions);
+            return this;
+        }
+        /**
          * Sets the prefetch count of the receiver. For both PEEK_LOCK PEEK_LOCK
          * and RECEIVE_AND_DELETE RECEIVE_AND_DELETE receive modes the default
          * value is 1. Prefetch speeds up the message flow by aiming to have a
@@ -524,7 +556,11 @@ public interface ServiceBusEndpointBuilderFactory {
         }
         /**
          * Sets the connection string for a Service Bus namespace or a specific
-         * Service Bus resource.
+         * Service Bus resource. Connection strings commonly contain characters
+         * with a special meaning in URIs (the SharedAccessKey is a Base64 value
+         * that may contain plus, slash or equals characters): when configuring
+         * the connection string directly in an endpoint URI, wrap the value
+         * with RAW() so it is not URI-decoded.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -541,7 +577,8 @@ public interface ServiceBusEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option is a:
-         * <code>org.apache.camel.component.azure.servicebus.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: CONNECTION_STRING
          * Group: security
@@ -549,7 +586,7 @@ public interface ServiceBusEndpointBuilderFactory {
          * @param credentialType the value to set
          * @return the dsl builder
          */
-        default ServiceBusEndpointConsumerBuilder credentialType(org.apache.camel.component.azure.servicebus.CredentialType credentialType) {
+        default ServiceBusEndpointConsumerBuilder credentialType(org.apache.camel.component.azure.common.CredentialType credentialType) {
             doSetProperty("credentialType", credentialType);
             return this;
         }
@@ -557,7 +594,8 @@ public interface ServiceBusEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option will be converted to a
-         * <code>org.apache.camel.component.azure.servicebus.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: CONNECTION_STRING
          * Group: security
@@ -1128,7 +1166,11 @@ public interface ServiceBusEndpointBuilderFactory {
         }
         /**
          * Sets the connection string for a Service Bus namespace or a specific
-         * Service Bus resource.
+         * Service Bus resource. Connection strings commonly contain characters
+         * with a special meaning in URIs (the SharedAccessKey is a Base64 value
+         * that may contain plus, slash or equals characters): when configuring
+         * the connection string directly in an endpoint URI, wrap the value
+         * with RAW() so it is not URI-decoded.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -1145,7 +1187,8 @@ public interface ServiceBusEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option is a:
-         * <code>org.apache.camel.component.azure.servicebus.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: CONNECTION_STRING
          * Group: security
@@ -1153,7 +1196,7 @@ public interface ServiceBusEndpointBuilderFactory {
          * @param credentialType the value to set
          * @return the dsl builder
          */
-        default ServiceBusEndpointProducerBuilder credentialType(org.apache.camel.component.azure.servicebus.CredentialType credentialType) {
+        default ServiceBusEndpointProducerBuilder credentialType(org.apache.camel.component.azure.common.CredentialType credentialType) {
             doSetProperty("credentialType", credentialType);
             return this;
         }
@@ -1161,7 +1204,8 @@ public interface ServiceBusEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option will be converted to a
-         * <code>org.apache.camel.component.azure.servicebus.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: CONNECTION_STRING
          * Group: security
@@ -1488,7 +1532,11 @@ public interface ServiceBusEndpointBuilderFactory {
         }
         /**
          * Sets the connection string for a Service Bus namespace or a specific
-         * Service Bus resource.
+         * Service Bus resource. Connection strings commonly contain characters
+         * with a special meaning in URIs (the SharedAccessKey is a Base64 value
+         * that may contain plus, slash or equals characters): when configuring
+         * the connection string directly in an endpoint URI, wrap the value
+         * with RAW() so it is not URI-decoded.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -1505,7 +1553,8 @@ public interface ServiceBusEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option is a:
-         * <code>org.apache.camel.component.azure.servicebus.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: CONNECTION_STRING
          * Group: security
@@ -1513,7 +1562,7 @@ public interface ServiceBusEndpointBuilderFactory {
          * @param credentialType the value to set
          * @return the dsl builder
          */
-        default ServiceBusEndpointBuilder credentialType(org.apache.camel.component.azure.servicebus.CredentialType credentialType) {
+        default ServiceBusEndpointBuilder credentialType(org.apache.camel.component.azure.common.CredentialType credentialType) {
             doSetProperty("credentialType", credentialType);
             return this;
         }
@@ -1521,7 +1570,8 @@ public interface ServiceBusEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option will be converted to a
-         * <code>org.apache.camel.component.azure.servicebus.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: CONNECTION_STRING
          * Group: security
@@ -1662,7 +1712,7 @@ public interface ServiceBusEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final ServiceBusHeaderNameBuilder INSTANCE = new ServiceBusHeaderNameBuilder();
+        public static final ServiceBusHeaderNameBuilder INSTANCE = new ServiceBusHeaderNameBuilder();
 
         /**
          * The application properties (also known as custom properties) on

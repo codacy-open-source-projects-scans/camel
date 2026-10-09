@@ -6,6 +6,8 @@ Streams are cached in memory. However, for large stream messages, you can set `s
 and then large message (over 128 KB) will be cached in a temporary file instead.
 Camel itself will handle deleting the temporary file once the cached stream is no longer necessary.
 
+TIP: For routes that move large payloads, such as big files, see xref:large-payloads.adoc[Large payloads].
+
 == Why is my message empty?
 
 In Camel the message body can be of any types. Some types are safely
@@ -126,7 +128,7 @@ Java::
 [source,java]
 ----
 from("file:inbox")
-  .streamCaching()
+  .streamCache(true)
   .to("bean:foo");
 ----
 
@@ -164,10 +166,10 @@ When using Spring Boot, Quarkus or Camel Standalone It's recommended to configur
 camel.main.streamCachingSpoolEnabled = true
 camel.main.streamCachingSpoolDirectory = /tmp/cachedir
 camel.main.streamCachingSpoolThreshold = 65536
-camel.main.streamCachingBufferSize = 16384;
+camel.main.streamCachingBufferSize = 16384
 ----
 
-TIP: You can run Camel JBang: `camel doc main --filter=stream` from CLI to see all the options.
+TIP: You can run Camel CLI: `camel doc main --filter=stream` from CLI to see all the options.
 
 
 == Configuring StreamCachingStrategy in Spring XML
@@ -343,6 +345,29 @@ camel.main.streamCachingSpoolRules=#class:com.foo.MySpoolRule
 ----
 ====
 
+
+== Using custom spool directory per Exchange (advanced)
+
+By default, all spooled streams are written to a single spool directory. If you want to control where each exchange's spool files are written (for example, to isolate spool data per route), you can implement a custom `StreamCachingStrategy` that overrides the `resolveSpoolDirectory` method.
+
+The `resolveSpoolDirectory` method is called for each exchange when a stream is about to be spooled to disk. The default implementation returns the configured `spoolDirectory`. Custom implementations can return a different directory based on the exchange, for example using the route id as a subdirectory:
+
+[source,java]
+----
+DefaultStreamCachingStrategy strategy = new DefaultStreamCachingStrategy() {
+    @Override
+    public File resolveSpoolDirectory(Exchange exchange) {
+        String routeId = exchange.getFromRouteId();
+        if (routeId != null) {
+            return new File(getSpoolDirectory(), routeId);
+        }
+        return getSpoolDirectory();
+    }
+};
+context.setStreamCachingStrategy(strategy);
+----
+
+The resolved directory is created automatically if it does not exist.
 
 == Using StreamCachingProcessor
 

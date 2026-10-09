@@ -23,14 +23,28 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.camel.dsl.yaml.validator.YamlValidator;
 import org.apache.camel.util.IOHelper;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.yaml.snakeyaml.Yaml;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@SuppressWarnings("unchecked")
 class TemplateHelperTest {
+
+    private static YamlValidator canonicalValidator;
+
+    @BeforeAll
+    static void setUpValidator() throws Exception {
+        canonicalValidator = new YamlValidator(true);
+        canonicalValidator.init();
+    }
 
     // ===== TemplateHelper.processTemplate() tests (FreeMarker-processed templates) =====
 
@@ -130,6 +144,7 @@ class TemplateHelperTest {
         assertNoLicenseHeader(result);
         assertNoUnresolvedInterpolations(result);
         assertTrue(result.contains("my-app"));
+        assertTrue(result.contains("https://camel.apache.org/llms.txt"));
     }
 
     @Test
@@ -144,6 +159,21 @@ class TemplateHelperTest {
         assertNoLicenseHeader(result);
         assertNoUnresolvedInterpolations(result);
         assertTrue(result.contains("my-app"));
+        assertTrue(result.contains("https://camel.apache.org/llms.txt"));
+    }
+
+    @Test
+    void testAgentsTemplate() throws IOException {
+        Map<String, Object> model = new HashMap<>();
+        model.put("ArtifactId", "my-app");
+
+        String result = TemplateHelper.processTemplate("agents.md.ftl", model);
+
+        assertNoLicenseHeader(result);
+        assertNoUnresolvedInterpolations(result);
+        assertTrue(result.contains("my-app"));
+        assertTrue(result.contains("https://camel.apache.org/llms.txt"));
+        assertTrue(result.contains("canonical YAML DSL"));
     }
 
     @Test
@@ -194,6 +224,7 @@ class TemplateHelperTest {
         model.put("KubernetesProperties", List.of());
         model.put("hasJib", false);
         model.put("hasJkube", false);
+        model.put("JibMavenPluginVersion", "3.5.2");
 
         List<Map<String, Object>> deps = new ArrayList<>();
         Map<String, Object> dep = new HashMap<>();
@@ -224,8 +255,7 @@ class TemplateHelperTest {
         // lib dependency should use system scope with ${project.basedir}
         assertTrue(result.contains("${project.basedir}"), "Lib dep should have project.basedir system path");
         assertTrue(result.contains("<scope>system</scope>"));
-        // No jib/jkube plugins
-        assertFalse(result.contains("jib-maven-plugin"));
+        // No jkube plugins
         assertFalse(result.contains("kubernetes-maven-plugin"));
     }
 
@@ -244,6 +274,7 @@ class TemplateHelperTest {
         model.put("hasJib", false);
         model.put("hasJkube", false);
         model.put("Dependencies", List.of());
+        model.put("JibMavenPluginVersion", "3.5.2");
 
         List<Map<String, Object>> repos = new ArrayList<>();
         repos.add(Map.of("id", "custom1", "url", "https://repo.example.com/snapshots", "isSnapshot", true));
@@ -270,6 +301,7 @@ class TemplateHelperTest {
         model.put("BuildProperties", "");
         model.put("Repositories", List.of());
         model.put("Dependencies", List.of());
+        model.put("JibMavenPluginVersion", "3.5.2");
 
         String result = TemplateHelper.processTemplate("spring-boot-pom.ftl", model);
 
@@ -281,7 +313,7 @@ class TemplateHelperTest {
     }
 
     @Test
-    void testQuarkusPomTemplate() throws IOException {
+    void testQuarkusPomTemplateOlderVersion() throws IOException {
         Map<String, Object> model = new HashMap<>();
         model.put("GroupId", "com.example");
         model.put("ArtifactId", "my-quarkus-app");
@@ -289,12 +321,14 @@ class TemplateHelperTest {
         model.put("QuarkusGroupId", "io.quarkus.platform");
         model.put("QuarkusArtifactId", "quarkus-bom");
         model.put("QuarkusVersion", "3.17.0");
+        model.put("UseQuarkusJunit", false);
         model.put("QuarkusPackageType", "uber-jar");
         model.put("JavaVersion", "21");
         model.put("ProjectBuildOutputTimestamp", "2024-01-01T00:00:00Z");
         model.put("BuildProperties", "");
         model.put("Repositories", List.of());
         model.put("Dependencies", List.of());
+        model.put("JibMavenPluginVersion", "3.5.2");
 
         String result = TemplateHelper.processTemplate("quarkus-pom.ftl", model);
 
@@ -306,6 +340,42 @@ class TemplateHelperTest {
                 "Should contain QuarkusPackageType");
         // Maven ${...} should pass through
         assertTrue(result.contains("${quarkus.platform.version}"));
+        // Quarkus < 3.31 should use quarkus-junit5
+        assertTrue(result.contains("<artifactId>quarkus-junit5</artifactId>"),
+                "Should use quarkus-junit5 for Quarkus < 3.31");
+        assertFalse(result.contains("<artifactId>quarkus-junit</artifactId>"),
+                "Should not use quarkus-junit for Quarkus < 3.31");
+    }
+
+    @Test
+    void testQuarkusPomTemplateCurrentVersion() throws IOException {
+        Map<String, Object> model = new HashMap<>();
+        model.put("GroupId", "com.example");
+        model.put("ArtifactId", "my-quarkus-app");
+        model.put("Version", "1.0.0");
+        model.put("QuarkusGroupId", "io.quarkus.platform");
+        model.put("QuarkusArtifactId", "quarkus-bom");
+        model.put("QuarkusVersion", "3.36.3");
+        model.put("UseQuarkusJunit", true);
+        model.put("QuarkusPackageType", "uber-jar");
+        model.put("JavaVersion", "21");
+        model.put("ProjectBuildOutputTimestamp", "2024-01-01T00:00:00Z");
+        model.put("BuildProperties", "");
+        model.put("Repositories", List.of());
+        model.put("Dependencies", List.of());
+        model.put("JibMavenPluginVersion", "3.5.2");
+
+        String result = TemplateHelper.processTemplate("quarkus-pom.ftl", model);
+
+        assertNoLicenseHeader(result);
+        assertTrue(result.contains("io.quarkus.platform"));
+        assertTrue(result.contains("quarkus-bom"));
+        assertTrue(result.contains("3.36.3"));
+        // Quarkus >= 3.31 should use quarkus-junit
+        assertTrue(result.contains("<artifactId>quarkus-junit</artifactId>"),
+                "Should use quarkus-junit for Quarkus >= 3.31");
+        assertFalse(result.contains("<artifactId>quarkus-junit5</artifactId>"),
+                "Should not use quarkus-junit5 for Quarkus >= 3.31");
     }
 
     @Test
@@ -429,6 +499,43 @@ class TemplateHelperTest {
     /**
      * Loads a template the same way Init.java does: raw text + header stripping.
      */
+    // ===== the YAML the templates generate is what a user or an AI agent starts from: it must be canonical =====
+
+    @ParameterizedTest
+    @ValueSource(strings = { "yaml.ftl", "rest-dsl.yaml.ftl" })
+    void testInitYamlTemplatesAreCanonical(String name) throws Exception {
+        String content = loadInitTemplate(name).replace("[=Spec]", "petstore.json");
+
+        assertCanonical(name, content);
+    }
+
+    @Test
+    void testInitIntegrationTemplateIsCanonical() throws Exception {
+        String content = loadInitTemplate("integration.yaml.ftl").replace("[=Name]", "my-integration");
+
+        // the Integration CR wraps the routes in spec.flows
+        Map<String, Object> cr = new Yaml().load(content);
+        Map<String, Object> spec = (Map<String, Object>) cr.get("spec");
+        assertCanonical("integration.yaml.ftl", new Yaml().dump(spec.get("flows")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "kamelet-source.yaml.ftl", "kamelet-sink.yaml.ftl", "kamelet-action.yaml.ftl" })
+    void testInitKameletTemplatesAreCanonical(String name) throws Exception {
+        String content = loadInitTemplate(name).replace("[=Name]", "my-kamelet");
+
+        // the Kamelet CR wraps the route in spec.template as its from (the Kamelet spec's shape); validated as the
+        // route it is, since a top-level from: is the compact notation of a route file (CAMEL-24745)
+        Map<String, Object> cr = new Yaml().load(content);
+        Map<String, Object> spec = (Map<String, Object>) cr.get("spec");
+        assertCanonical(name, new Yaml().dump(List.of(Map.of("route", spec.get("template")))));
+    }
+
+    private static void assertCanonical(String name, String yaml) throws Exception {
+        var report = canonicalValidator.validate(yaml);
+        assertTrue(report.isEmpty(), name + " is not in the canonical YAML format:\n" + yaml + "\n" + report);
+    }
+
     private String loadInitTemplate(String name) throws IOException {
         try (InputStream is = getClass().getClassLoader().getResourceAsStream("templates/" + name)) {
             String content = IOHelper.loadText(is);

@@ -23,7 +23,6 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.test.infra.infinispan.services.InfinispanService;
 import org.apache.camel.test.infra.infinispan.services.InfinispanServiceFactory;
-import org.apache.commons.lang3.SystemUtils;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.commons.api.BasicCache;
 import org.jgroups.util.UUID;
@@ -41,10 +40,8 @@ public class InfinispanRemoteConfigurationIT {
     @Test
     public void remoteCacheWithoutProperties() throws Exception {
         final InfinispanRemoteConfiguration configuration = getBaseConfiguration();
-        if (SystemUtils.IS_OS_MAC) {
-            configuration.addConfigurationProperty(
-                    "infinispan.client.hotrod.client_intelligence", "BASIC");
-        }
+        configuration.addConfigurationProperty(
+                "infinispan.client.hotrod.client_intelligence", "BASIC");
 
         try (CamelContext context = new DefaultCamelContext();
              InfinispanRemoteManager manager = new InfinispanRemoteManager(context, configuration)) {
@@ -69,7 +66,10 @@ public class InfinispanRemoteConfigurationIT {
         cacheContConf.put("connection_timeout", "15000");
         configuration.setConfigurationProperties(cacheContConf);
 
-        configuration.setHosts(service.host() + ":" + service.port());
+        // Normalise "localhost" to "127.0.0.1" so the JVM does not resolve it to ::1 (IPv6),
+        // which the server does not bind to in host-network mode on Podman/Linux.
+        String host = InfinispanRemoteTestSupport.resolvedHost(service.host());
+        configuration.setHosts(host + ":" + service.port());
         configuration.setSecure(true);
         configuration.setUsername(service.username());
         configuration.setPassword(service.password());
@@ -82,11 +82,7 @@ public class InfinispanRemoteConfigurationIT {
     @Test
     public void remoteCacheWithProperties() throws Exception {
         final InfinispanRemoteConfiguration configuration = getBaseConfiguration();
-        if (SystemUtils.IS_OS_MAC) {
-            configuration.setConfigurationUri("infinispan/client-mac.properties");
-        } else {
-            configuration.setConfigurationUri("infinispan/client.properties");
-        }
+        configuration.setConfigurationUri("infinispan/client.properties");
 
         try (CamelContext context = new DefaultCamelContext();
              InfinispanRemoteManager manager = new InfinispanRemoteManager(context, configuration)) {

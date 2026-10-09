@@ -16,15 +16,21 @@
  */
 package org.apache.camel.component.springrabbit.integration;
 
+import org.apache.camel.Exchange;
 import org.apache.camel.RoutesBuilder;
 import org.apache.camel.builder.RouteBuilder;
 import org.junit.jupiter.api.Test;
 
-public class RabbitMQProducerSimpleIT extends RabbitMQITSupport {
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+class RabbitMQProducerSimpleIT extends RabbitMQITSupport {
 
     @Test
-    public void testProducer() throws Exception {
-        template.sendBody("direct:start", "Hello World");
+    void testProducer() {
+        Exchange result = template.send("direct:start", e -> e.getMessage().setBody("Hello World"));
+        assertFalse(result.isFailed(), "Exchange should complete without error");
+        assertNull(result.getException(), "Exchange should have no exception");
     }
 
     @Override
@@ -33,7 +39,7 @@ public class RabbitMQProducerSimpleIT extends RabbitMQITSupport {
             @Override
             public void configure() throws Exception {
                 from("direct:start")
-                        .to("spring-rabbitmq:simple");
+                        .to("spring-rabbitmq:" + uniqueName("simple"));
             }
         };
     }

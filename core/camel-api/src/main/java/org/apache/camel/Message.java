@@ -20,17 +20,27 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import org.apache.camel.spi.HeadersMapFactory;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.trait.message.MessageTrait;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Implements the <a href="http://camel.apache.org/message.html">Message</a> pattern and represents an inbound or
+ * Implements the <a href="https://camel.apache.org/message.html">Message</a> pattern and represents an inbound or
  * outbound message as part of an {@link Exchange}.
  * <p/>
  * Headers are represented in Camel using a {@link org.apache.camel.util.CaseInsensitiveMap CaseInsensitiveMap}. The
  * implementation of the map can be configured by the {@link HeadersMapFactory} which can be set on the
  * {@link CamelContext}. The default implementation uses the {@link org.apache.camel.util.CaseInsensitiveMap
  * CaseInsensitiveMap}.
+ *
+ * @see Exchange
+ * @see ExchangePattern
  */
+@Metadata(label = "api",
+          description = "The body and the headers of the exchange, from exchange.getMessage(). getBody(type) converts "
+                        + "the body with the type converters (a Map body has no properties: read map.get(\"type\"), not "
+                        + "${body.type}); getHeader(name) is case-insensitive and null when the header is absent; setBody "
+                        + "replaces the body and keeps the headers.")
 public interface Message {
 
     /**
@@ -70,6 +80,7 @@ public interface Message {
      *
      * @return the timestamp, or <tt>0</tt> if the message has no source timestamp.
      * @see    Exchange#getClock()
+     * @since  3.11
      */
     long getMessageTimestamp();
 
@@ -82,6 +93,8 @@ public interface Message {
 
     /**
      * Whether the message has any message ID assigned.
+     *
+     * @since 3.11
      */
     boolean hasMessageId();
 
@@ -90,6 +103,8 @@ public interface Message {
      *
      * @return the exchange
      */
+    @Nullable
+    @Metadata(label = "api", description = "The exchange this message belongs to (properties, variables, context).")
     Exchange getExchange();
 
     /**
@@ -98,6 +113,7 @@ public interface Message {
      * @param  name name of header
      * @return      the value of the given header or <tt>null</tt> if there is no header for the given name
      */
+    @Nullable
     Object getHeader(String name);
 
     /**
@@ -129,7 +145,14 @@ public interface Message {
      *                                 given name
      * @throws TypeConversionException is thrown if error during type conversion
      */
-    <T> T getHeader(String name, Class<T> type);
+    @Metadata(label = "api",
+              important = true,
+              description = "A header by name (case-insensitive), converted to the type; null when absent, or the default "
+                            + "value when one is given.",
+              examples = {
+                      "message.getHeader(\"CamelFileName\", String.class)",
+                      "message.getHeader(\"count\", 0, Integer.class)" })
+    <T> @Nullable T getHeader(String name, Class<T> type);
 
     /**
      * Returns a header associated with this message by name and specifying the type required
@@ -140,7 +163,7 @@ public interface Message {
      * @return              the value of the given header or <tt>defaultValue</tt> if there is no header for the given
      *                      name or <tt>null</tt> if it cannot be converted to the given type
      */
-    <T> T getHeader(String name, Object defaultValue, Class<T> type);
+    <T> @Nullable T getHeader(String name, Object defaultValue, Class<T> type);
 
     /**
      * Returns a header associated with this message by name and specifying the type required
@@ -152,7 +175,7 @@ public interface Message {
      *                              <tt>defaultValueSupplier</tt> if there is no header for the given name or
      *                              <tt>null</tt> if it cannot be converted to the given type
      */
-    <T> T getHeader(String name, Supplier<Object> defaultValueSupplier, Class<T> type);
+    <T> @Nullable T getHeader(String name, Supplier<Object> defaultValueSupplier, Class<T> type);
 
     /**
      * Sets a header on the message
@@ -160,7 +183,12 @@ public interface Message {
      * @param name  of the header
      * @param value to associate with the name
      */
-    void setHeader(String name, Object value);
+    @Metadata(label = "api",
+              important = true,
+              description = "Sets a header; headers travel with the message to the endpoints (as HTTP headers, JMS "
+                            + "properties, Kafka headers).",
+              examples = { "message.setHeader(\"CamelHttpMethod\", \"POST\")" })
+    void setHeader(String name, @Nullable Object value);
 
     /**
      * Removes the named header from this message
@@ -168,6 +196,10 @@ public interface Message {
      * @param  name name of the header
      * @return      the old value of the header
      */
+    @Nullable
+    @Metadata(label = "api",
+              description = "Removes a header; removeHeaders(pattern) removes by wildcard, e.g. \"Camel*\" strips the Camel "
+                            + "ones.")
     Object removeHeader(String name);
 
     /**
@@ -201,6 +233,8 @@ public interface Message {
      *
      * @return all the headers in a Map
      */
+    @Metadata(label = "api",
+              description = "All headers as a case-insensitive Map<String, Object>; changes to the map change the message.")
     Map<String, Object> getHeaders();
 
     /**
@@ -228,10 +262,11 @@ public interface Message {
      * Notice if the message body is stream based then calling this method multiple times may lead to the stream not
      * being able to be re-read again. You can enable stream caching and call the {@link StreamCache#reset()} method to
      * reset the stream to be able to re-read again (if possible). See more details about
-     * <a href="http://camel.apache.org/stream-caching.html">stream caching</a>.
+     * <a href="https://camel.apache.org/stream-caching.html">stream caching</a>.
      *
      * @return the body, can be <tt>null</tt>
      */
+    @Nullable
     Object getBody();
 
     /**
@@ -239,7 +274,7 @@ public interface Message {
      * <p/>
      * Notice if the message body is stream based then calling this method multiple times may lead to the stream not
      * being able to be re-read again. See more details about
-     * <a href="http://camel.apache.org/stream-caching.html">stream caching</a>.
+     * <a href="https://camel.apache.org/stream-caching.html">stream caching</a>.
      *
      * @return                         the body, is never <tt>null</tt>
      * @throws InvalidPayloadException Is thrown if the body being <tt>null</tt> or wrong class type
@@ -252,7 +287,7 @@ public interface Message {
      * Notice if the message body is stream based then calling this method multiple times may lead to the stream not
      * being able to be re-read again. You can enable stream caching and call the {@link StreamCache#reset()} method to
      * reset the stream to be able to re-read again (if possible). See more details about
-     * <a href="http://camel.apache.org/stream-caching.html">stream caching</a>.
+     * <a href="https://camel.apache.org/stream-caching.html">stream caching</a>.
      * <p/>
      * The helper method {@link org.apache.camel.support.ExchangeHelper#getBodyAndResetStreamCache(Exchange, Class)} can
      * be used instead that gets the body, convert to the given type, and ensures to reset the body if its stream based.
@@ -264,7 +299,12 @@ public interface Message {
      * @see                            org.apache.camel.support.ExchangeHelper#getBodyAndResetStreamCache(Exchange,
      *                                 Class)
      */
-    <T> T getBody(Class<T> type);
+    @Metadata(label = "api",
+              important = true,
+              description = "The body, converted to the type when one is given (String, byte[], InputStream, a POJO through "
+                            + "the registered converters); null when there is no body or no conversion.",
+              examples = { "message.getBody(String.class)", "message.getBody()" })
+    <T> @Nullable T getBody(Class<T> type);
 
     /**
      * Returns the mandatory body as the specified type
@@ -272,7 +312,7 @@ public interface Message {
      * Notice if the message body is stream based then calling this method multiple times may lead to the stream not
      * being able to be re-read again. You can enable stream caching and call the {@link StreamCache#reset()} method to
      * reset the stream to be able to re-read again (if possible). See more details about
-     * <a href="http://camel.apache.org/stream-caching.html">stream caching</a>.
+     * <a href="https://camel.apache.org/stream-caching.html">stream caching</a>.
      * <p/>
      * The helper method {@link org.apache.camel.support.ExchangeHelper#getBodyAndResetStreamCache(Exchange, Class)} can
      * be used instead that gets the body, convert to the given type, and ensures to reset the body if its stream based.
@@ -283,6 +323,9 @@ public interface Message {
      * @see                            org.apache.camel.support.ExchangeHelper#getBodyAndResetStreamCache(Exchange,
      *                                 Class)
      */
+    @Metadata(label = "api",
+              description = "Like getBody(type) but throws InvalidPayloadException when the body is null or cannot be "
+                            + "converted.")
     <T> T getMandatoryBody(Class<T> type) throws InvalidPayloadException;
 
     /**
@@ -290,7 +333,11 @@ public interface Message {
      *
      * @param body the body
      */
-    void setBody(Object body);
+    @Metadata(label = "api",
+              important = true,
+              description = "Replaces the body, the headers stay; this is how a step returns its result.",
+              examples = { "message.setBody(order)" })
+    void setBody(@Nullable Object body);
 
     /**
      * Sets the body of the message as a specific type
@@ -298,7 +345,7 @@ public interface Message {
      * @param body the body
      * @param type the type of the body
      */
-    <T> void setBody(Object body, Class<T> type);
+    <T> void setBody(@Nullable Object body, Class<T> type);
 
     /**
      * Creates a copy of this message so that it can be used and possibly modified further in another exchange.
@@ -334,7 +381,7 @@ public interface Message {
      * @param message the other message
      * @param newBody the new body to use
      */
-    void copyFromWithNewBody(Message message, Object newBody);
+    void copyFromWithNewBody(Message message, @Nullable Object newBody);
 
     /**
      * Checks whether the message has a given {@link MessageTrait}
@@ -350,6 +397,7 @@ public interface Message {
      * @param  trait the {@link MessageTrait} to obtain the payload
      * @return       The trait payload or null if not available
      */
+    @Nullable
     Object getPayloadForTrait(MessageTrait trait);
 
     /**

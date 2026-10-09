@@ -17,13 +17,13 @@
 package org.apache.camel.model.language;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import jakarta.xml.bind.annotation.XmlAccessType;
 import jakarta.xml.bind.annotation.XmlAccessorType;
+import jakarta.xml.bind.annotation.XmlAttribute;
 import jakarta.xml.bind.annotation.XmlElement;
 import jakarta.xml.bind.annotation.XmlTransient;
 
@@ -41,10 +41,14 @@ import org.apache.camel.support.builder.Namespaces;
 public abstract class NamespaceAwareExpression extends SingleInputTypedExpressionDefinition implements NamespaceAware {
 
     @XmlElement(name = "namespace")
-    @Metadata(label = "common")
+    @Metadata(label = "common", description = "Injects the XML Namespaces of prefix to uri mappings.")
     private List<PropertyDefinition> namespace;
     @XmlTransient
     private Map<String, String> namespaces;
+    @XmlAttribute
+    @Metadata(label = "advanced",
+              description = "Reference to a org.apache.camel.support.builder.Namespaces bean in the registry to use for the XML Namespaces of prefix to uri mappings.")
+    private String namespacesRef;
 
     protected NamespaceAwareExpression() {
     }
@@ -53,6 +57,7 @@ public abstract class NamespaceAwareExpression extends SingleInputTypedExpressio
         super(source);
         this.namespace = ProcessorDefinitionHelper.deepCopyDefinitions(source.namespace);
         this.namespaces = source.namespaces != null ? new LinkedHashMap<>(source.namespaces) : null;
+        this.namespacesRef = source.namespacesRef;
     }
 
     protected NamespaceAwareExpression(String expression) {
@@ -63,6 +68,7 @@ public abstract class NamespaceAwareExpression extends SingleInputTypedExpressio
         super(builder);
         this.namespace = builder.namespace;
         this.namespaces = builder.namespaces;
+        this.namespacesRef = builder.namespacesRef;
     }
 
     @Override
@@ -70,11 +76,6 @@ public abstract class NamespaceAwareExpression extends SingleInputTypedExpressio
         return getNamespaceAsMap();
     }
 
-    /**
-     * Injects the XML Namespaces of prefix -> uri mappings
-     *
-     * @param namespaces the XML namespaces with the key of prefixes and the value the URIs
-     */
     @Override
     public void setNamespaces(Map<String, String> namespaces) {
         this.namespaces = namespaces;
@@ -88,16 +89,21 @@ public abstract class NamespaceAwareExpression extends SingleInputTypedExpressio
         return namespace;
     }
 
-    /**
-     * Injects the XML Namespaces of prefix -> uri mappings
-     */
     public void setNamespace(List<PropertyDefinition> namespace) {
         this.namespace = namespace;
     }
 
+    public String getNamespacesRef() {
+        return namespacesRef;
+    }
+
+    public void setNamespacesRef(String namespacesRef) {
+        this.namespacesRef = namespacesRef;
+    }
+
     public Map<String, String> getNamespaceAsMap() {
         if (namespaces == null && namespace != null) {
-            namespaces = new HashMap<>();
+            namespaces = new LinkedHashMap<>();
         }
         if (namespace != null) {
             for (PropertyDefinition def : namespace) {
@@ -121,6 +127,7 @@ public abstract class NamespaceAwareExpression extends SingleInputTypedExpressio
 
         private List<PropertyDefinition> namespace;
         private Map<String, String> namespaces;
+        private String namespacesRef;
 
         /**
          * Injects the XML Namespaces of prefix -> uri mappings
@@ -147,6 +154,17 @@ public abstract class NamespaceAwareExpression extends SingleInputTypedExpressio
          */
         public T namespace(List<PropertyDefinition> namespace) {
             this.namespace = namespace;
+            return (T) this;
+        }
+
+        /**
+         * Reference to a {@link Namespaces} bean in the registry to use for the XML Namespaces of prefix -> uri
+         * mappings
+         *
+         * @param namespacesRef the id of the Namespaces bean in the registry
+         */
+        public T namespacesRef(String namespacesRef) {
+            this.namespacesRef = namespacesRef;
             return (T) this;
         }
     }

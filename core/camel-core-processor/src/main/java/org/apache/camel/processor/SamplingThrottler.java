@@ -27,6 +27,7 @@ import org.apache.camel.Exchange;
 import org.apache.camel.Traceable;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,18 +40,20 @@ import org.slf4j.LoggerFactory;
  * This kind of throttling can be useful for taking a sample from an exchange stream, rough consolidation of noisy and
  * bursty exchange traffic or where queuing of throttled exchanges is undesirable.
  */
-public class SamplingThrottler extends BaseProcessorSupport implements Traceable, IdAware, RouteIdAware {
+public class SamplingThrottler extends BaseProcessorSupport implements Traceable, IdAware, RouteIdAware, StepIdAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(SamplingThrottler.class);
 
     private String id;
     private String routeId;
+    private String stepId;
     private long messageFrequency;
     private long currentMessageCount;
     private long samplePeriod;
     private long periodInMillis;
     private TimeUnit units;
     private long timeOfLastExchange;
+    private boolean sampledOnce;
     private final StopProcessor stopper = new StopProcessor();
     private final Lock calculationLock = new ReentrantLock();
     private final SampleStats sampled = new SampleStats();
@@ -100,6 +103,16 @@ public class SamplingThrottler extends BaseProcessorSupport implements Traceable
     }
 
     @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
+    @Override
     public String getTraceLabel() {
         if (messageFrequency > 0) {
             return "samplingThrottler[1 exchange per: " + messageFrequency + " messages received]";
@@ -133,7 +146,9 @@ public class SamplingThrottler extends BaseProcessorSupport implements Traceable
                 }
             } else {
                 long now = Duration.ofNanos(System.nanoTime()).toMillis();
-                if (now >= timeOfLastExchange + periodInMillis) {
+                // System.nanoTime() has an arbitrary origin, so the first exchange cannot be compared with a time
+                if (!sampledOnce || now >= timeOfLastExchange + periodInMillis) {
+                    sampledOnce = true;
                     doSend = true;
                     if (LOG.isTraceEnabled()) {
                         LOG.trace(sampled.sample());

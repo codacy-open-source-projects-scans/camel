@@ -101,7 +101,8 @@ public class SqlProducer extends DefaultProducer {
         if (useMessageBodyForSql) {
             sql = exchange.getIn().getBody(String.class);
         } else {
-            String queryHeader = exchange.getIn().getHeader(SqlConstants.SQL_QUERY, String.class);
+            String queryHeader = getEndpoint().isAllowQueryFromHeader()
+                    ? exchange.getIn().getHeader(SqlConstants.SQL_QUERY, String.class) : null;
             if (queryHeader != null) {
                 String placeholder = getEndpoint().isUsePlaceholder() ? getEndpoint().getPlaceholder() : null;
                 sql = SqlHelper.resolvePlaceholders(queryHeader, placeholder);
@@ -265,6 +266,12 @@ public class SqlProducer extends DefaultProducer {
                 // we do not know the row count so we cannot set a ROW_COUNT header
                 // defer closing the iterator when the exchange is complete
                 exchange.getExchangeExtension().addOnCompletion(new ResultSetIteratorCompletion(iterator));
+            } else {
+                // not a query so there is no result set to stream; close the statement
+                // and return the connection to the pool right away
+                exchange.getIn().setHeader(SqlConstants.SQL_UPDATE_COUNT, ps.getUpdateCount());
+                closeStatement(ps);
+                closeConnection(con);
             }
             return iterator;
         } catch (Exception e) {

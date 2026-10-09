@@ -66,13 +66,16 @@ public class BaggageInjectionTest extends OpenTelemetryTracerTestSupport {
                 Map<String, OtelTrace> traces = otelExtension.getTraces();
                 assertEquals(1, traces.size());
                 checkTrace(traces.values().iterator().next());
+            } finally {
+                span.end();
             }
         }
     }
 
     private void checkTrace(OtelTrace trace) {
         List<SpanData> spans = trace.getSpans();
-        assertEquals(8, spans.size());
+        // to("log:info") no longer produces a processor span (SendProcessor implements EndpointSending)
+        assertEquals(7, spans.size());
         SpanData testProducer = spans.get(0);
         SpanData direct = spans.get(1);
         SpanData innerProcessor1 = spans.get(2);
@@ -80,7 +83,6 @@ public class BaggageInjectionTest extends OpenTelemetryTracerTestSupport {
         SpanData innerLog = spans.get(4);
         SpanData innerProcessor2 = spans.get(5);
         SpanData log = spans.get(6);
-        SpanData innerToLog = spans.get(7);
 
         // Validate span completion
         assertTrue(testProducer.hasEnded());
@@ -90,7 +92,6 @@ public class BaggageInjectionTest extends OpenTelemetryTracerTestSupport {
         assertTrue(innerLog.hasEnded());
         assertTrue(innerProcessor2.hasEnded());
         assertTrue(log.hasEnded());
-        assertTrue(innerToLog.hasEnded());
     }
 
     @Override

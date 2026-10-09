@@ -21,9 +21,10 @@ public class AvroEndpointUriFactory extends org.apache.camel.support.component.E
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(14);
+        Set<String> props = new HashSet<>(15);
         props.add("bridgeErrorHandler");
         props.add("exceptionHandler");
         props.add("exchangePattern");
@@ -35,11 +36,13 @@ public class AvroEndpointUriFactory extends org.apache.camel.support.component.E
         props.add("protocolClassName");
         props.add("protocolLocation");
         props.add("reflectionProtocol");
+        props.add("serializablePackages");
         props.add("singleParameter");
         props.add("transport");
         props.add("uriAuthority");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
         SECRET_PROPERTY_NAMES = Collections.emptySet();
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         MULTI_VALUE_PREFIXES = Collections.emptyMap();
     }
 
@@ -53,7 +56,7 @@ public class AvroEndpointUriFactory extends org.apache.camel.support.component.E
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "transport", null, true, copy);
         uri = buildPathParameter(syntax, uri, "port", null, true, copy);
@@ -71,6 +74,11 @@ public class AvroEndpointUriFactory extends org.apache.camel.support.component.E
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

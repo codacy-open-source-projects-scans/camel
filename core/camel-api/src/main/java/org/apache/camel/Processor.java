@@ -16,17 +16,27 @@
  */
 package org.apache.camel;
 
+import org.apache.camel.spi.Metadata;
+
 /**
- * A <a href="http://camel.apache.org/processor.html">processor</a> is used to implement the
- * <a href="http://camel.apache.org/event-driven-consumer.html"> Event Driven Consumer</a> and
- * <a href="http://camel.apache.org/message-translator.html"> Message Translator</a> patterns and to process message
+ * A <a href="https://camel.apache.org/processor.html">processor</a> is used to implement the
+ * <a href="https://camel.apache.org/event-driven-consumer.html"> Event Driven Consumer</a> and
+ * <a href="https://camel.apache.org/message-translator.html"> Message Translator</a> patterns and to process message
  * exchanges.
  * <p/>
  * Notice if you use a {@link Processor} in a Camel route, then make sure to write the {@link Processor} in a
  * thread-safe way, as the Camel routes can potentially be executed by concurrent threads, and therefore multiple
  * threads can call the same {@link Processor} instance.
+ *
+ * @see AsyncProcessor
+ * @see Exchange
  */
 @FunctionalInterface
+@Metadata(label = "api",
+          description = "A step written in Java: process(exchange) reads and writes the exchange in place, the result "
+                        + "goes into exchange.getMessage(). Used as .process(new MyProcessor()) or a lambda, or as a bean "
+                        + "(process: {ref: myProcessor}); a plain bean method taking the body (.bean(myBean, \"method\")) "
+                        + "is often simpler than a Processor.")
 public interface Processor {
 
     /**
@@ -35,5 +45,12 @@ public interface Processor {
      * @param  exchange  the message exchange
      * @throws Exception if an internal processing error has occurred.
      */
+    @Metadata(label = "api",
+              important = true,
+              description = "Processes the exchange in place: read exchange.getMessage().getBody(type), put the result with "
+                            + "setBody; throw to fail the exchange.",
+              examples = {
+                      "exchange -> "
+                           + "exchange.getMessage().setBody(exchange.getMessage().getBody(String.class).toUpperCase())" })
     void process(Exchange exchange) throws Exception;
 }

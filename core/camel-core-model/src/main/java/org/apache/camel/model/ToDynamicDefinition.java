@@ -27,11 +27,15 @@ import org.apache.camel.Message;
 import org.apache.camel.builder.EndpointProducerBuilder;
 import org.apache.camel.spi.AsEndpointUri;
 import org.apache.camel.spi.Metadata;
+import org.apache.camel.spi.annotations.DslArg;
 
 /**
  * Sends the message to a dynamic endpoint
  */
-@Metadata(label = "eip,routing")
+@Metadata(label = "eip,endpoint,routing",
+          aliases = { "sink", "egress" },
+          description = "Sends the message to an endpoint URI computed dynamically from an expression,"
+                        + " allowing the destination to vary per message")
 @XmlRootElement(name = "toD")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class ToDynamicDefinition extends NoOutputDefinition<ToDynamicDefinition> {
@@ -40,27 +44,43 @@ public class ToDynamicDefinition extends NoOutputDefinition<ToDynamicDefinition>
     protected EndpointProducerBuilder endpointProducerBuilder;
 
     @XmlAttribute
-    @Metadata(required = true)
+    @Metadata(required = true,
+              description = "The uri of the endpoint to send to. The uri can be dynamic computed using the simple language.")
+    @DslArg
     private String uri;
     @XmlAttribute
+    @Metadata(description = "To use a variable as the source for the message body to send. This makes it handy to use variables for user data and to easily control what data to use for sending and receiving.")
     private String variableSend;
     @XmlAttribute
+    @Metadata(description = "To use a variable to store the received message body (only body, not headers). This makes it handy to use variables for user data and to easily control what data to use for sending and receiving.")
     private String variableReceive;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "org.apache.camel.ExchangePattern", enums = "InOnly,InOut")
+    @Metadata(label = "advanced", javaType = "org.apache.camel.ExchangePattern", enums = "InOnly,InOut",
+              description = "Sets the optional ExchangePattern used to invoke this endpoint.")
     private String pattern;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Integer")
+    @Metadata(label = "advanced", javaType = "java.lang.Integer",
+              description = "Sets the maximum size used by the ProducerCache which is used to cache and reuse producers when uris are reused. Use 0 for default cache size, or -1 to turn cache off.")
     private String cacheSize;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean")
+    @Metadata(label = "advanced", javaType = "java.lang.Boolean",
+              description = "Whether to ignore invalid endpoint URIs and skip sending the message.")
     private String ignoreInvalidEndpoint;
     @XmlAttribute
-    @Metadata(label = "advanced", defaultValue = "true", javaType = "java.lang.Boolean")
+    @Metadata(label = "advanced", defaultValue = "true", javaType = "java.lang.Boolean",
+              description = "Whether to allow components to optimise toD if they are SendDynamicAware.")
     private String allowOptimisedComponents;
     @XmlAttribute
-    @Metadata(label = "advanced", defaultValue = "true", javaType = "java.lang.Boolean")
+    @Metadata(label = "advanced", defaultValue = "true", javaType = "java.lang.Boolean",
+              description = "Whether to auto startup components when toD is starting up.")
     private String autoStartComponents;
+    @XmlAttribute
+    @Metadata(label = "advanced,security",
+              description = "Sets an optional comma-separated allow-list of component schemes that the dynamic recipient"
+                            + " may resolve to (e.g. http,https). When set, a dynamic endpoint whose scheme is not in the"
+                            + " list is rejected. This is a defence-in-depth restriction, useful for low-code / Kamelet"
+                            + " deployments; by default (unset) any scheme is allowed.")
+    private String allowedSchemes;
 
     public ToDynamicDefinition() {
     }
@@ -80,6 +100,7 @@ public class ToDynamicDefinition extends NoOutputDefinition<ToDynamicDefinition>
         this.ignoreInvalidEndpoint = source.ignoreInvalidEndpoint;
         this.allowOptimisedComponents = source.allowOptimisedComponents;
         this.autoStartComponents = source.autoStartComponents;
+        this.allowedSchemes = source.allowedSchemes;
     }
 
     @Override
@@ -251,6 +272,18 @@ public class ToDynamicDefinition extends NoOutputDefinition<ToDynamicDefinition>
         return this;
     }
 
+    /**
+     * Sets an optional comma-separated allow-list of component schemes that the dynamic recipient may resolve to (e.g.
+     * http,https). When set, a dynamic endpoint whose scheme is not in the list is rejected. By default (unset) any
+     * scheme is allowed.
+     *
+     * @return the builder
+     */
+    public ToDynamicDefinition allowedSchemes(String allowedSchemes) {
+        setAllowedSchemes(allowedSchemes);
+        return this;
+    }
+
     // Properties
     // -------------------------------------------------------------------------
 
@@ -258,10 +291,6 @@ public class ToDynamicDefinition extends NoOutputDefinition<ToDynamicDefinition>
         return uri;
     }
 
-    /**
-     * The uri of the endpoint to send to. The uri can be dynamic computed using the
-     * {@link org.apache.camel.language.simple.SimpleLanguage} expression.
-     */
     public void setUri(String uri) {
         this.uri = uri;
     }
@@ -328,6 +357,14 @@ public class ToDynamicDefinition extends NoOutputDefinition<ToDynamicDefinition>
 
     public void setAutoStartComponents(String autoStartComponents) {
         this.autoStartComponents = autoStartComponents;
+    }
+
+    public String getAllowedSchemes() {
+        return allowedSchemes;
+    }
+
+    public void setAllowedSchemes(String allowedSchemes) {
+        this.allowedSchemes = allowedSchemes;
     }
 
     public ToDynamicDefinition copyDefinition() {

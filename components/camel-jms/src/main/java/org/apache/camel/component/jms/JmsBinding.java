@@ -31,9 +31,11 @@ import java.util.Date;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.TreeSet;
 
 import jakarta.jms.BytesMessage;
 import jakarta.jms.Destination;
@@ -58,6 +60,7 @@ import org.apache.camel.converter.stream.CachedOutputStream;
 import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.support.CamelContextHelper;
 import org.apache.camel.support.DefaultExchangeHolder;
+import org.apache.camel.support.DeserializationFilterHelper;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.ObjectHelper;
 import org.apache.camel.support.PatternHelper;
@@ -78,16 +81,16 @@ import static org.apache.camel.component.jms.JmsMessageType.Text;
  * A Strategy used to convert between a Camel {@link Exchange} and {@link JmsMessage} to and from a JMS {@link Message}
  */
 public class JmsBinding {
-    /**
-     * Default {@link ObjectInputFilter} pattern applied as a defense-in-depth check on the class returned by
-     * {@link jakarta.jms.ObjectMessage#getObject()}. Allows standard Java types and Apache Camel types and rejects
-     * everything else. Can be overridden per-endpoint via {@link JmsConfiguration#setDeserializationFilter(String)} or
-     * globally via the JVM system property {@code jdk.serialFilter}.
-     */
-    static final String DEFAULT_DESERIALIZATION_FILTER
-            = "!java.net.**;java.**;javax.**;org.apache.camel.**;!*";
-
     private static final Logger LOG = LoggerFactory.getLogger(JmsBinding.class);
+
+    // the standard JMS headers (matched in any case, as Camel headers are case-insensitive)
+    private static final Set<String> STANDARD_JMS_HEADERS = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+
+    static {
+        STANDARD_JMS_HEADERS.addAll(List.of("JMSCorrelationID", "JMSDeliveryMode", "JMSDeliveryTime", "JMSDestination",
+                "JMSExpiration", "JMSMessageID", "JMSPriority", "JMSRedelivered", "JMSReplyTo", "JMSTimestamp", "JMSType"));
+    }
+
     private final JmsEndpoint endpoint;
     private final HeaderFilterStrategy headerFilterStrategy;
     private final JmsKeyFormatStrategy jmsKeyFormatStrategy;
@@ -99,7 +102,8 @@ public class JmsBinding {
         this.headerFilterStrategy = new JmsHeaderFilterStrategy(false);
         this.jmsKeyFormatStrategy = new DefaultJmsKeyFormatStrategy();
         this.messageCreatedStrategy = null;
-        this.deserializationFilter = resolveDeserializationFilter(null);
+        this.deserializationFilter = DeserializationFilterHelper.resolveDeserializationFilter(
+                null, DeserializationFilterHelper.DEFAULT_CLASS_DESERIALIZATION_FILTER);
     }
 
     public JmsBinding(JmsEndpoint endpoint) {
@@ -127,20 +131,22 @@ public class JmsBinding {
         if (configured == null) {
             configured = endpoint.getComponent().getDeserializationFilter();
         }
-        this.deserializationFilter = resolveDeserializationFilter(configured);
+        this.deserializationFilter = DeserializationFilterHelper.resolveDeserializationFilter(
+                configured, DeserializationFilterHelper.DEFAULT_CLASS_DESERIALIZATION_FILTER);
     }
 
-    private static ObjectInputFilter resolveDeserializationFilter(String configuredPattern) {
-        if (configuredPattern != null && !configuredPattern.isBlank()) {
-            return ObjectInputFilter.Config.createFilter(configuredPattern);
-        }
-        ObjectInputFilter jvmFilter = ObjectInputFilter.Config.getSerialFilter();
-        if (jvmFilter != null) {
-            return jvmFilter;
-        }
-        LOG.debug("No JVM-wide deserialization filter set, applying default Camel filter: {}",
-                DEFAULT_DESERIALIZATION_FILTER);
-        return ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER);
+    /**
+     * Whether sending and receiving JMS {@link ObjectMessage} is enabled on the endpoint. Disabled by default for
+     * security reasons; see {@link JmsConfiguration#setObjectMessageEnabled(boolean)}.
+     */
+    protected boolean isObjectMessageEnabled() {
+        return endpoint != null && endpoint.getConfiguration().isObjectMessageEnabled();
+    }
+
+    private static IllegalStateException objectMessageDisabled(String operation) {
+        return new IllegalStateException(
+                "JMS ObjectMessage is disabled by default for security reasons (" + operation + ")."
+                                         + " Set objectMessageEnabled=true on the JMS endpoint or component to enable it.");
     }
 
     /**
@@ -158,44 +164,11 @@ public class JmsBinding {
             return;
         }
         Class<?> clazz = payload.getClass();
-        ObjectInputFilter.Status status = deserializationFilter.checkInput(new PostDeserializationFilterInfo(clazz));
+        ObjectInputFilter.Status status = DeserializationFilterHelper.checkClass(deserializationFilter, clazz);
         if (status == ObjectInputFilter.Status.REJECTED) {
             throw new SecurityException(
                     "JMS ObjectMessage deserialization blocked for class: " + clazz.getName()
                                         + ". Configure the 'deserializationFilter' endpoint option or -Djdk.serialFilter to allow it.");
-        }
-    }
-
-    private static final class PostDeserializationFilterInfo implements ObjectInputFilter.FilterInfo {
-        private final Class<?> clazz;
-
-        private PostDeserializationFilterInfo(Class<?> clazz) {
-            this.clazz = clazz;
-        }
-
-        @Override
-        public Class<?> serialClass() {
-            return clazz;
-        }
-
-        @Override
-        public long arrayLength() {
-            return -1;
-        }
-
-        @Override
-        public long depth() {
-            return 0;
-        }
-
-        @Override
-        public long references() {
-            return 0;
-        }
-
-        @Override
-        public long streamBytes() {
-            return 0;
         }
     }
 
@@ -225,6 +198,9 @@ public class JmsBinding {
             }
 
             if (message instanceof ObjectMessage objectMessage) {
+                if (!isObjectMessageEnabled()) {
+                    throw objectMessageDisabled("receiving ObjectMessage");
+                }
                 LOG.trace("Extracting body as a ObjectMessage from JMS message: {}", message);
                 Object payload = objectMessage.getObject();
                 checkDeserializedClass(payload);
@@ -453,10 +429,10 @@ public class JmsBinding {
             String headerName, Object headerValue)
             throws JMSException {
         if (isStandardJMSHeader(headerName)) {
-            if (headerName.equals(JmsConstants.JMS_HEADER_CORRELATION_ID)
+            if (headerName.equalsIgnoreCase(JmsConstants.JMS_HEADER_CORRELATION_ID)
                     && (endpoint == null || !endpoint.isUseMessageIDAsCorrelationID())) {
                 jmsMessage.setJMSCorrelationID(ExchangeHelper.convertToType(exchange, String.class, headerValue));
-            } else if (headerName.equals(JmsConstants.JMS_HEADER_REPLY_TO) && headerValue != null) {
+            } else if (headerName.equalsIgnoreCase(JmsConstants.JMS_HEADER_REPLY_TO) && headerValue != null) {
                 if (headerValue instanceof String string) {
                     // if the value is a String we must normalize it first, and must include the prefix
                     // as ActiveMQ requires that when converting the String to a jakarta.jms.Destination type
@@ -464,14 +440,14 @@ public class JmsBinding {
                 }
                 Destination replyTo = ExchangeHelper.convertToType(exchange, Destination.class, headerValue);
                 JmsMessageHelper.setJMSReplyTo(jmsMessage, replyTo);
-            } else if (headerName.equals(JmsConstants.JMS_HEADER_TYPE)) {
+            } else if (headerName.equalsIgnoreCase(JmsConstants.JMS_HEADER_TYPE)) {
                 jmsMessage.setJMSType(ExchangeHelper.convertToType(exchange, String.class, headerValue));
-            } else if (headerName.equals(JmsConstants.JMS_HEADER_PRIORITY)) {
+            } else if (headerName.equalsIgnoreCase(JmsConstants.JMS_HEADER_PRIORITY)) {
                 jmsMessage.setJMSPriority(ExchangeHelper.convertToType(exchange, Integer.class, headerValue));
-            } else if (headerName.equals(JmsConstants.JMS_HEADER_DELIVERY_MODE)) {
+            } else if (headerName.equalsIgnoreCase(JmsConstants.JMS_HEADER_DELIVERY_MODE)) {
                 boolean qos = endpoint != null && endpoint.isPreserveMessageQos();
                 JmsMessageHelper.setJMSDeliveryMode(exchange, jmsMessage, headerValue, qos);
-            } else if (headerName.equals(JmsConstants.JMS_HEADER_EXPIRATION)) {
+            } else if (headerName.equalsIgnoreCase(JmsConstants.JMS_HEADER_EXPIRATION)) {
                 jmsMessage.setJMSExpiration(ExchangeHelper.convertToType(exchange, Long.class, headerValue));
             } else {
                 // The following properties are set by the MessageProducer:
@@ -502,8 +478,25 @@ public class JmsBinding {
             if (value != null) {
                 // must encode to safe JMS header name before setting property on jmsMessage
                 String key = jmsKeyFormatStrategy.encodeKey(headerName);
-                // set the property
-                JmsMessageHelper.setProperty(jmsMessage, key, value);
+                try {
+                    // set the property
+                    JmsMessageHelper.setProperty(jmsMessage, key, value);
+                } catch (JMSException e) {
+                    // JMS vendor-specific properties (JMS_<vendor>_xxx per JMS spec section 3.5.1)
+                    // may be read-only/reserved — set by the provider, not the application.
+                    // There is no standard JMS API to query which vendor properties are reserved,
+                    // and the set can change between provider versions (e.g. IBM MQ 10.0 made
+                    // JMS_IBM_MsgToken read-only). We skip them gracefully since they are
+                    // provider-assigned metadata that should not be propagated.
+                    // For non-vendor properties, we re-throw the exception as it likely indicates
+                    // a real problem (e.g. invalid value type, message not writable).
+                    if (key.startsWith("JMS_")) {
+                        LOG.warn("Could not set JMS vendor property '{}' on outgoing message, skipping: {}",
+                                key, e.getMessage());
+                    } else {
+                        throw e;
+                    }
+                }
             } else if (LOG.isDebugEnabled()) {
                 // okay the value is not a primitive or string so we cannot sent it over the wire
                 LOG.debug("Ignoring non primitive header: {} of class: {} with value: {}",
@@ -519,6 +512,9 @@ public class JmsBinding {
      * @return            <tt>true</tt> if its a standard JMS header
      */
     protected boolean isStandardJMSHeader(String headerName) {
+        if (STANDARD_JMS_HEADERS.contains(headerName)) {
+            return true;
+        }
         if (!headerName.startsWith("JMS")) {
             return false;
         }
@@ -596,6 +592,9 @@ public class JmsBinding {
     }
 
     protected Message createJmsMessage(Exception cause, Session session) throws JMSException {
+        if (!isObjectMessageEnabled()) {
+            throw objectMessageDisabled("transferException reply");
+        }
         LOG.trace("Using JmsMessageType: {}", Object);
         Message answer = session.createObjectMessage(cause);
         // ensure default delivery mode is used by default
@@ -616,6 +615,9 @@ public class JmsBinding {
 
         // special for transferExchange
         if (endpoint != null && endpoint.isTransferExchange()) {
+            if (!isObjectMessageEnabled()) {
+                throw objectMessageDisabled("transferExchange");
+            }
             LOG.trace("Option transferExchange=true so we use JmsMessageType: Object");
             Serializable holder = DefaultExchangeHolder.marshal(exchange, true, endpoint.isAllowSerializedHeaders(), false);
             Message answer = session.createObjectMessage(holder);
@@ -766,6 +768,9 @@ public class JmsBinding {
                 return message;
             }
             case Object: {
+                if (!isObjectMessageEnabled()) {
+                    throw objectMessageDisabled("creating ObjectMessage");
+                }
                 ObjectMessage message = session.createObjectMessage();
                 if (body != null) {
                     try {

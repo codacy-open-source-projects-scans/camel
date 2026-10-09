@@ -25,9 +25,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -38,6 +40,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class URISupportTest {
+
+    @AfterEach
+    public void resetSanitizeKeywords() {
+        // the keywords added by some tests are global
+        URISupport.resetSanitizeKeywords();
+    }
 
     @Test
     public void testNormalizeEndpointUri() throws Exception {
@@ -141,6 +149,97 @@ public class URISupportTest {
     }
 
     @Test
+    public void testNormalizeSpaceTheSameInEverySpelling() throws Exception {
+        // CAMEL-25188: the fast and the complex normalizer both write a space in a value as +
+        assertThat(URISupport.normalizeUri("log:foo?marker=a+b")).isEqualTo("log://foo?marker=a+b");
+        assertThat(URISupport.normalizeUri("log:foo?marker=a%20b")).isEqualTo("log://foo?marker=a+b");
+        assertThat(URISupport.normalizeUri("log:foo?marker=a b")).isEqualTo("log://foo?marker=a+b");
+        assertThat(URISupport.normalizeUri("log:foo?showAll=true&marker=a+b"))
+                .isEqualTo("log://foo?marker=a+b&showAll=true");
+        assertThat(URISupport.normalizeUri("log:foo?marker=a++b")).isEqualTo("log://foo?marker=a++b");
+    }
+
+    @Test
+    public void testNormalizeValueWithPercentEscapeFormEncodesTheQuery() throws Exception {
+        // CAMEL-25188: a value with = or # needs a percent escape, and a uri with % is normalized by the complex
+        // normalizer, so the fast normalizer hands such a uri to the complex normalizer (CAMEL-25345), which
+        // form-encodes the whole query, whatever the key order
+        assertThat(URISupport.normalizeUri("log:foo?secretKey=abc/def=="))
+                .isEqualTo("log://foo?secretKey=abc%2Fdef%3D%3D");
+        assertThat(URISupport.normalizeUri("log:foo?marker=a#b/c")).isEqualTo("log://foo?marker=a%23b%2Fc");
+        assertThat(URISupport.normalizeUri("jms:queue:foo?foo=bar&selector=somekey='somevalue'"))
+                .isEqualTo("jms://queue:foo?foo=bar&selector=somekey%3D%27somevalue%27");
+        // without a percent escape the query stays readable
+        assertThat(URISupport.normalizeUri("foo:bar?produces=application/json&host=http://h"))
+                .isEqualTo("foo://bar?host=http://h&produces=application/json");
+    }
+
+    @Test
+    public void testNormalizeSpaceInKey() throws Exception {
+        // CAMEL-25188: a + in a key is a space, written back as + as in a value
+        assertThat(URISupport.normalizeUri("log:foo?a+b=1")).isEqualTo("log://foo?a+b=1");
+        assertThat(URISupport.normalizeUri("log:foo?a+b=1&c=2")).isEqualTo("log://foo?a+b=1&c=2");
+    }
+
+    @Test
+    public void testNormalizeTwiceGivesTheSameUri() throws Exception {
+        // CAMEL-25188: a normalized uri normalizes to itself, so endpoint keys and lookups agree
+        String[] uris = {
+                "http://localhost:8080/foo?a=1&b=2",
+                "http://localhost:8080/foo?b=hello world&a=1",
+                "http://localhost:8080/foo?q=a+b",
+                "http://localhost:8080/foo?q=a%20b",
+                "http://localhost:8080/foo?q=a+b&x=1",
+                "ftp://user@host.com:21/dir?password=se+cret&binary=true",
+                "ftp://user@host.com:21/dir?password=RAW(se+cret)&binary=true",
+                "log:foo?level=INFO&showAll=true",
+                "timer:tick?period=1s&delay=2s",
+                "direct:start?b=\u00f8&a=1",
+                "file:target/in?include=.*\\.txt&noop=true",
+                "http://h/p?x=a&x=b&y=1",
+                "mock:a?b=x+y+z&a=1",
+                "jms:queue:foo?selector=somekey='somevalue'&foo=bar",
+                "log:foo?secretKey=abc/def==",
+                "log:foo?webhookExternalUrl=https://example.com/hook?token=abc",
+                "log:foo?marker=a#b/c",
+                "log:foo?a+b=1",
+                "foo:bar?host=http://h&produces=application/json&x=a=b" };
+        for (String uri : uris) {
+            String once = URISupport.normalizeUri(uri);
+            assertThat(URISupport.normalizeUri(once)).as("normalizing %s twice", uri).isEqualTo(once);
+        }
+    }
+
+    @Test
+    public void testNormalizeTwiceGivesTheSameUriWithHashOrTwoAtInPath() throws Exception {
+        // CAMEL-25345: a value that needs a percent escape, and a path with # or with more than one @ (an email address
+        // as user), are normalized by the complex normalizer, which encodes the path
+        assertThat(URISupport.normalizeUri("sftp://me@example.com@host/in?password=pa=ss"))
+                .isEqualTo("sftp://me%40example.com@host/in?password=pa%3Dss");
+        assertThat(URISupport.normalizeUri("sql:select+*+from+t+where+id=:#id?dataSource=#ds"))
+                .isEqualTo("sql://select+*+from+t+where+id=:%23id?dataSource=%23ds");
+        assertThat(URISupport.normalizeUri("imaps://me@example.com@imap.example.com?password=x&sslContextParameters=#ssl"))
+                .isEqualTo("imaps://me%40example.com@imap.example.com?password=x&sslContextParameters=%23ssl");
+        // without a percent escape in the query the path is kept as is
+        assertThat(URISupport.normalizeUri("sftp://me@example.com@host/in?binary=true"))
+                .isEqualTo("sftp://me@example.com@host/in?binary=true");
+        assertThat(URISupport.normalizeUri("sql:select+*+from+t+where+id=:#id?dataSource=ds"))
+                .isEqualTo("sql://select+*+from+t+where+id=:#id?dataSource=ds");
+
+        String[] uris = {
+                "sftp://me@example.com@host/in?password=pa=ss",
+                "sql:select+*+from+t+where+id=:#id?dataSource=#ds",
+                "imaps://me@example.com@imap.example.com?password=x&sslContextParameters=#ssl",
+                "ftp://me@example.com@host/in/a@b?password=se=cret&binary=true",
+                "http://host/a#b?q=#x",
+                "log:a#b?marker=x=y&showAll=true" };
+        for (String uri : uris) {
+            String once = URISupport.normalizeUri(uri);
+            assertThat(URISupport.normalizeUri(once)).as("normalizing %s twice", uri).isEqualTo(once);
+        }
+    }
+
+    @Test
     public void testParseParametersURLEncodedValue() throws Exception {
         String out = URISupport.normalizeUri("http://www.google.com?q=S%C3%B8ren%20Hansen");
         URI uri = new URI(out);
@@ -186,10 +285,19 @@ public class URISupportTest {
     }
 
     @Test
+    public void testCreateURIWithQueryEmptyQueryString() throws Exception {
+        URI uri = new URI("https://api.example.com/users/myuser/repos");
+        URI resultUri = URISupport.createURIWithQuery(uri, "");
+        assertNotNull(resultUri);
+        assertEquals("https://api.example.com/users/myuser/repos", resultUri.toString());
+    }
+
+    @Test
     public void testNormalizeEndpointWithEqualSignInParameter() throws Exception {
         String out = URISupport.normalizeUri("jms:queue:foo?selector=somekey='somevalue'&foo=bar");
         assertNotNull(out);
-        // Camel will safe encode the URI
+        // Camel will safe encode the URI - a value with '=' needs a percent escape, so the query is form-encoded
+        // as the complex normalizer does, and normalizing the uri again gives the same uri
         assertEquals("jms://queue:foo?foo=bar&selector=somekey%3D%27somevalue%27", out);
     }
 
@@ -254,6 +362,97 @@ public class URISupportTest {
     }
 
     @Test
+    public void testNormalizeEndpointUriOrderIndependentWithColonValue() throws Exception {
+        // CAMEL-24524: a value containing a colon (eg host:port) must normalize the same way
+        // regardless of whether the original parameter order already happened to be alphabetical.
+        // ':' is legal unescaped in a URI query (RFC 3986 pchar) so it must not be percent-encoded.
+        String out1 = URISupport.normalizeUri("kafka:mytopic?brokers=localhost:19092&groupId=mygroup");
+        String out2 = URISupport.normalizeUri("kafka:mytopic?groupId=mygroup&brokers=localhost:19092");
+
+        assertThat(out1).isEqualTo(out2);
+        assertThat(out1).isEqualTo("kafka://mytopic?brokers=localhost:19092&groupId=mygroup");
+    }
+
+    @Test
+    public void testNormalizeEndpointUriOrderIndependentWithThreeParameters() throws Exception {
+        // all 6 permutations of 3 keys (one already alphabetical, some not) must normalize identically
+        String[] permutations = new String[] {
+                "kafka:mytopic?brokers=localhost:19092&groupId=mygroup&clientId=myclient",
+                "kafka:mytopic?brokers=localhost:19092&clientId=myclient&groupId=mygroup",
+                "kafka:mytopic?groupId=mygroup&brokers=localhost:19092&clientId=myclient",
+                "kafka:mytopic?groupId=mygroup&clientId=myclient&brokers=localhost:19092",
+                "kafka:mytopic?clientId=myclient&brokers=localhost:19092&groupId=mygroup",
+                "kafka:mytopic?clientId=myclient&groupId=mygroup&brokers=localhost:19092" };
+
+        String expected = "kafka://mytopic?brokers=localhost:19092&clientId=myclient&groupId=mygroup";
+        for (String uri : permutations) {
+            assertThat(URISupport.normalizeUri(uri)).as("normalizing: " + uri).isEqualTo(expected);
+        }
+    }
+
+    @Test
+    public void testNormalizeEndpointUriOrderIndependentSingleParameterWithColonValue() throws Exception {
+        // CAMEL-24524: the single-parameter shortcut must also normalize the value consistently
+        String out = URISupport.normalizeUri("kafka:mytopic?brokers=localhost:19092");
+        assertThat(out).isEqualTo("kafka://mytopic?brokers=localhost:19092");
+    }
+
+    @Test
+    public void testNormalizeEndpointUriOrderIndependentWithCommaValue() throws Exception {
+        // a value with a comma (safe for the fast parser, and legal unescaped in a URI query)
+        // must also normalize the same regardless of key order, without being percent-encoded
+        String out1 = URISupport.normalizeUri("smtp://localhost?subject=Hello,World&username=davsclaus");
+        String out2 = URISupport.normalizeUri("smtp://localhost?username=davsclaus&subject=Hello,World");
+
+        assertThat(out1).isEqualTo(out2);
+        assertThat(out1).isEqualTo("smtp://localhost?subject=Hello,World&username=davsclaus");
+    }
+
+    @Test
+    public void testNormalizeEndpointUriOrderIndependentWithSlashValue() throws Exception {
+        // CAMEL-24524 follow-up: a value with a slash (eg a MIME type such as
+        // produces=application/json, as built by camel-rest-openapi's RestOpenApiEndpoint) must not
+        // be percent-encoded - '/' is legal unescaped in a URI query (RFC 3986 pchar). This previously
+        // broke RestOpenApiEndpointV3Test#shouldNotCrossContaminateProducersForSameOperation once the
+        // fast-path normalizer started always re-encoding the query, even when the keys ("host",
+        // "produces") were already in alphabetical order.
+        String out1 = URISupport.normalizeUri("foo:bar?host=http://petstore.example.com&produces=application/json");
+        String out2 = URISupport.normalizeUri("foo:bar?produces=application/json&host=http://petstore.example.com");
+
+        assertThat(out1).isEqualTo(out2);
+        assertThat(out1).isEqualTo("foo://bar?host=http://petstore.example.com&produces=application/json");
+    }
+
+    @Test
+    public void testNormalizeEndpointUriOrderIndependentIsIdempotent() throws Exception {
+        // normalizing an already-normalized uri must return the exact same string
+        String out1 = URISupport.normalizeUri("kafka:mytopic?groupId=mygroup&brokers=localhost:19092");
+        String out2 = URISupport.normalizeUri(out1);
+
+        assertThat(out2).isEqualTo(out1);
+    }
+
+    @Test
+    public void testNormalizeEndpointUriOrderIndependentWithRawValue() throws Exception {
+        // RAW() values must not be further encoded, regardless of key order
+        String out1 = URISupport.normalizeUri("kafka:mytopic?password=RAW(p@ss:word)&username=scott");
+        String out2 = URISupport.normalizeUri("kafka:mytopic?username=scott&password=RAW(p@ss:word)");
+
+        assertThat(out1).isEqualTo(out2);
+        assertThat(out1).isEqualTo("kafka://mytopic?password=RAW(p@ss:word)&username=scott");
+    }
+
+    @Test
+    public void testNormalizeEndpointUriOrderIndependentWithDualParametersAndColonValue() throws Exception {
+        // duplicate keys (list values) combined with a colon value, which is legal unescaped
+        String out1 = URISupport.normalizeUri("smtp://localhost?to=foo:1&to=bar:2&from=me");
+        String out2 = URISupport.normalizeUri("smtp://localhost?from=me&to=foo:1&to=bar:2");
+
+        assertThat(out1).isEqualTo(out2);
+        assertThat(out1).isEqualTo("smtp://localhost?from=me&to=foo:1&to=bar:2");
+    }
+
+    @Test
     public void testSanitizeAccessToken() {
         String out1 = URISupport
                 .sanitizeUri("google-sheets-stream://spreadsheets?accessToken=MY_TOKEN&clientId=foo&clientSecret=MY_SECRET");
@@ -264,6 +463,21 @@ public class URISupportTest {
     public void testSanitizeAuthorizationToken() {
         String out1 = URISupport.sanitizeUri("telegram:bots?authorizationToken=1234567890:XXAuthTokenHereXX");
         assertEquals("telegram:bots?authorizationToken=xxxxxx", out1);
+    }
+
+    @Test
+    void testSanitizeApiKeyHeader() {
+        // a hyphenated api-key header name (e.g. the Azure OpenAI auth header supplied via additionalHeader.*)
+        // must be redacted from a sanitized URI, just like the camelCase apiKey option
+        String out = URISupport.sanitizeUri("openai:CHAT?baseUrl=https://host&additionalHeader.api-key=MY_SECRET");
+        assertThat(out).isEqualTo("openai:CHAT?baseUrl=https://host&additionalHeader.api-key=xxxxxx");
+    }
+
+    @Test
+    void testSanitizeAuthorizationHeader() {
+        // a bare Authorization header (e.g. supplied via additionalHeader.*) must be redacted
+        String out = URISupport.sanitizeUri("openai:CHAT?additionalHeader.Authorization=Bearer%20MY_SECRET");
+        assertThat(out).isEqualTo("openai:CHAT?additionalHeader.Authorization=xxxxxx");
     }
 
     @Test
@@ -383,6 +597,26 @@ public class URISupportTest {
         // Just make sure the RAW parameter can be resolved rightly, we need to replace the % into %25
         assertEquals("xmpp://camel-user@localhost:123/test-user@localhost?password=RAW{foo %25%25 bar}&serviceName=some+chat",
                 out2);
+    }
+
+    @Test
+    public void testParseQueryDoubleAmpersand() throws Exception {
+        Map<String, Object> map = URISupport.parseQuery("delay=250&&period=500");
+        assertEquals(2, map.size());
+        assertEquals("250", map.get("delay"));
+        assertEquals("500", map.get("period"));
+
+        map = URISupport.parseQuery("&&delay=250&&&period=500");
+        assertEquals(2, map.size());
+        assertEquals("250", map.get("delay"));
+        assertEquals("500", map.get("period"));
+
+        map = URISupport.parseQuery("password=RAW(se&&cret)&&serviceName=somechat");
+        assertEquals(2, map.size());
+        assertEquals("RAW(se&&cret)", map.get("password"));
+        assertEquals("somechat", map.get("serviceName"));
+
+        assertEquals("timer://foo?delay=250&period=500", URISupport.normalizeUri("timer://foo?delay=250&&period=500"));
     }
 
     @Test
@@ -649,6 +883,111 @@ public class URISupportTest {
         assertNotEquals(expected, URISupport.sanitizeUri(uri1));
         expected = "http://foo?username=xxxxxx&password=xxxxxx&domain=xxxxxx&database=customers";
         assertEquals(expected, URISupport.sanitizeUri(uri1));
+    }
+
+    @Test
+    public void testSanitizeCustomKeysAppliedToAllParameters() {
+        URISupport.addSanitizeKeywords("pincode");
+        assertThat(URISupport.sanitizeUri("my:host?pincode=1111&pincode=2222"))
+                .isEqualTo("my:host?pincode=xxxxxx&pincode=xxxxxx");
+
+        // keywords added by an earlier call are kept
+        URISupport.addSanitizeKeywords("otp-code");
+        assertThat(URISupport.sanitizeUri("my:host?otpCode=123456&pincode=1111&otp-code=654321"))
+                .isEqualTo("my:host?otpCode=xxxxxx&pincode=xxxxxx&otp-code=xxxxxx");
+
+        // only built-in or empty keywords, which must not mask any other parameter
+        URISupport.addSanitizeKeywords("password, ");
+        URISupport.addSanitizeKeywords(null);
+        assertThat(URISupport.sanitizeUri("my:host?foo=bar&timeout=5000")).isEqualTo("my:host?foo=bar&timeout=5000");
+    }
+
+    @Test
+    public void testSanitizeUriRawValueWithClosingBracket() {
+        // a RAW value ends at the closing bracket followed by & or the end, the same way as when parsing the query
+        assertThat(URISupport.sanitizeUri("ftp://host/dir?password=RAW(se)cret)&binary=true"))
+                .isEqualTo("ftp://host/dir?password=xxxxxx&binary=true");
+        assertThat(URISupport.sanitizeUri("ftp://host/dir?password=RAW{se}cret}&binary=true"))
+                .isEqualTo("ftp://host/dir?password=xxxxxx&binary=true");
+        assertThat(URISupport.sanitizeUri("ftp://host/dir?binary=true&password=RAW()s3cr3t)"))
+                .isEqualTo("ftp://host/dir?binary=true&password=xxxxxx");
+        assertThat(URISupport.sanitizeUri("foo:bar?password=RAW(++?)w&rd)&serviceName=somechat"))
+                .isEqualTo("foo:bar?password=xxxxxx&serviceName=somechat");
+    }
+
+    @Test
+    public void testSanitizeUriRawValueInText() {
+        // the uri is part of a longer text, such as a route label, so the RAW value is masked up to the last bracket
+        assertThat(URISupport.sanitizeUri("from[ftp://host/dir?password=RAW(se)cret)]"))
+                .isEqualTo("from[ftp://host/dir?password=xxxxxx]");
+        assertThat(URISupport.sanitizeUri("from[ftp://host/dir?password=RAW(secr...]"))
+                .isEqualTo("from[ftp://host/dir?password=xxxxxx");
+    }
+
+    @Test
+    public void testSanitizeUriWithUserInfoAndOtherUri() {
+        assertThat(URISupport.sanitizeUri(
+                "ftp://joe:s3cr3t@ftp.example.com/in?callbackUrl=http://cb.example.com:8080/x&notify=ops@example.com"))
+                .isEqualTo(
+                        "ftp://joe:xxxxxx@ftp.example.com/in?callbackUrl=http://cb.example.com:8080/x&notify=ops@example.com");
+        // the userinfo ends at the last @ before the path
+        assertThat(URISupport.sanitizeUri("ftp://joe:p@ss@ftp.example.com/in"))
+                .isEqualTo("ftp://joe:xxxxxx@ftp.example.com/in");
+        // every uri in the text is sanitized
+        assertThat(URISupport.sanitizeUri("From[ftp://joe:secret1@host1/in] -> To[sftp://bob:secret2@host2/out]"))
+                .isEqualTo("From[ftp://joe:xxxxxx@host1/in] -> To[sftp://bob:xxxxxx@host2/out]");
+        // no userinfo
+        assertThat(URISupport.sanitizeUri("smtp://host:25?to=ops@example.com")).isEqualTo("smtp://host:25?to=ops@example.com");
+        assertThat(URISupport.sanitizeUri("ftp://joe@host:21/dir?to=ops@example.com"))
+                .isEqualTo("ftp://joe@host:21/dir?to=ops@example.com");
+    }
+
+    @Test
+    public void testSanitizeUriDashCaseKeys() {
+        assertThat(URISupport.sanitizeUri(
+                "my:host?access-key=A1&private-key=P2&connection-string=C3&sasl-jaas-config=J4&pass-phrase=P5&foo-bar=keep"))
+                .isEqualTo(
+                        "my:host?access-key=xxxxxx&private-key=xxxxxx&connection-string=xxxxxx&sasl-jaas-config=xxxxxx&pass-phrase=xxxxxx&foo-bar=keep");
+    }
+
+    @Test
+    public void testSanitizeUriNestedUri() {
+        assertThat(URISupport.sanitizeUri("http://host/cb?url=http://other/path?token=abc&foo=bar"))
+                .isEqualTo("http://host/cb?url=http://other/path?token=xxxxxx&foo=bar");
+    }
+
+    @Test
+    public void testSanitizeParameters() {
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("password", "secret");
+        parameters.put("private-key", "pk");
+        parameters.put("token", null);
+        parameters.put("foo", "bar");
+
+        assertThat(URISupport.sanitizeParameters(parameters))
+                .containsExactly(entry("password", "xxxxxx"), entry("private-key", "xxxxxx"), entry("token", null),
+                        entry("foo", "bar"));
+        // the given parameters are not changed
+        assertThat(parameters).containsEntry("password", "secret");
+        assertThat(URISupport.sanitizeParameters(null)).isNull();
+    }
+
+    @Test
+    public void testSanitizeUriWithUserInfoPasswordWithSlashOrQuestionMark() {
+        assertThat(URISupport.sanitizeUri("ftp://joe:pa/ss@host/dir")).isEqualTo("ftp://joe:xxxxxx@host/dir");
+        assertThat(URISupport.sanitizeUri("ftp://joe:pa?ss@host/dir?binary=true"))
+                .isEqualTo("ftp://joe:xxxxxx@host/dir?binary=true");
+        assertThat(URISupport.sanitizeUri("ftp://joe:p/a@b@host/dir")).isEqualTo("ftp://joe:xxxxxx@host/dir");
+        // a password that contains a query parameter (?key=value) cannot be told apart from host:port?key=value@...
+        // (see smtp://host:25?to=ops@example.com), so it is not masked
+        assertThat(URISupport.sanitizeUri("ftp://joe:p?a=b@host/dir")).isEqualTo("ftp://joe:p?a=b@host/dir");
+    }
+
+    @Test
+    public void testSanitizePathWithUserInfoAndOtherAt() {
+        assertThat(URISupport.sanitizePath("joe:secret@host/in?to=ops@example.com"))
+                .isEqualTo("joe:xxxxxx@host/in?to=ops@example.com");
+        assertThat(URISupport.sanitizePath("joe:pa/ss@host/dir")).isEqualTo("joe:xxxxxx@host/dir");
     }
 
 }

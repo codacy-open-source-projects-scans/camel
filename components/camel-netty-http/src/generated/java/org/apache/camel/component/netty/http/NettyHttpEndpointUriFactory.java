@@ -21,11 +21,13 @@ public class NettyHttpEndpointUriFactory extends org.apache.camel.support.compon
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(89);
+        Set<String> props = new HashSet<>(91);
         props.add("allowSerializedHeaders");
         props.add("backlog");
+        props.add("bootstrapConfiguration");
         props.add("bossCount");
         props.add("bossGroup");
         props.add("bridgeEndpoint");
@@ -68,6 +70,7 @@ public class NettyHttpEndpointUriFactory extends org.apache.camel.support.compon
         props.add("nettyServerBootstrapFactory");
         props.add("nettySharedHttpServer");
         props.add("noReplyLogLevel");
+        props.add("oauthProfile");
         props.add("okStatusCodeRange");
         props.add("options");
         props.add("passphrase");
@@ -117,6 +120,7 @@ public class NettyHttpEndpointUriFactory extends org.apache.camel.support.compon
         Set<String> secretProps = new HashSet<>(1);
         secretProps.add("passphrase");
         SECRET_PROPERTY_NAMES = Collections.unmodifiableSet(secretProps);
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         Map<String, String> prefixes = new HashMap<>(2);
         prefixes.put("options", "option.");
         prefixes.put("securityOptions", "securityConfiguration.");
@@ -133,7 +137,7 @@ public class NettyHttpEndpointUriFactory extends org.apache.camel.support.compon
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "protocol", null, true, copy);
         uri = buildPathParameter(syntax, uri, "host", null, true, copy);
@@ -151,6 +155,11 @@ public class NettyHttpEndpointUriFactory extends org.apache.camel.support.compon
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

@@ -220,6 +220,42 @@ public interface SqlStoredEndpointBuilderFactory {
             doSetProperty("useMessageBodyForTemplate", useMessageBodyForTemplate);
             return this;
         }
+        /**
+         * Whether to allow overriding the endpoint-configured stored-procedure
+         * template with the CamelSqlStoredTemplate header. Disabled by default;
+         * a header-supplied template is resolved with placeholders only, never
+         * as a file:, http:, https: or classpath: resource.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param allowTemplateFromHeader the value to set
+         * @return the dsl builder
+         */
+        default SqlStoredEndpointBuilder allowTemplateFromHeader(boolean allowTemplateFromHeader) {
+            doSetProperty("allowTemplateFromHeader", allowTemplateFromHeader);
+            return this;
+        }
+        /**
+         * Whether to allow overriding the endpoint-configured stored-procedure
+         * template with the CamelSqlStoredTemplate header. Disabled by default;
+         * a header-supplied template is resolved with placeholders only, never
+         * as a file:, http:, https: or classpath: resource.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param allowTemplateFromHeader the value to set
+         * @return the dsl builder
+         */
+        default SqlStoredEndpointBuilder allowTemplateFromHeader(String allowTemplateFromHeader) {
+            doSetProperty("allowTemplateFromHeader", allowTemplateFromHeader);
+            return this;
+        }
     }
 
     /**
@@ -391,10 +427,12 @@ public interface SqlStoredEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final SqlStoredHeaderNameBuilder INSTANCE = new SqlStoredHeaderNameBuilder();
+        public static final SqlStoredHeaderNameBuilder INSTANCE = new SqlStoredHeaderNameBuilder();
 
         /**
-         * The template.
+         * The stored-procedure template to execute. This header is ignored
+         * unless the endpoint enables allowTemplateFromHeader=true (disabled by
+         * default); when enabled it overrides the endpoint-configured template.
          * 
          * The option is a: {@code String} type.
          * 

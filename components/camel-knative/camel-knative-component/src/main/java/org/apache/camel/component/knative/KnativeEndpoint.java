@@ -54,7 +54,8 @@ import org.slf4j.LoggerFactory;
              scheme = "knative",
              syntax = "knative:type/typeId",
              title = "Knative",
-             category = Category.CLOUD)
+             category = Category.CLOUD,
+             headersClass = KnativeConstants.class)
 @Metadata(annotations = {
         "protocol=http",
 })
@@ -247,7 +248,8 @@ public class KnativeEndpoint extends DefaultEndpoint {
         return new KnativeTransportConfiguration(
                 this.cloudEventProcessor.cloudEvent(),
                 !this.configuration.isReplyWithCloudEvent(),
-                ObjectHelper.supplyIfEmpty(this.configuration.getReply(), definition::getReply));
+                ObjectHelper.supplyIfEmpty(this.configuration.getReply(), definition::getReply),
+                this.configuration.isMuteException());
     }
 
     private Stream<KnativeResource> servicesDefinitions() {

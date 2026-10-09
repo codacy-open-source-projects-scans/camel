@@ -25,9 +25,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import javax.xml.XMLConstants;
 import javax.xml.transform.ErrorListener;
 import javax.xml.transform.Result;
 import javax.xml.transform.Source;
@@ -49,7 +51,6 @@ import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.SynchronizationAdapter;
 import org.apache.camel.support.builder.xml.XMLConverterHelper;
 import org.apache.camel.util.FileUtil;
-import org.apache.camel.util.IOHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,12 +67,16 @@ public class XsltBuilder implements Processor {
 
     protected static final Logger LOG = LoggerFactory.getLogger(XsltBuilder.class);
     private Map<String, Object> parameters = new HashMap<>();
-    private Templates template;
+    private volatile Templates template;
+    private final AtomicLong templateGeneration = new AtomicLong();
     private volatile BlockingQueue<Transformer> transformers;
     private volatile SourceHandlerFactory sourceHandlerFactory;
     private ResultHandlerFactory resultHandlerFactory = new StringResultHandlerFactory();
     private boolean failOnNullBody = true;
     private URIResolver uriResolver;
+    // the resolver installed on the transformer for runtime document() resolution; enforces the factory's
+    // ACCESS_EXTERNAL_STYLESHEET restriction while stylesheet compilation (xsl:include/import) stays unrestricted
+    private volatile URIResolver runtimeUriResolver;
     private boolean deleteOutputFile;
     private ErrorListener errorListener;
     private EntityResolver entityResolver;
@@ -80,6 +85,7 @@ public class XsltBuilder implements Processor {
 
     private final XMLConverterHelper converter = new XMLConverterHelper();
     private final Lock sourceHandlerFactoryLock = new ReentrantLock();
+    private final Lock transformerSourceLock = new ReentrantLock();
 
     public XsltBuilder() {
     }
@@ -103,6 +109,7 @@ public class XsltBuilder implements Processor {
             exchange.getExchangeExtension().addOnCompletion(new XsltBuilderOnCompletion(fileName));
         }
 
+        long gen = templateGeneration.get();
         Transformer transformer = getTransformer();
         configureTransformer(transformer, exchange);
 
@@ -112,8 +119,6 @@ public class XsltBuilder implements Processor {
         Message out = exchange.getOut();
         out.copyFrom(exchange.getIn());
 
-        // the underlying input stream, which we need to close to avoid locking files or other resources
-        InputStream is = null;
         try {
             Source source = getSourceHandlerFactory().getSource(exchange, this.source);
 
@@ -128,9 +133,7 @@ public class XsltBuilder implements Processor {
             LOG.trace("Transform complete with result {}", result);
             resultHandler.setBody(out);
         } finally {
-            releaseTransformer(transformer);
-            // IOHelper can handle if null
-            IOHelper.close(is);
+            releaseTransformer(transformer, gen);
         }
     }
 
@@ -283,6 +286,7 @@ public class XsltBuilder implements Processor {
 
     public void setTemplate(Templates template) {
         this.template = template;
+        templateGeneration.incrementAndGet();
         if (transformers != null) {
             transformers.clear();
         }
@@ -344,28 +348,33 @@ public class XsltBuilder implements Processor {
      * @throws TransformerConfigurationException is thrown if creating a XSLT transformer failed.
      */
     public void setTransformerSource(Source source) throws TransformerConfigurationException {
-        TransformerFactory factory = converter.getTransformerFactory();
-        if (errorListener != null) {
-            factory.setErrorListener(errorListener);
-        } else {
-            // use a logger error listener so users can see from the logs what the error may be
-            factory.setErrorListener(new XsltErrorListener());
-        }
-        if (getUriResolver() != null) {
-            factory.setURIResolver(getUriResolver());
-        }
+        transformerSourceLock.lock();
+        try {
+            TransformerFactory factory = converter.getTransformerFactory();
+            if (errorListener != null) {
+                factory.setErrorListener(errorListener);
+            } else {
+                // use a logger error listener so users can see from the logs what the error may be
+                factory.setErrorListener(new XsltErrorListener());
+            }
+            if (getUriResolver() != null) {
+                factory.setURIResolver(getUriResolver());
+            }
 
-        // Check that the call to createTemplates() returns a valid template instance.
-        // In case of a xslt parse error, it will return null, and we should stop the
-        // deployment and raise an exception as the route will not be setup properly.
-        Templates templates = createTemplates(factory, source);
-        if (templates != null) {
-            setTemplate(templates);
-        } else {
-            throw new TransformerConfigurationException(
-                    "Error creating XSLT template. "
-                                                        + "This is most likely be caused by a XML parse error. "
-                                                        + "Please verify your XSLT file configured.");
+            // Check that the call to createTemplates() returns a valid template instance.
+            // In case of a xslt parse error, it will return null, and we should stop the
+            // deployment and raise an exception as the route will not be setup properly.
+            Templates templates = createTemplates(factory, source);
+            if (templates != null) {
+                setTemplate(templates);
+            } else {
+                throw new TransformerConfigurationException(
+                        "Error creating XSLT template. "
+                                                            + "This is most likely be caused by a XML parse error. "
+                                                            + "Please verify your XSLT file configured.");
+            }
+        } finally {
+            transformerSourceLock.unlock();
         }
     }
 
@@ -398,6 +407,8 @@ public class XsltBuilder implements Processor {
 
     public void setUriResolver(URIResolver uriResolver) {
         this.uriResolver = uriResolver;
+        // drop any cached runtime resolver derived from the previous one
+        this.runtimeUriResolver = null;
     }
 
     public void setEntityResolver(EntityResolver entityResolver) {
@@ -434,13 +445,14 @@ public class XsltBuilder implements Processor {
         this.xsltMessageLogger = xsltMessageLogger;
     }
 
-    private void releaseTransformer(Transformer transformer) {
+    private void releaseTransformer(Transformer transformer, long generation) {
         if (transformers != null) {
-            transformer.reset();
-            boolean result = transformers.offer(transformer);
-            if (!result) {
-                LOG.error("failed to offer() a transform");
+            if (generation != templateGeneration.get()) {
+                // template was reloaded while this transformer was in use — discard it
+                return;
             }
+            transformer.reset();
+            transformers.offer(transformer);
         }
     }
 
@@ -473,7 +485,7 @@ public class XsltBuilder implements Processor {
         if (uriResolver == null) {
             uriResolver = new XsltUriResolver(exchange.getContext(), null);
         }
-        transformer.setURIResolver(uriResolver);
+        transformer.setURIResolver(resolveRuntimeUriResolver());
         if (errorListener == null) {
             // set our error listener, so we can capture errors and report them back on the exchange
             transformer.setErrorListener(new DefaultTransformErrorHandler(exchange));
@@ -490,6 +502,43 @@ public class XsltBuilder implements Processor {
         transformer.setParameter("exchange", exchange);
         transformer.setParameter("in", exchange.getIn());
         transformer.setParameter("out", exchange.getOut());
+    }
+
+    /**
+     * Resolves the resolver to install on the transformer for runtime {@code document()} resolution. When Camel's own
+     * {@link XsltUriResolver} is in use and the transformer factory restricts external stylesheet access, a restricted
+     * copy is installed so {@code document()} honours {@code ACCESS_EXTERNAL_STYLESHEET}. Stylesheet compilation
+     * ({@code xsl:include} / {@code xsl:import}) keeps using the unrestricted resolver on the factory, so a route
+     * author's own includes are unaffected. The result is cached as the factory configuration is fixed once the builder
+     * is initialized.
+     */
+    private URIResolver resolveRuntimeUriResolver() {
+        URIResolver runtime = runtimeUriResolver;
+        if (runtime == null) {
+            runtime = uriResolver;
+            if (uriResolver instanceof XsltUriResolver xsltUriResolver) {
+                Set<String> allowedExternalProtocols = resolveAllowedExternalProtocols();
+                if (allowedExternalProtocols != null) {
+                    runtime = xsltUriResolver.withAllowedExternalProtocols(allowedExternalProtocols);
+                }
+            }
+            runtimeUriResolver = runtime;
+        }
+        return runtime;
+    }
+
+    /**
+     * Reads the transformer factory's {@code ACCESS_EXTERNAL_STYLESHEET} attribute as the set of external protocols the
+     * runtime resolver may load. Returns {@code null} (unrestricted) when the attribute is unset, {@code "all"}, or not
+     * supported by the factory.
+     */
+    private Set<String> resolveAllowedExternalProtocols() {
+        try {
+            Object value = converter.getTransformerFactory().getAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET);
+            return XsltUriResolver.parseAllowedProtocols(value != null ? value.toString() : null);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     protected void addParameters(Transformer transformer, Map<String, Object> map) {

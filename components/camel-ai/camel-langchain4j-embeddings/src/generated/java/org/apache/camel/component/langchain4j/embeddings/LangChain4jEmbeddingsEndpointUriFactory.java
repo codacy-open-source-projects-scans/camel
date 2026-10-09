@@ -21,15 +21,29 @@ public class LangChain4jEmbeddingsEndpointUriFactory extends org.apache.camel.su
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(3);
+        Set<String> props = new HashSet<>(11);
+        props.add("apiKey");
+        props.add("baseUrl");
+        props.add("customProvider");
         props.add("embeddingId");
         props.add("embeddingModel");
         props.add("lazyStartProducer");
+        props.add("modelName");
+        props.add("modelProperties");
+        props.add("provider");
+        props.add("temperature");
+        props.add("timeout");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
-        SECRET_PROPERTY_NAMES = Collections.emptySet();
-        MULTI_VALUE_PREFIXES = Collections.emptyMap();
+        Set<String> secretProps = new HashSet<>(1);
+        secretProps.add("apiKey");
+        SECRET_PROPERTY_NAMES = Collections.unmodifiableSet(secretProps);
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
+        Map<String, String> prefixes = new HashMap<>(1);
+        prefixes.put("modelProperties", "model.");
+        MULTI_VALUE_PREFIXES = Collections.unmodifiableMap(prefixes);
     }
 
     @Override
@@ -42,7 +56,7 @@ public class LangChain4jEmbeddingsEndpointUriFactory extends org.apache.camel.su
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "embeddingId", null, true, copy);
         uri = buildQueryParameters(uri, copy, encode);
@@ -57,6 +71,11 @@ public class LangChain4jEmbeddingsEndpointUriFactory extends org.apache.camel.su
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

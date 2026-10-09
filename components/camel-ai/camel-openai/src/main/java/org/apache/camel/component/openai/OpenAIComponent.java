@@ -26,12 +26,14 @@ import org.apache.camel.spi.annotations.Component;
 import org.apache.camel.support.DefaultComponent;
 
 /**
- * OpenAI component for chat completion and embeddings.
+ * LLM component for chat completion, embeddings, audio, and images using OpenAI-compatible APIs.
+ * <p>
+ * The {@code llm} scheme is registered alongside {@code openai}; both use the same component implementation.
  */
-@Component("openai")
+@Component("openai,llm")
 public class OpenAIComponent extends DefaultComponent implements SSLContextParametersAware {
 
-    @Metadata(description = "Default API key for all endpoints")
+    @Metadata(description = "Default API key for all endpoints", security = "secret")
     private String apiKey;
 
     @Metadata(description = "Default base URL for all endpoints", defaultValue = ClientOptions.PRODUCTION_URL)
@@ -42,6 +44,9 @@ public class OpenAIComponent extends DefaultComponent implements SSLContextParam
 
     @Metadata(description = "Default model for embeddings endpoints")
     private String embeddingModel;
+
+    @Metadata(description = "Default model for audio transcription endpoints")
+    private String audioModel;
 
     @Metadata(label = "security", defaultValue = "false",
               description = "Enable usage of global SSL context parameters")
@@ -62,6 +67,9 @@ public class OpenAIComponent extends DefaultComponent implements SSLContextParam
         }
         if (embeddingModel != null) {
             configuration.setEmbeddingModel(embeddingModel);
+        }
+        if (audioModel != null) {
+            configuration.setAudioModel(audioModel);
         }
 
         OpenAIEndpoint endpoint = new OpenAIEndpoint(uri, this, configuration);
@@ -106,6 +114,14 @@ public class OpenAIComponent extends DefaultComponent implements SSLContextParam
 
     public void setEmbeddingModel(String embeddingModel) {
         this.embeddingModel = embeddingModel;
+    }
+
+    public String getAudioModel() {
+        return audioModel;
+    }
+
+    public void setAudioModel(String audioModel) {
+        this.audioModel = audioModel;
     }
 
     @Override

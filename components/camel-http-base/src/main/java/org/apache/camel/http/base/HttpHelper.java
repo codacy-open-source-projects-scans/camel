@@ -17,8 +17,11 @@
 package org.apache.camel.http.base;
 
 import java.net.ProtocolException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
@@ -26,6 +29,7 @@ import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.support.http.HttpUtil;
 import org.apache.camel.util.CollectionHelper;
+import org.apache.camel.util.FileUtil;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.ObjectHelper;
 
@@ -136,6 +140,92 @@ public final class HttpHelper {
     }
 
     /**
+     * Removes the leading portion of a request path that was matched by a consumer's registered path, so that what
+     * remains is the path relative to that consumer - the same way {@code camel-servlet}, {@code camel-jetty},
+     * {@code camel-netty-http} and {@code camel-undertow} already behave by default.
+     * <p/>
+     * This is a pure, defensive function: it never throws for malformed input, and whenever the match is anything less
+     * than a full, boundary-respecting match of every consumer path segment, it returns {@code requestPath} unchanged
+     * rather than risk producing a partial or incorrect result. In particular a {@code consumerPath} of {@code null},
+     * blank, {@code "/"} or {@code ""} (once normalized) is treated as "no prefix to strip" and always returns
+     * {@code requestPath} unchanged - this is what makes the platform-http {@code proxy} pseudo-path (whose consumer
+     * path is {@code "/"}) provably unaffected by callers of this method.
+     * <p/>
+     * The consumer path may contain REST-DSL style {@code {name}} placeholder segments, which match any single
+     * non-empty request segment.
+     *
+     * @param  requestPath  the incoming request path, e.g. {@code /reverse-proxy/get}
+     * @param  consumerPath the path the consumer is registered under, e.g. {@code /reverse-proxy} or
+     *                      {@code /reverse-proxy*}
+     * @return              the remaining path after stripping the matched consumer path, always starting with a
+     *                      {@code /}, or {@code requestPath} unchanged if the consumer path does not match (or there is
+     *                      nothing to strip)
+     */
+    public static String stripUriPrefix(String requestPath, String consumerPath) {
+        if (requestPath == null) {
+            return null;
+        }
+        if (consumerPath == null || consumerPath.isBlank()) {
+            return requestPath;
+        }
+
+        String normalized = consumerPath.trim();
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        if (normalized.endsWith("*")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        while (normalized.length() > 1 && normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.isEmpty() || "/".equals(normalized)) {
+            return requestPath;
+        }
+
+        // split using single char / is optimized in the jdk
+        final String[] consumerSegments = normalized.split("/");
+        final String[] requestSegments = requestPath.split("/", -1);
+
+        if (requestSegments.length < consumerSegments.length) {
+            return requestPath;
+        }
+
+        for (int i = 0; i < consumerSegments.length; i++) {
+            String consumerSegment = consumerSegments[i];
+            if (consumerSegment.isEmpty()) {
+                // leading empty segment produced by the split on the initial '/'
+                continue;
+            }
+            String requestSegment = i < requestSegments.length ? requestSegments[i] : null;
+            boolean placeholder = consumerSegment.startsWith("{") && consumerSegment.endsWith("}");
+            if (placeholder) {
+                if (requestSegment == null || requestSegment.isEmpty()) {
+                    return requestPath;
+                }
+            } else if (requestSegment == null || !consumerSegment.equals(requestSegment)) {
+                return requestPath;
+            }
+        }
+
+        int matchedSegments = consumerSegments.length;
+        if (matchedSegments == requestSegments.length) {
+            // exact match, nothing remains
+            return "/";
+        }
+
+        // boundary check: the next request segment marks a '/' boundary, so this is always safe - anything else
+        // (e.g. /reverse-proxyfoo when the consumer path is /reverse-proxy) was already rejected above because the
+        // last matched request segment would not have equaled the consumer's last segment
+        StringBuilder remainder = new StringBuilder();
+        for (int i = matchedSegments; i < requestSegments.length; i++) {
+            remainder.append('/').append(requestSegments[i]);
+        }
+        String result = remainder.toString();
+        return result.isEmpty() ? "/" : result;
+    }
+
+    /**
      * In the endpoint the user may have defined rest {} placeholders. This helper method map those placeholders with
      * data from the incoming request context path
      *
@@ -173,6 +263,61 @@ public final class HttpHelper {
                 }
             }
         }
+    }
+
+    /**
+     * Decodes the value of a path parameter as a path segment (RFC 3986): percent-encoded octets are decoded as UTF-8,
+     * and a {@code +} is kept, as it is a space only in form-encoded query strings. A value with a malformed escape is
+     * kept as it is.
+     * <p/>
+     * For consumers whose {@link Exchange#HTTP_PATH} is not decoded: decode each value after the path has been split
+     * (see {@link #evalPlaceholders(BiConsumer, String, String)}), so an encoded {@code /} stays in its parameter.
+     *
+     * @param  value the value of the path parameter as it is in the request path
+     * @return       the decoded value
+     */
+    public static String decodePathParameter(String value) {
+        if (value.indexOf('%') == -1) {
+            return value;
+        }
+        try {
+            return URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return value;
+        }
+    }
+
+    /**
+     * Whether an uploaded file is accepted according to a {@code fileNameExtWhitelist}.
+     * <p/>
+     * The file name extension is compared, case-insensitively, against each comma-separated entry of the whitelist
+     * exactly and not as a substring: a whitelist of {@code txt} must not accept an upload named {@code evil.x} just
+     * because {@code "txt".contains("x")}. A file is accepted when no whitelist is configured, when the whitelist is
+     * {@code *}, or when the file name has no extension. The configured whitelist value is not modified.
+     *
+     * @param  whitelist the configured {@code fileNameExtWhitelist} (may be {@code null})
+     * @param  fileName  the file name submitted by the client
+     * @return           true if the file is accepted
+     */
+    public static boolean isFileNameExtWhitelisted(String whitelist, String fileName) {
+        if (whitelist == null) {
+            return true;
+        }
+        String ext = FileUtil.onlyExt(fileName);
+        if (ext == null) {
+            return true;
+        }
+        ext = ext.toLowerCase(Locale.US);
+        String lcWhitelist = whitelist.toLowerCase(Locale.US);
+        if (lcWhitelist.equals("*")) {
+            return true;
+        }
+        for (String allowed : lcWhitelist.split(",")) {
+            if (allowed.trim().equals(ext)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

@@ -45,7 +45,7 @@ public class ServiceBusComponentConfigurer extends PropertyConfigurerSupport imp
         case "connectionstring":
         case "connectionString": getOrCreateConfiguration(target).setConnectionString(property(camelContext, java.lang.String.class, value)); return true;
         case "credentialtype":
-        case "credentialType": getOrCreateConfiguration(target).setCredentialType(property(camelContext, org.apache.camel.component.azure.servicebus.CredentialType.class, value)); return true;
+        case "credentialType": getOrCreateConfiguration(target).setCredentialType(property(camelContext, org.apache.camel.component.azure.common.CredentialType.class, value)); return true;
         case "enabledeadlettering":
         case "enableDeadLettering": getOrCreateConfiguration(target).setEnableDeadLettering(property(camelContext, boolean.class, value)); return true;
         case "fullyqualifiednamespace":
@@ -58,6 +58,8 @@ public class ServiceBusComponentConfigurer extends PropertyConfigurerSupport imp
         case "maxAutoLockRenewDuration": getOrCreateConfiguration(target).setMaxAutoLockRenewDuration(property(camelContext, java.time.Duration.class, value).toMillis()); return true;
         case "maxconcurrentcalls":
         case "maxConcurrentCalls": getOrCreateConfiguration(target).setMaxConcurrentCalls(property(camelContext, int.class, value)); return true;
+        case "maxconcurrentsessions":
+        case "maxConcurrentSessions": getOrCreateConfiguration(target).setMaxConcurrentSessions(property(camelContext, int.class, value)); return true;
         case "prefetchcount":
         case "prefetchCount": getOrCreateConfiguration(target).setPrefetchCount(property(camelContext, int.class, value)); return true;
         case "processorclient":
@@ -113,7 +115,7 @@ public class ServiceBusComponentConfigurer extends PropertyConfigurerSupport imp
         case "connectionstring":
         case "connectionString": return java.lang.String.class;
         case "credentialtype":
-        case "credentialType": return org.apache.camel.component.azure.servicebus.CredentialType.class;
+        case "credentialType": return org.apache.camel.component.azure.common.CredentialType.class;
         case "enabledeadlettering":
         case "enableDeadLettering": return boolean.class;
         case "fullyqualifiednamespace":
@@ -126,6 +128,8 @@ public class ServiceBusComponentConfigurer extends PropertyConfigurerSupport imp
         case "maxAutoLockRenewDuration": return long.class;
         case "maxconcurrentcalls":
         case "maxConcurrentCalls": return int.class;
+        case "maxconcurrentsessions":
+        case "maxConcurrentSessions": return int.class;
         case "prefetchcount":
         case "prefetchCount": return int.class;
         case "processorclient":
@@ -190,6 +194,8 @@ public class ServiceBusComponentConfigurer extends PropertyConfigurerSupport imp
         case "maxAutoLockRenewDuration": return getOrCreateConfiguration(target).getMaxAutoLockRenewDuration();
         case "maxconcurrentcalls":
         case "maxConcurrentCalls": return getOrCreateConfiguration(target).getMaxConcurrentCalls();
+        case "maxconcurrentsessions":
+        case "maxConcurrentSessions": return getOrCreateConfiguration(target).getMaxConcurrentSessions();
         case "prefetchcount":
         case "prefetchCount": return getOrCreateConfiguration(target).getPrefetchCount();
         case "processorclient":

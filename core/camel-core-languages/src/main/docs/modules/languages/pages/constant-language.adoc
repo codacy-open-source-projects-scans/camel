@@ -2,13 +2,10 @@
 :doctitle: Constant
 :shortname: constant
 :artifactid: camel-core-languages
-:description: A fixed value set only once during the route startup.
+:description: A fixed value set only once during the route startup
 :since: 1.5
 :supportlevel: Stable
 :tabs-sync-option:
-//Manually maintained attributes
-:camel-spring-boot-name: core
-:starter-artifactid: camel-core-starter
 
 *Since Camel {since}*
 
@@ -33,6 +30,20 @@ include::partial$language-options.adoc[]
 The `setHeader` EIP can utilize a constant
 expression like:
 
+[tabs]
+====
+
+Java::
++
+[source,java]
+----
+from("seda:a")
+  .setHeader("theHeader", constant("the value"))
+  .to("mock:b");
+----
+
+XML::
++
 [source,xml]
 ----
 <route>
@@ -44,18 +55,27 @@ expression like:
 </route>
 ----
 
-in this case, the message coming from the seda:a
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: seda:a
+      steps:
+        - setHeader:
+            name: theHeader
+            expression:
+              constant:
+                expression: the value
+        - to:
+            uri: mock:b
+----
+====
+
+In this case, the message coming from the seda:a
 endpoint will have the header with key `theHeader`
 set its value as `the value` (string type).
-
-And the same example using Java DSL:
-
-[source,java]
-----
-from("seda:a")
-  .setHeader("theHeader", constant("the value"))
-  .to("mock:b");
-----
 
 === Specifying type of value
 
@@ -64,6 +84,19 @@ as a `String` value, which happens when using XML or YAML DSL:
 
 For example to set a header with `int` type you can do:
 
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("seda:a")
+    .setHeader("zipCode", constant(90210))
+    .to("mock:b");
+----
+
+XML::
++
 [source,xml]
 ----
 <route>
@@ -75,20 +108,76 @@ For example to set a header with `int` type you can do:
 </route>
 ----
 
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: seda:a
+      steps:
+        - setHeader:
+            name: zipCode
+            expression:
+              constant:
+                resultType: int
+                expression: "90210"
+        - to:
+            uri: mock:b
+----
+====
+
 
 == Loading constant from external resource
 
 You can externalize the constant and have Camel load it from a resource
 such as `"classpath:"`, `"file:"`, or `"http:"`. +
  This is done using the following syntax: `"resource:scheme:location"`,
-eg to refer to a file on the classpath you can do:
+eg to set the message body to the content of a file, such as a JSON document a rest service returns, you can do:
 
+[tabs]
+====
+Java::
++
 [source,java]
 ----
-.setHeader("myHeader").constant("resource:classpath:constant.txt")
+from("direct:stock")
+    .setBody(constant("resource:file:stock.json"))
+    .to("mock:result");
 ----
+
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="direct:stock"/>
+  <setBody>
+    <constant>resource:file:stock.json</constant>
+  </setBody>
+  <to uri="mock:result"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:stock
+      steps:
+        - setBody:
+            expression:
+              constant:
+                expression: resource:file:stock.json
+        - to:
+            uri: mock:result
+----
+====
+
+Use `resource:classpath:` for a file on the classpath, such as `resource:classpath:constant.txt`.
 
 == Dependencies
 
 The Constant language is part of *camel-core*.
-

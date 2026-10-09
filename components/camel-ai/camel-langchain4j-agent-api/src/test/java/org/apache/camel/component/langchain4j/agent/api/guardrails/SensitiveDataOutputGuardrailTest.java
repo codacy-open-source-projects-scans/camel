@@ -39,7 +39,7 @@ class SensitiveDataOutputGuardrailTest {
     @Test
     void testApiKeyDetection() {
         SensitiveDataOutputGuardrail guardrail = new SensitiveDataOutputGuardrail();
-        AiMessage message = FAKE"Your API key is: FAKE");
+        AiMessage message = AiMessage.from("Your API key is: api_key=sk_live_abc123def456ghi789jkl012mno345");
 
         OutputGuardrailResult result = guardrail.validate(message);
 
@@ -131,7 +131,7 @@ class SensitiveDataOutputGuardrailTest {
     @Test
     void testRedactionMode() {
         SensitiveDataOutputGuardrail guardrail = SensitiveDataOutputGuardrail.redacting();
-        AiMessage message = FAKE"Your API key is: FAKE");
+        AiMessage message = AiMessage.from("Your API key is: api_key=sk_live_abc123def456ghi789jkl012mno345");
 
         OutputGuardrailResult result = guardrail.validate(message);
 

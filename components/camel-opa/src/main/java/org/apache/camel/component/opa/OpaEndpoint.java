@@ -1,0 +1,209 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.camel.component.opa;
+
+import javax.net.ssl.SSLContext;
+
+import com.styra.opa.OPAClient;
+import org.apache.camel.Category;
+import org.apache.camel.Component;
+import org.apache.camel.Consumer;
+import org.apache.camel.Processor;
+import org.apache.camel.Producer;
+import org.apache.camel.spi.Metadata;
+import org.apache.camel.spi.UriEndpoint;
+import org.apache.camel.spi.UriParam;
+import org.apache.camel.spi.UriPath;
+import org.apache.camel.support.DefaultEndpoint;
+import org.apache.camel.support.jsse.SSLContextParameters;
+import org.apache.camel.util.ObjectHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Evaluate Open Policy Agent (Rego) policies against an Exchange and record the allow/deny decision on it.
+ */
+@UriEndpoint(firstVersion = "4.23.0", scheme = "opa", title = "OPA",
+             syntax = "opa:policyPath", producerOnly = true, category = { Category.SECURITY },
+             headersClass = OpaConstants.class)
+public class OpaEndpoint extends DefaultEndpoint {
+
+    static final String WASM_MODE = "wasm";
+    private static final String REST_MODE = "rest";
+
+    private static final Logger LOG = LoggerFactory.getLogger(OpaEndpoint.class);
+
+    @UriPath(description = "Path of the Rego rule head to evaluate, relative to the OPA data document. For a rule"
+                           + " named allow in a policy declaring package authz.orders, this is authz/orders/allow."
+                           + " The path is taken from the endpoint only: it is deliberately not overridable by a"
+                           + " message header, so that an inbound message cannot select which policy judges it.")
+    @Metadata(required = true)
+    private String policyPath;
+
+    @UriParam
+    private OpaConfiguration configuration;
+
+    private OPAClient opaClient;
+    private volatile OpaPolicyEvaluator evaluator;
+    private volatile SSLContext sslContext;
+
+    public OpaEndpoint(final String uri, final Component component, final OpaConfiguration configuration) {
+        super(uri, component);
+        this.configuration = configuration;
+    }
+
+    @Override
+    protected void doStart() throws Exception {
+        super.doStart();
+        String mode = configuration.getEvaluationMode();
+        if (WASM_MODE.equalsIgnoreCase(mode)) {
+            if (configuration.isBatch()) {
+                throw new IllegalArgumentException(
+                        "batch is not supported with evaluationMode=wasm: it saves the per-element HTTP round-trip via"
+                                                   + " OPA's batch API, which has no meaning for in-process evaluation."
+                                                   + " Use evaluationMode=rest.");
+            }
+            warnAboutIgnoredServerOptions();
+            evaluator = createWasmEvaluator();
+        } else if (!REST_MODE.equalsIgnoreCase(mode)) {
+            // silently falling back to rest would leave a typo'd mode running against a server while quietly
+            // ignoring policyBundle, which is a miserable thing to debug in production
+            throw new IllegalArgumentException(
+                    "Unknown evaluationMode '" + mode + "'; expected one of " + REST_MODE + ", " + WASM_MODE);
+        } else {
+            if (configuration.getOpaClient() != null) {
+                opaClient = configuration.getOpaClient();
+                evaluator = new OpaRestEvaluator(
+                        opaClient, null, policyPath, configuration.getAllowKey(), configuration.getIncludeHeaders(),
+                        configuration.getIncludeProperties(), configuration.isIncludeBody(),
+                        configuration.isFailOpen());
+            } else {
+                sslContext = createSslContext();
+                OpaHttpClient transport = OpaRestEvaluator.createTransport(
+                        configuration.getBearerToken(),
+                        configuration.getConnectionTimeout(), configuration.getRequestTimeout(),
+                        sslContext);
+                opaClient = OpaRestEvaluator.createClient(configuration.getServerUrl(), transport);
+                evaluator = new OpaRestEvaluator(
+                        opaClient, transport, policyPath, configuration.getAllowKey(),
+                        configuration.getIncludeHeaders(),
+                        configuration.getIncludeProperties(), configuration.isIncludeBody(),
+                        configuration.isFailOpen());
+            }
+        }
+    }
+
+    /**
+     * Resolves the endpoint's TLS configuration, falling back to the context's global one when the component opts in.
+     */
+    private SSLContext createSslContext() throws Exception {
+        SSLContextParameters ssl = configuration.getSslContextParameters();
+        if (ssl == null) {
+            ssl = getComponent().retrieveGlobalSslContextParameters();
+        }
+        return ssl != null ? ssl.createSSLContext(getCamelContext()) : null;
+    }
+
+    /**
+     * The TLS configuration the decision call resolved to, so the producer's readiness check probes the server the same
+     * way rather than failing a handshake the decision call passes.
+     */
+    SSLContext getSslContext() {
+        return sslContext;
+    }
+
+    /**
+     * {@code opaClient}, {@code serverUrl} and {@code bearerToken} reach and authenticate to an OPA server, of which
+     * there is none in {@code wasm} mode, so they are ignored - a startup warning is clearer than silence for an
+     * operator who set one and expects it to take effect. {@code failOpen} is deliberately not among these: a
+     * {@code wasm} pool can still stay busy past {@code borrowTimeout}, and {@code failOpen} governs that outcome as it
+     * governs an unreachable server in {@code rest} mode, so it applies in both.
+     * <p/>
+     * Kept in step with {@code OpaSecurityPolicy.warnIgnoredServerOptions}: the two configure the same evaluators, so
+     * an option that is silently dropped by one and warned about by the other is a trap for anyone moving a policy path
+     * between the producer and {@code .policy(...)}.
+     */
+    private void warnAboutIgnoredServerOptions() {
+        if (configuration.getOpaClient() != null) {
+            LOG.warn("opaClient is ignored when evaluationMode=wasm: the policy is evaluated in-process");
+        }
+        if (ObjectHelper.isNotEmpty(configuration.getBearerToken())) {
+            LOG.warn("bearerToken is ignored when evaluationMode=wasm: there is no server to authenticate to");
+        }
+        if (ObjectHelper.isNotEmpty(configuration.getServerUrl())
+                && !OpaConfiguration.DEFAULT_SERVER_URL.equals(configuration.getServerUrl())) {
+            LOG.warn("serverUrl '{}' is ignored when evaluationMode=wasm: the policy is evaluated in-process",
+                    configuration.getServerUrl());
+        }
+    }
+
+    private OpaPolicyEvaluator createWasmEvaluator() throws Exception {
+        return OpaWasmEvaluator.create(
+                getCamelContext(), configuration.getPolicyBundle(), configuration.getEntrypoint(),
+                configuration.getPoolSize(), configuration.getBorrowTimeout(), policyPath, configuration.getAllowKey(),
+                configuration.getIncludeHeaders(), configuration.getIncludeProperties(), configuration.isIncludeBody(),
+                configuration.isFailOpen());
+    }
+
+    @Override
+    protected void doStop() throws Exception {
+        if (evaluator instanceof AutoCloseable closeable) {
+            closeable.close();
+        }
+        evaluator = null;
+        opaClient = null;
+        super.doStop();
+    }
+
+    @Override
+    public OpaComponent getComponent() {
+        return (OpaComponent) super.getComponent();
+    }
+
+    @Override
+    public Producer createProducer() throws Exception {
+        return new OpaProducer(this);
+    }
+
+    @Override
+    public Consumer createConsumer(Processor processor) throws Exception {
+        throw new UnsupportedOperationException("Consumer not supported");
+    }
+
+    public String getPolicyPath() {
+        return policyPath;
+    }
+
+    public void setPolicyPath(String policyPath) {
+        this.policyPath = policyPath;
+    }
+
+    /**
+     * The endpoint configuration.
+     */
+    public OpaConfiguration getConfiguration() {
+        return configuration;
+    }
+
+    public void setConfiguration(OpaConfiguration configuration) {
+        this.configuration = configuration;
+    }
+
+    OpaPolicyEvaluator getEvaluator() {
+        return evaluator;
+    }
+}

@@ -16,23 +16,24 @@
  */
 package org.apache.camel.builder;
 
-import org.apache.camel.model.language.CSimpleExpression;
 import org.apache.camel.model.language.ConstantExpression;
 import org.apache.camel.model.language.DatasonnetExpression;
 import org.apache.camel.model.language.ExchangePropertyExpression;
 import org.apache.camel.model.language.GroovyExpression;
 import org.apache.camel.model.language.HeaderExpression;
 import org.apache.camel.model.language.Hl7TerserExpression;
+import org.apache.camel.model.language.JactlExpression;
 import org.apache.camel.model.language.JavaExpression;
 import org.apache.camel.model.language.JavaScriptExpression;
-import org.apache.camel.model.language.JoorExpression;
 import org.apache.camel.model.language.JqExpression;
 import org.apache.camel.model.language.JsonPathExpression;
 import org.apache.camel.model.language.LanguageExpression;
 import org.apache.camel.model.language.MethodCallExpression;
 import org.apache.camel.model.language.MvelExpression;
 import org.apache.camel.model.language.OgnlExpression;
+import org.apache.camel.model.language.Python3Expression;
 import org.apache.camel.model.language.PythonExpression;
+import org.apache.camel.model.language.QuickjsExpression;
 import org.apache.camel.model.language.RefExpression;
 import org.apache.camel.model.language.SimpleExpression;
 import org.apache.camel.model.language.SpELExpression;
@@ -61,28 +62,6 @@ public final class LanguageBuilderFactory {
     public ConstantExpression.Builder constant(Object value) {
         var builder = constant();
         builder.value(value);
-        return builder;
-    }
-
-    /**
-     * Uses the CSimple language
-     *
-     * @deprecated use simple instead
-     */
-    @Deprecated(since = "4.19")
-    public CSimpleExpression.Builder csimple() {
-        return new CSimpleExpression.Builder();
-    }
-
-    /**
-     * Uses the CSimple language
-     *
-     * @deprecated use simple instead
-     */
-    @Deprecated(since = "4.19")
-    public CSimpleExpression.Builder csimple(String expression) {
-        var builder = csimple();
-        builder.expression(expression);
         return builder;
     }
 
@@ -167,6 +146,22 @@ public final class LanguageBuilderFactory {
     }
 
     /**
+     * Uses the Jactl language
+     */
+    public JactlExpression.Builder jactl() {
+        return new JactlExpression.Builder();
+    }
+
+    /**
+     * Uses the Jactl language
+     */
+    public JactlExpression.Builder jactl(String expression) {
+        var builder = jactl();
+        builder.expression(expression);
+        return builder;
+    }
+
+    /**
      * Uses the JavaScript language
      */
     public JavaScriptExpression.Builder js() {
@@ -196,14 +191,6 @@ public final class LanguageBuilderFactory {
         var builder = java();
         builder.expression(expression);
         return builder;
-    }
-
-    /**
-     * Uses the JOOR language
-     */
-    @Deprecated(since = "4.3.0")
-    public JoorExpression.Builder joor() {
-        return new JoorExpression.Builder();
     }
 
     /**
@@ -334,6 +321,38 @@ public final class LanguageBuilderFactory {
      */
     public PythonExpression.Builder python(String expression) {
         var builder = python();
+        builder.expression(expression);
+        return builder;
+    }
+
+    /**
+     * Uses the Python 3 language
+     */
+    public Python3Expression.Builder python3() {
+        return new Python3Expression.Builder();
+    }
+
+    /**
+     * Uses the Python 3 language
+     */
+    public Python3Expression.Builder python3(String expression) {
+        var builder = python3();
+        builder.expression(expression);
+        return builder;
+    }
+
+    /**
+     * Uses the QuickJS language
+     */
+    public QuickjsExpression.Builder quickjs() {
+        return new QuickjsExpression.Builder();
+    }
+
+    /**
+     * Uses the QuickJS language
+     */
+    public QuickjsExpression.Builder quickjs(String expression) {
+        var builder = quickjs();
         builder.expression(expression);
         return builder;
     }

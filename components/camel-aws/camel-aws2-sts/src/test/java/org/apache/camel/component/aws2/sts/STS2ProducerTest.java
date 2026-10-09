@@ -28,6 +28,7 @@ import software.amazon.awssdk.services.sts.model.AssumeRoleResponse;
 import software.amazon.awssdk.services.sts.model.GetFederationTokenResponse;
 import software.amazon.awssdk.services.sts.model.GetSessionTokenResponse;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class STS2ProducerTest extends CamelTestSupport {
@@ -92,6 +93,34 @@ public class STS2ProducerTest extends CamelTestSupport {
         assertEquals("xxx", resultGet.credentials().accessKeyId());
     }
 
+    @Test
+    void stsGetFederationTokenWithoutFederatedNameReportsTheCorrectOperation() {
+        assertThatThrownBy(() -> template.requestBody("direct:getFederationToken", "body"))
+                .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage("Federated name needs to be specified for getFederationToken operation");
+    }
+
+    @Test
+    void assumeRoleWithPojoRequestAndWrongBodyTypeThrows() {
+        assertThatThrownBy(() -> template.requestBody("direct:assumeRolePojo", "not an AssumeRoleRequest"))
+                .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage("assumeRole operation requires AssumeRoleRequest in POJO mode");
+    }
+
+    @Test
+    void getSessionTokenWithPojoRequestAndWrongBodyTypeThrows() {
+        assertThatThrownBy(() -> template.requestBody("direct:getSessionTokenPojo", "not a GetSessionTokenRequest"))
+                .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage("getSessionToken operation requires GetSessionTokenRequest in POJO mode");
+    }
+
+    @Test
+    void getFederationTokenWithPojoRequestAndWrongBodyTypeThrows() {
+        assertThatThrownBy(() -> template.requestBody("direct:getFederationTokenPojo", "not a GetFederationTokenRequest"))
+                .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage("getFederationToken operation requires GetFederationTokenRequest in POJO mode");
+    }
+
     @Override
     protected RouteBuilder createRouteBuilder() {
         return new RouteBuilder() {
@@ -103,6 +132,12 @@ public class STS2ProducerTest extends CamelTestSupport {
                         .to("mock:result");
                 from("direct:getFederationToken").to("aws2-sts://test?stsClient=#amazonStsClient&operation=getFederationToken")
                         .to("mock:result");
+                from("direct:assumeRolePojo")
+                        .to("aws2-sts://test?stsClient=#amazonStsClient&operation=assumeRole&pojoRequest=true");
+                from("direct:getSessionTokenPojo")
+                        .to("aws2-sts://test?stsClient=#amazonStsClient&operation=getSessionToken&pojoRequest=true");
+                from("direct:getFederationTokenPojo")
+                        .to("aws2-sts://test?stsClient=#amazonStsClient&operation=getFederationToken&pojoRequest=true");
             }
         };
     }

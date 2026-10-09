@@ -24,6 +24,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import jakarta.ws.rs.client.Client;
@@ -54,6 +55,7 @@ import org.keycloak.admin.client.KeycloakBuilder;
 import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
@@ -77,7 +79,7 @@ public class KeycloakSecurityTestInfraIT extends CamelTestSupport {
     private static final Logger log = LoggerFactory.getLogger(KeycloakSecurityTestInfraIT.class);
 
     @RegisterExtension
-    static KeycloakService keycloakService = KeycloakServiceFactory.createService();
+    static KeycloakService keycloakService = KeycloakServiceFactory.createSingletonService();
 
     // Test data - use unique names to avoid conflicts
     private static final String TEST_REALM_NAME = "security-test-realm-" + UUID.randomUUID().toString().substring(0, 8);
@@ -471,7 +473,7 @@ public class KeycloakSecurityTestInfraIT extends CamelTestSupport {
         // Test that parseToken works correctly with public key and issuer verification
         String expectedIssuer = keycloakService.getKeycloakServerUrl() + "/realms/" + TEST_REALM_NAME;
         try {
-            org.keycloak.representations.AccessToken token = KeycloakSecurityHelper.parseAndVerifyAccessToken(
+            AccessToken token = KeycloakSecurityHelper.parseAndVerifyAccessToken(
                     adminToken, publicKey, expectedIssuer);
 
             assertNotNull(token);
@@ -479,7 +481,7 @@ public class KeycloakSecurityTestInfraIT extends CamelTestSupport {
             assertTrue(KeycloakSecurityHelper.isTokenActive(token));
 
             // Verify roles can be extracted after public key verification
-            java.util.Set<String> roles = KeycloakSecurityHelper.extractRoles(token, TEST_REALM_NAME, TEST_CLIENT_ID);
+            Set<String> roles = KeycloakSecurityHelper.extractRoles(token, TEST_REALM_NAME, TEST_CLIENT_ID);
             assertNotNull(roles);
 
             log.info("Public key and issuer verification test passed for user: {}", ADMIN_USER);
@@ -511,14 +513,14 @@ public class KeycloakSecurityTestInfraIT extends CamelTestSupport {
 
         try {
             // Parse and verify token with public key and issuer
-            org.keycloak.representations.AccessToken token = KeycloakSecurityHelper.parseAndVerifyAccessToken(
+            AccessToken token = KeycloakSecurityHelper.parseAndVerifyAccessToken(
                     adminToken, publicKey, expectedIssuer);
             assertNotNull(token);
             assertNotNull(token.getSubject());
             assertTrue(KeycloakSecurityHelper.isTokenActive(token));
 
             // Extract roles from token
-            java.util.Set<String> roles = KeycloakSecurityHelper.extractRoles(token, TEST_REALM_NAME, TEST_CLIENT_ID);
+            Set<String> roles = KeycloakSecurityHelper.extractRoles(token, TEST_REALM_NAME, TEST_CLIENT_ID);
             assertNotNull(roles);
             assertTrue(roles.contains(ADMIN_ROLE), "Token should contain admin role");
 

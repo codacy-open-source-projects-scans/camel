@@ -20,6 +20,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.support.DefaultProducer;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.URISupport;
@@ -98,11 +99,14 @@ public class STS2Producer extends DefaultProducer {
                 try {
                     result = stsClient.assumeRole(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Assume Role command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Assume Role command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "assumeRole operation requires AssumeRoleRequest in POJO mode");
             }
         } else {
             Builder builder = AssumeRoleRequest.builder();
@@ -127,7 +131,7 @@ public class STS2Producer extends DefaultProducer {
             try {
                 result = stsClient.assumeRole(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Assume Role command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Assume Role command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -152,11 +156,14 @@ public class STS2Producer extends DefaultProducer {
                 try {
                     result = stsClient.getSessionToken(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Session Token command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Session Token command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getSessionToken operation requires GetSessionTokenRequest in POJO mode");
             }
         } else {
             GetSessionTokenRequest.Builder builder = GetSessionTokenRequest.builder();
@@ -164,7 +171,7 @@ public class STS2Producer extends DefaultProducer {
             try {
                 result = stsClient.getSessionToken(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Session Token command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Session Token command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -186,11 +193,14 @@ public class STS2Producer extends DefaultProducer {
                 try {
                     result = stsClient.getFederationToken(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Federation Token command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Federation Token command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getFederationToken operation requires GetFederationTokenRequest in POJO mode");
             }
         } else {
             GetFederationTokenRequest.Builder builder = GetFederationTokenRequest.builder();
@@ -199,12 +209,12 @@ public class STS2Producer extends DefaultProducer {
                 String federatedName = exchange.getIn().getHeader(STS2Constants.FEDERATED_NAME, String.class);
                 builder.name(federatedName);
             } else {
-                throw new IllegalArgumentException("Federated name needs to be specified for assumeRole operation");
+                throw new IllegalArgumentException("Federated name needs to be specified for getFederationToken operation");
             }
             try {
                 result = stsClient.getFederationToken(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Federation Token command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Federation Token command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);

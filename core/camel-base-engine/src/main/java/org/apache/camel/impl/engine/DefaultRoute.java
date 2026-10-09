@@ -90,6 +90,7 @@ public class DefaultRoute extends ServiceSupport implements Route {
     private Boolean logMask;
     private Boolean logExhaustedMessageBody;
     private Boolean streamCache;
+    private Boolean messageSize;
     private Long delay;
     private Boolean autoStartup = Boolean.TRUE;
     private final List<RoutePolicy> routePolicyList = new ArrayList<>();
@@ -110,6 +111,8 @@ public class DefaultRoute extends ServiceSupport implements Route {
     private final Map<String, Object> properties = new HashMap<>();
     private final List<Service> services = new ArrayList<>();
     private final List<Service> servicesToStop = new ArrayList<>();
+    // the services added with addService, which are kept when the services are gathered again
+    private final List<Service> addedServices = new ArrayList<>();
     private final StopWatch stopWatch = new StopWatch(false);
     private RouteError routeError;
     private Integer startupOrder;
@@ -233,6 +236,12 @@ public class DefaultRoute extends ServiceSupport implements Route {
         services.clear();
         // gather all the services for this route
         gatherServices(services);
+        // and the services added to the route (such as by the interceptSendToEndpoint EIP)
+        for (Service service : addedServices) {
+            if (!services.contains(service)) {
+                services.add(service);
+            }
+        }
     }
 
     @Override
@@ -244,6 +253,9 @@ public class DefaultRoute extends ServiceSupport implements Route {
     public void addService(Service service) {
         if (!services.contains(service)) {
             services.add(service);
+        }
+        if (!addedServices.contains(service)) {
+            addedServices.add(service);
         }
     }
 
@@ -502,6 +514,20 @@ public class DefaultRoute extends ServiceSupport implements Route {
         } else {
             // fallback to the option from camel context
             return camelContext.isStreamCaching();
+        }
+    }
+
+    @Override
+    public void setMessageSize(Boolean messageSize) {
+        this.messageSize = messageSize;
+    }
+
+    @Override
+    public Boolean isMessageSize() {
+        if (messageSize != null) {
+            return messageSize;
+        } else {
+            return camelContext.isMessageSize();
         }
     }
 

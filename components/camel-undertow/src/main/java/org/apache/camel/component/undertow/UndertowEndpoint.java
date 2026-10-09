@@ -17,6 +17,7 @@
 package org.apache.camel.component.undertow;
 
 import java.net.URI;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -26,7 +27,9 @@ import java.util.ServiceLoader;
 
 import javax.net.ssl.SSLContext;
 
+import io.undertow.server.HttpServerExchange;
 import io.undertow.server.handlers.accesslog.AccessLogReceiver;
+import io.undertow.util.StatusCodes;
 import org.apache.camel.AsyncEndpoint;
 import org.apache.camel.Category;
 import org.apache.camel.Consumer;
@@ -37,7 +40,8 @@ import org.apache.camel.Producer;
 import org.apache.camel.component.undertow.UndertowConstants.EventType;
 import org.apache.camel.component.undertow.handlers.CamelWebSocketHandler;
 import org.apache.camel.component.undertow.spi.UndertowSecurityProvider;
-import org.apache.camel.http.base.HttpHeaderFilterStrategy;
+import org.apache.camel.http.base.OAuthHttpSecuritySupport;
+import org.apache.camel.http.base.OAuthProfileAwareHttpEndpoint;
 import org.apache.camel.http.base.cookie.CookieHandler;
 import org.apache.camel.spi.EndpointServiceLocation;
 import org.apache.camel.spi.HeaderFilterStrategy;
@@ -48,6 +52,7 @@ import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriPath;
 import org.apache.camel.support.DefaultEndpoint;
 import org.apache.camel.support.jsse.SSLContextParameters;
+import org.apache.camel.util.ObjectHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.Option;
@@ -60,7 +65,7 @@ import org.xnio.Options;
 @UriEndpoint(firstVersion = "2.16.0", scheme = "undertow", title = "Undertow", syntax = "undertow:httpURI", category = {
         Category.HTTP, Category.NETWORKING }, lenientProperties = true, headersClass = UndertowConstants.class)
 public class UndertowEndpoint extends DefaultEndpoint
-        implements AsyncEndpoint, HeaderFilterStrategyAware, EndpointServiceLocation {
+        implements AsyncEndpoint, HeaderFilterStrategyAware, EndpointServiceLocation, OAuthProfileAwareHttpEndpoint {
 
     private static final Logger LOG = LoggerFactory.getLogger(UndertowEndpoint.class);
 
@@ -69,6 +74,7 @@ public class UndertowEndpoint extends DefaultEndpoint
     private OptionMap optionMap;
     private HttpHandlerRegistrationInfo registrationInfo;
     private CamelWebSocketHandler webSocketHttpHandler;
+    private OAuthHttpSecuritySupport oauthHttpSecurity;
     private boolean isWebSocket;
 
     @UriPath
@@ -81,7 +87,7 @@ public class UndertowEndpoint extends DefaultEndpoint
     @UriParam(label = "advanced")
     private AccessLogReceiver accessLogReceiver;
     @UriParam(label = "advanced")
-    private HeaderFilterStrategy headerFilterStrategy = new HttpHeaderFilterStrategy();
+    private HeaderFilterStrategy headerFilterStrategy = new UndertowHeaderFilterStrategy();
     @UriParam(label = "security")
     private SSLContextParameters sslContextParameters;
     @UriParam(label = "consumer")
@@ -94,8 +100,8 @@ public class UndertowEndpoint extends DefaultEndpoint
     private Boolean throwExceptionOnFailure = Boolean.TRUE;
     @UriParam(label = "consumer", defaultValue = "false", security = "insecure:serialization")
     private Boolean transferException = Boolean.FALSE;
-    @UriParam(label = "consumer", defaultValue = "false")
-    private Boolean muteException = Boolean.FALSE;
+    @UriParam(label = "consumer", defaultValue = "true")
+    private Boolean muteException = Boolean.TRUE;
     @UriParam(label = "producer", defaultValue = "true")
     private Boolean keepAlive = Boolean.TRUE;
     @UriParam(label = "producer", defaultValue = "true")
@@ -136,6 +142,11 @@ public class UndertowEndpoint extends DefaultEndpoint
               description = "Security provider allows plug in the provider, which will be used to secure requests. "
                             + "SPI approach could be used too (endpoint then finds security provider using SPI).")
     private UndertowSecurityProvider securityProvider;
+    @UriParam(label = "consumer,security", displayName = "OAuth Profile",
+              description = "OAuth profile name for validating incoming Authorization: Bearer tokens. "
+                            + "When set, the HTTP request or WebSocket upgrade request is authenticated before the route is processed. "
+                            + "This requires an OAuthTokenValidationFactory; camel-oauth provides the default implementation.")
+    private String oauthProfile;
 
     public UndertowEndpoint(String uri, UndertowComponent component) {
         super(uri, component);
@@ -171,8 +182,23 @@ public class UndertowEndpoint extends DefaultEndpoint
         this.securityProvider = securityProvider;
     }
 
+    public String getOauthProfile() {
+        return oauthProfile;
+    }
+
+    public void setOauthProfile(String oauthProfile) {
+        this.oauthProfile = oauthProfile;
+    }
+
+    public OAuthHttpSecuritySupport getOauthHttpSecurity() {
+        return oauthHttpSecurity;
+    }
+
     @Override
     public Producer createProducer() throws Exception {
+        if (ObjectHelper.isNotEmpty(oauthProfile)) {
+            throw new IllegalArgumentException("The undertow oauthProfile option is only supported on consumers");
+        }
         return new UndertowProducer(this, optionMap);
     }
 
@@ -464,6 +490,43 @@ public class UndertowEndpoint extends DefaultEndpoint
         this.allowedRoles = allowedRoles;
     }
 
+    /**
+     * The allowed roles of this endpoint, or of the component when the endpoint does not configure any.
+     */
+    public List<String> computeAllowedRoles() {
+        String allowedRolesString = allowedRoles != null ? allowedRoles : getComponent().getAllowedRoles();
+        return allowedRolesString == null ? null : Arrays.asList(allowedRolesString.split("\\s*,\\s*"));
+    }
+
+    /**
+     * Whether requests to this endpoint are checked by the {@link UndertowSecurityProvider} or restricted to the
+     * allowed roles.
+     */
+    public boolean requiresAuthentication() {
+        List<String> roles = computeAllowedRoles();
+        return securityProvider != null || roles != null && !roles.isEmpty();
+    }
+
+    /**
+     * Applies the {@link UndertowSecurityProvider} and the allowed roles of this endpoint to a request.
+     *
+     * @return {@link StatusCodes#OK} if the request is allowed, otherwise the status code to reject it with
+     */
+    public int authenticate(HttpServerExchange httpExchange) throws Exception {
+        List<String> roles = computeAllowedRoles();
+        if (securityProvider != null) {
+            // security provider decides, whether endpoint is accessible
+            return securityProvider.authenticate(httpExchange, roles);
+        }
+        if (roles != null && !roles.isEmpty()) {
+            // this case could happen due to bad configuration
+            // if allowedRoles are present but securityProvider is not, access has to be denied in this case
+            LOG.warn("Illegal state caused by missing securityProvider but existing allowed roles!");
+            return StatusCodes.FORBIDDEN;
+        }
+        return StatusCodes.OK;
+    }
+
     @Override
     protected void doInit() throws Exception {
         super.doInit();
@@ -475,6 +538,8 @@ public class UndertowEndpoint extends DefaultEndpoint
         final String scheme = httpURI.getScheme();
         this.isWebSocket = UndertowConstants.WS_PROTOCOL.equalsIgnoreCase(scheme)
                 || UndertowConstants.WSS_PROTOCOL.equalsIgnoreCase(scheme);
+
+        oauthHttpSecurity = OAuthHttpSecuritySupport.create(getCamelContext(), oauthProfile);
 
         if (sslContextParameters != null) {
             sslContext = sslContextParameters.createSSLContext(getCamelContext());

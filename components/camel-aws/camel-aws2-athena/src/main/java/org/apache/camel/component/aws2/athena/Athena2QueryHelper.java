@@ -125,9 +125,30 @@ class Athena2QueryHelper {
             return false;
         }
 
+        if (isWaitTimeoutExceeded()) {
+            LOG.trace("AWS Athena start query execution exceeded the wait timeout of {} while the query was still"
+                      + " running, will not relaunch it",
+                    this.waitTimeout);
+            return false;
+        }
+
         // if this.isRetry, return true
 
         return true;
+    }
+
+    /**
+     * Did the wait window elapse while the query was still running? Only a completed-and-retryable query is meant to
+     * consume another attempt, so a query that is merely slow must not be relaunched.
+     * <p>
+     * Called from {@link #shouldAttempt()} once success and failure have been ruled out, so {@code isRetry} is the only
+     * completion state left to exclude here.
+     */
+    private boolean isWaitTimeoutExceeded() {
+        if (this.attempts == 0 || this.isRetry) {
+            return false;
+        }
+        return now() - this.startMs >= this.waitTimeout;
     }
 
     /**
@@ -169,7 +190,7 @@ class Athena2QueryHelper {
     void doWait() {
         // Use Camel's task API for polling delay instead of Thread.sleep()
         // We use initialDelay for the actual delay, and maxIterations(1) to run once
-        Tasks.foregroundTask()
+        boolean completed = Tasks.foregroundTask()
                 .withBudget(Budgets.iterationBudget()
                         .withMaxIterations(1)
                         .withInitialDelay(Duration.ofMillis(this.currentDelay))
@@ -178,6 +199,14 @@ class Athena2QueryHelper {
                 .withName("AthenaQueryPollingDelay")
                 .build()
                 .run(exchange.getContext(), () -> true);
+
+        if (!completed && Thread.currentThread().isInterrupted()) {
+            // the task API already restored the interrupt status, so only record it here to let the
+            // attempt and wait loops bail out at the earliest opportunity
+            this.interrupted = true;
+            LOG.trace(
+                    "AWS Athena start query execution wait thread was interrupted; will return at earliest opportunity");
+        }
 
         this.currentDelay = this.delay;
     }

@@ -111,6 +111,8 @@ from("seda:quoteAggregator")
     .end();
 ----
 
+XML::
++
 [source,xml]
 ----
   <route>
@@ -199,9 +201,10 @@ public class MyVendor {
 
 And are loaded up in Spring XML like this:
 
+._XML-only: Spring XML bean definitions for vendor and aggregation strategy_
 [source,xml]
 ----
-<camelContext>
+<beans>
 
     <bean id="aggregatorStrategy" class="org.apache.camel.spring.processor.scattergather.LowestQuoteAggregationStrategy"/>
 
@@ -217,7 +220,7 @@ And are loaded up in Spring XML like this:
       <constructor-arg><value>3</value></constructor-arg>
     </bean>
 
-</camelContext>
+</beans>
 ----
 
 Each bean is loaded with a different price for beer. When the message is sent to each bean endpoint,

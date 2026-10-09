@@ -28,7 +28,9 @@ import com.ibm.cloud.objectstorage.services.s3.model.ListObjectsV2Request;
 import com.ibm.cloud.objectstorage.services.s3.model.ListObjectsV2Result;
 import com.ibm.cloud.objectstorage.services.s3.model.S3Object;
 import com.ibm.cloud.objectstorage.services.s3.model.S3ObjectSummary;
+import org.apache.camel.AsyncCallback;
 import org.apache.camel.Exchange;
+import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.Message;
 import org.apache.camel.Processor;
 import org.apache.camel.spi.Synchronization;
@@ -123,15 +125,15 @@ public class IBMCOSConsumer extends ScheduledBatchPollingConsumer {
             // only loop if we are started (allowed to run)
             final Exchange exchange = ObjectHelper.cast(Exchange.class, exchanges.poll());
             // add current index and total as properties
-            exchange.setProperty(org.apache.camel.ExchangePropertyKey.BATCH_INDEX, index);
-            exchange.setProperty(org.apache.camel.ExchangePropertyKey.BATCH_SIZE, total);
-            exchange.setProperty(org.apache.camel.ExchangePropertyKey.BATCH_COMPLETE, index == total - 1);
+            exchange.setProperty(ExchangePropertyKey.BATCH_INDEX, index);
+            exchange.setProperty(ExchangePropertyKey.BATCH_SIZE, total);
+            exchange.setProperty(ExchangePropertyKey.BATCH_COMPLETE, index == total - 1);
 
             // update pending number of exchanges
             pendingExchanges = total - index - 1;
 
             // use default consumer callback
-            org.apache.camel.AsyncCallback cb = defaultConsumerCallback(exchange, true);
+            AsyncCallback cb = defaultConsumerCallback(exchange, true);
             getAsyncProcessor().process(exchange, cb);
         }
 
@@ -158,15 +160,23 @@ public class IBMCOSConsumer extends ScheduledBatchPollingConsumer {
             }
 
             if (getEndpoint().getInProgressRepository() != null
-                    && getEndpoint().getInProgressRepository().contains(s3ObjectSummary.getKey())) {
+                    && !getEndpoint().getInProgressRepository().add(s3ObjectSummary.getKey())) {
                 LOG.trace("Object {} is already in progress", s3ObjectSummary.getKey());
                 continue;
             }
 
-            S3Object s3Object = getCosClient().getObject(
-                    new GetObjectRequest(s3ObjectSummary.getBucketName(), s3ObjectSummary.getKey()));
-            Exchange exchange = createExchange(s3Object, s3ObjectSummary.getKey());
-            exchanges.add(exchange);
+            try {
+                S3Object s3Object = getCosClient().getObject(
+                        new GetObjectRequest(s3ObjectSummary.getBucketName(), s3ObjectSummary.getKey()));
+                Exchange exchange = createExchange(s3Object, s3ObjectSummary.getKey());
+                exchanges.add(exchange);
+            } catch (Exception e) {
+                // Fetching the object or creating the exchange failed after we claimed the in-progress key;
+                // release it so the object is not left permanently unconsumable, and skip it for this poll.
+                LOG.warn("Error fetching object {} from bucket {}: {}. Skipping it for this poll.",
+                        s3ObjectSummary.getKey(), s3ObjectSummary.getBucketName(), e.getMessage());
+                removeInProgress(s3ObjectSummary.getKey());
+            }
         }
 
         return exchanges;
@@ -244,11 +254,20 @@ public class IBMCOSConsumer extends ScheduledBatchPollingConsumer {
             }
         } catch (Exception e) {
             LOG.warn("Error during post processing of object {} from bucket {}: {}", key, bucketName, e.getMessage());
+        } finally {
+            removeInProgress(key);
         }
     }
 
     protected void processRollback(String key) {
         LOG.trace("Processing failed for object with key {}", key);
+        removeInProgress(key);
+    }
+
+    private void removeInProgress(String key) {
+        if (getEndpoint().getInProgressRepository() != null) {
+            getEndpoint().getInProgressRepository().remove(key);
+        }
     }
 
     private void copyObject(String bucketName, String key) {

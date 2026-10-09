@@ -22,6 +22,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.health.HealthCheck;
 import org.apache.camel.health.HealthCheckHelper;
 import org.apache.camel.health.WritableHealthCheckRepository;
@@ -118,11 +119,14 @@ public class Textract2Producer extends DefaultProducer {
                 try {
                     result = textractClient.detectDocumentText(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Document Text command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Document Text command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "detectDocumentText operation requires DetectDocumentTextRequest in POJO mode");
             }
         } else {
             DetectDocumentTextRequest.Builder request = DetectDocumentTextRequest.builder();
@@ -133,7 +137,7 @@ public class Textract2Producer extends DefaultProducer {
             try {
                 result = textractClient.detectDocumentText(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Document Text command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Document Text command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -149,11 +153,14 @@ public class Textract2Producer extends DefaultProducer {
                 try {
                     result = textractClient.analyzeDocument(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Analyze Document command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Analyze Document command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "analyzeDocument operation requires AnalyzeDocumentRequest in POJO mode");
             }
         } else {
             AnalyzeDocumentRequest.Builder request = AnalyzeDocumentRequest.builder();
@@ -173,7 +180,7 @@ public class Textract2Producer extends DefaultProducer {
             try {
                 result = textractClient.analyzeDocument(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Analyze Document command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Analyze Document command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -189,11 +196,14 @@ public class Textract2Producer extends DefaultProducer {
                 try {
                     result = textractClient.analyzeExpense(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Analyze Expense command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Analyze Expense command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "analyzeExpense operation requires AnalyzeExpenseRequest in POJO mode");
             }
         } else {
             AnalyzeExpenseRequest.Builder request = AnalyzeExpenseRequest.builder();
@@ -204,7 +214,7 @@ public class Textract2Producer extends DefaultProducer {
             try {
                 result = textractClient.analyzeExpense(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Analyze Expense command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Analyze Expense command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -226,6 +236,9 @@ public class Textract2Producer extends DefaultProducer {
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "startDocumentTextDetection operation requires StartDocumentTextDetectionRequest in POJO mode");
             }
         } else {
             StartDocumentTextDetectionRequest.Builder request = StartDocumentTextDetectionRequest.builder();
@@ -253,11 +266,14 @@ public class Textract2Producer extends DefaultProducer {
                 try {
                     result = textractClient.startDocumentAnalysis(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Start Document Analysis command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Start Document Analysis command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "startDocumentAnalysis operation requires StartDocumentAnalysisRequest in POJO mode");
             }
         } else {
             StartDocumentAnalysisRequest.Builder request = StartDocumentAnalysisRequest.builder();
@@ -276,7 +292,7 @@ public class Textract2Producer extends DefaultProducer {
             try {
                 result = textractClient.startDocumentAnalysis(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Start Document Analysis command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Start Document Analysis command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -292,11 +308,14 @@ public class Textract2Producer extends DefaultProducer {
                 try {
                     result = textractClient.startExpenseAnalysis(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Start Expense Analysis command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Start Expense Analysis command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "startExpenseAnalysis operation requires StartExpenseAnalysisRequest in POJO mode");
             }
         } else {
             StartExpenseAnalysisRequest.Builder request = StartExpenseAnalysisRequest.builder();
@@ -307,7 +326,7 @@ public class Textract2Producer extends DefaultProducer {
             try {
                 result = textractClient.startExpenseAnalysis(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Start Expense Analysis command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Start Expense Analysis command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -329,6 +348,9 @@ public class Textract2Producer extends DefaultProducer {
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getDocumentTextDetection operation requires GetDocumentTextDetectionRequest in POJO mode");
             }
         } else {
             GetDocumentTextDetectionRequest.Builder request = GetDocumentTextDetectionRequest.builder();
@@ -356,7 +378,7 @@ public class Textract2Producer extends DefaultProducer {
             try {
                 result = textractClient.getDocumentTextDetection(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Document Text Detection command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Document Text Detection command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -372,11 +394,14 @@ public class Textract2Producer extends DefaultProducer {
                 try {
                     result = textractClient.getDocumentAnalysis(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Document Analysis command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Document Analysis command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getDocumentAnalysis operation requires GetDocumentAnalysisRequest in POJO mode");
             }
         } else {
             GetDocumentAnalysisRequest.Builder request = GetDocumentAnalysisRequest.builder();
@@ -404,7 +429,7 @@ public class Textract2Producer extends DefaultProducer {
             try {
                 result = textractClient.getDocumentAnalysis(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Document Analysis command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Document Analysis command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -420,11 +445,14 @@ public class Textract2Producer extends DefaultProducer {
                 try {
                     result = textractClient.getExpenseAnalysis(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Expense Analysis command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Expense Analysis command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getExpenseAnalysis operation requires GetExpenseAnalysisRequest in POJO mode");
             }
         } else {
             GetExpenseAnalysisRequest.Builder request = GetExpenseAnalysisRequest.builder();
@@ -452,7 +480,7 @@ public class Textract2Producer extends DefaultProducer {
             try {
                 result = textractClient.getExpenseAnalysis(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Expense Analysis command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Expense Analysis command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);

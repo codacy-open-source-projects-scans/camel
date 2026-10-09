@@ -29,21 +29,35 @@ import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.EventNotifierSupport;
 import org.apache.camel.support.console.AbstractDevConsole;
 import org.apache.camel.util.TimeUtils;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 
 @DevConsole(name = "event", displayName = "Camel Events", description = "The most recent Camel events")
 @Configurer(extended = true)
 public class EventConsole extends AbstractDevConsole {
 
+    public record EventEntry(
+            @Metadata(description = "The event type") String type,
+            @Metadata(description = "Epoch time in milliseconds (only present when known)") Long timestamp,
+            @Metadata(description = "The exchange ID (only present for exchange events)") String exchangeId,
+            @Metadata(description = "The event's string representation") String message,
+            @Metadata(description = "Structured event metadata as JSON") Map<String, Object> details) {
+    }
+
+    public record Response(
+            @Metadata(description = "The most recent Camel events (only present when there are any)") List<EventEntry> events,
+            @Metadata(description = "The most recent route events (only present when there are any)") List<EventEntry> routeEvents,
+            @Metadata(description = "The most recent exchange events (only present when there are any)") List<EventEntry> exchangeEvents) {
+    }
+
     @Metadata(defaultValue = "25",
               description = "Maximum capacity of last number of events to capture (capacity must be between 25 and 1000)")
     private int capacity = 25;
 
-    private CamelEvent[] events;
+    private volatile CamelEvent[] events;
     private final AtomicInteger posEvents = new AtomicInteger();
-    private CamelEvent.RouteEvent[] routeEvents;
+    private volatile CamelEvent.RouteEvent[] routeEvents;
     private final AtomicInteger posRoutes = new AtomicInteger();
-    private CamelEvent.ExchangeEvent[] exchangeEvents;
+    private volatile CamelEvent.ExchangeEvent[] exchangeEvents;
     private final AtomicInteger posExchanges = new AtomicInteger();
     private final ConsoleEventNotifier listener = new ConsoleEventNotifier();
 
@@ -56,14 +70,20 @@ public class EventConsole extends AbstractDevConsole {
     }
 
     public void setCapacity(int capacity) {
+        if (events != null) {
+            // Camel Main configures the console after the registry has started it: resize its buffers (an entry
+            // added meanwhile may be lost, which only matters while configuring)
+            ConsoleHelper.checkCapacity(capacity, 25);
+            this.events = ConsoleHelper.resize(events, posEvents.getAndSet(0), capacity);
+            this.routeEvents = ConsoleHelper.resize(routeEvents, posRoutes.getAndSet(0), capacity);
+            this.exchangeEvents = ConsoleHelper.resize(exchangeEvents, posExchanges.getAndSet(0), capacity);
+        }
         this.capacity = capacity;
     }
 
     @Override
     protected void doInit() throws Exception {
-        if (capacity > 1000 || capacity < 25) {
-            throw new IllegalArgumentException("Capacity must be between 25 and 1000");
-        }
+        ConsoleHelper.checkCapacity(capacity, 25);
         this.events = new CamelEvent[capacity];
         this.routeEvents = new CamelEvent.RouteEvent[capacity];
         this.exchangeEvents = new CamelEvent.ExchangeEvent[capacity];
@@ -82,42 +102,32 @@ public class EventConsole extends AbstractDevConsole {
     protected String doCallText(Map<String, Object> options) {
         StringBuilder sb = new StringBuilder();
 
-        int pos = posEvents.get();
-        sb.append(appendTextEvents(events, "Camel", pos, capacity));
+        sb.append(appendTextEvents(events, "Camel", posEvents.get()));
         sb.append("\n");
-        pos = posRoutes.get();
-        sb.append(appendTextEvents(routeEvents, "Route", pos, capacity));
+        sb.append(appendTextEvents(routeEvents, "Route", posRoutes.get()));
         sb.append("\n");
-        pos = posExchanges.get();
-        sb.append(appendTextEvents(exchangeEvents, "Exchange", pos, capacity));
+        sb.append(appendTextEvents(exchangeEvents, "Exchange", posExchanges.get()));
         sb.append("\n");
 
         return sb.toString();
     }
 
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        JsonObject root = new JsonObject();
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        List<EventEntry> arr = appendJSonEvents(events, posEvents.get());
+        List<EventEntry> eventsOut = !arr.isEmpty() ? arr : null;
 
-        int pos = posEvents.get();
-        List<JsonObject> arr = appendJSonEvents(events, pos, capacity);
-        if (!arr.isEmpty()) {
-            root.put("events", arr);
-        }
-        pos = posRoutes.get();
-        arr = appendJSonEvents(routeEvents, pos, capacity);
-        if (!arr.isEmpty()) {
-            root.put("routeEvents", arr);
-        }
-        pos = posExchanges.get();
-        arr = appendJSonEvents(exchangeEvents, pos, capacity);
-        if (!arr.isEmpty()) {
-            root.put("exchangeEvents", arr);
-        }
+        arr = appendJSonEvents(routeEvents, posRoutes.get());
+        List<EventEntry> routeEventsOut = !arr.isEmpty() ? arr : null;
 
-        return root;
+        arr = appendJSonEvents(exchangeEvents, posExchanges.get());
+        List<EventEntry> exchangeEventsOut = !arr.isEmpty() ? arr : null;
+
+        Response response = new Response(eventsOut, routeEventsOut, exchangeEventsOut);
+        return JsonRecordSupport.toJsonObject(response);
     }
 
-    private static String appendTextEvents(CamelEvent[] events, String kind, int cursor, int capacity) {
+    private static String appendTextEvents(CamelEvent[] events, String kind, int cursor) {
+        int capacity = events.length;
         StringBuilder sb = new StringBuilder();
         int pos = 0;
         int added = 0;
@@ -144,25 +154,30 @@ public class EventConsole extends AbstractDevConsole {
         return sb.toString();
     }
 
-    private static List<JsonObject> appendJSonEvents(CamelEvent[] events, int cursor, int capacity) {
-        List<JsonObject> arr = new ArrayList<>();
+    private static List<EventEntry> appendJSonEvents(CamelEvent[] events, int cursor) {
+        int capacity = events.length;
+        List<EventEntry> arr = new ArrayList<>();
         int pos = 0;
         // cursor is at last event, so move to back
         cursor = ++cursor % capacity;
         CamelEvent event = events[cursor];
         while (pos < capacity) {
             if (event != null) {
-                JsonObject jo = new JsonObject();
-                jo.put("type", event.getType().toString());
-                if (event.getTimestamp() > 0) {
-                    jo.put("timestamp", event.getTimestamp());
+                Map<String, Object> json = event.asJSon();
+                Long timestamp = null;
+                Object ts = json.get("timestamp");
+                if (ts instanceof Number number && number.longValue() > 0) {
+                    timestamp = number.longValue();
                 }
-                if (event instanceof CamelEvent.ExchangeEvent) {
-                    CamelEvent.ExchangeEvent ee = (CamelEvent.ExchangeEvent) event;
-                    jo.put("exchangeId", ee.getExchange().getExchangeId());
-                }
-                jo.put("message", event.toString());
-                arr.add(jo);
+                String exchangeId = (String) json.get("exchangeId");
+                Object type = json.get("type");
+                String message = (String) json.get("message");
+                arr.add(new EventEntry(
+                        type != null ? type.toString() : event.getType().toString(),
+                        timestamp,
+                        exchangeId,
+                        message,
+                        json));
             }
             // move to next
             pos++;
@@ -178,15 +193,15 @@ public class EventConsole extends AbstractDevConsole {
         public void notify(CamelEvent event) throws Exception {
             if (event instanceof CamelEvent.ExchangeEvent) {
                 CamelEvent.ExchangeEvent ce = (CamelEvent.ExchangeEvent) event;
-                int pos = posExchanges.getAndUpdate(operand -> ++operand % capacity);
-                exchangeEvents[pos] = ce;
+                CamelEvent.ExchangeEvent[] ring = exchangeEvents;
+                ring[ConsoleHelper.nextSlot(posExchanges, ring.length)] = ce;
             } else if (event instanceof CamelEvent.RouteEvent) {
                 CamelEvent.RouteEvent re = (CamelEvent.RouteEvent) event;
-                int pos = posRoutes.getAndUpdate(operand -> ++operand % capacity);
-                routeEvents[pos] = re;
+                CamelEvent.RouteEvent[] ring = routeEvents;
+                ring[ConsoleHelper.nextSlot(posRoutes, ring.length)] = re;
             } else {
-                int pos = posEvents.getAndUpdate(operand -> ++operand % capacity);
-                events[pos] = event;
+                CamelEvent[] ring = events;
+                ring[ConsoleHelper.nextSlot(posEvents, ring.length)] = event;
             }
         }
 

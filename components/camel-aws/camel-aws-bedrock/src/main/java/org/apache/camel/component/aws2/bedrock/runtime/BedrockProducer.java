@@ -26,7 +26,9 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.component.aws2.bedrock.runtime.stream.BedrockStreamHandler;
+import org.apache.camel.component.aws2.bedrock.runtime.stream.ConverseStreamHandler;
 import org.apache.camel.support.DefaultProducer;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.URISupport;
@@ -34,11 +36,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.core.document.Document;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
+import software.amazon.awssdk.services.bedrockruntime.model.ApplyGuardrailRequest;
+import software.amazon.awssdk.services.bedrockruntime.model.ApplyGuardrailResponse;
 import software.amazon.awssdk.services.bedrockruntime.model.ContentBlock;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseResponse;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseStreamRequest;
+import software.amazon.awssdk.services.bedrockruntime.model.GuardrailConfiguration;
+import software.amazon.awssdk.services.bedrockruntime.model.GuardrailContentBlock;
+import software.amazon.awssdk.services.bedrockruntime.model.GuardrailContentSource;
+import software.amazon.awssdk.services.bedrockruntime.model.GuardrailStreamConfiguration;
+import software.amazon.awssdk.services.bedrockruntime.model.GuardrailStreamProcessingMode;
+import software.amazon.awssdk.services.bedrockruntime.model.GuardrailTrace;
 import software.amazon.awssdk.services.bedrockruntime.model.InferenceConfiguration;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
@@ -53,6 +64,11 @@ import software.amazon.awssdk.services.bedrockruntime.model.ToolConfiguration;
 public class BedrockProducer extends DefaultProducer {
 
     private static final Logger LOG = LoggerFactory.getLogger(BedrockProducer.class);
+
+    /**
+     * Region prefixes used by Bedrock cross-region inference profile ids, e.g. {@code us.anthropic.claude-...}.
+     */
+    private static final List<String> INFERENCE_PROFILE_REGION_PREFIXES = List.of("us.", "eu.", "apac.", "us-gov.");
     private transient String bedrockProducerToString;
 
     public BedrockProducer(Endpoint endpoint) {
@@ -127,11 +143,14 @@ public class BedrockProducer extends DefaultProducer {
                 try {
                     result = bedrockRuntimeClient.invokeModel(invokeModelRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Invoke Model command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Invoke Model command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 setResponseText(result, message);
+            } else {
+                throw new IllegalArgumentException(
+                        "InvokeTextModel operation requires InvokeModelRequest in POJO mode");
             }
         } else {
             InvokeModelRequest.Builder builder = InvokeModelRequest.builder();
@@ -155,7 +174,7 @@ public class BedrockProducer extends DefaultProducer {
             try {
                 result = bedrockRuntimeClient.invokeModel(request);
             } catch (AwsServiceException ase) {
-                LOG.trace("Invoke Model command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Invoke Model command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -171,11 +190,14 @@ public class BedrockProducer extends DefaultProducer {
                 try {
                     result = bedrockRuntimeClient.invokeModel(invokeModelRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Invoke Image Model command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Invoke Image Model command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "InvokeImageModel operation requires InvokeModelRequest in POJO mode");
             }
         } else {
             InvokeModelRequest.Builder builder = InvokeModelRequest.builder();
@@ -199,7 +221,7 @@ public class BedrockProducer extends DefaultProducer {
             try {
                 result = bedrockRuntimeClient.invokeModel(request);
             } catch (AwsServiceException ase) {
-                LOG.trace("Invoke Model command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Invoke Model command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -220,11 +242,14 @@ public class BedrockProducer extends DefaultProducer {
                 try {
                     result = bedrockRuntimeClient.invokeModel(invokeModelRequest);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Invoke Image Model command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Invoke Image Model command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "InvokeEmbeddingsModel operation requires InvokeModelRequest in POJO mode");
             }
         } else {
             InvokeModelRequest.Builder builder = InvokeModelRequest.builder();
@@ -248,7 +273,7 @@ public class BedrockProducer extends DefaultProducer {
             try {
                 result = bedrockRuntimeClient.invokeModel(request);
             } catch (AwsServiceException ase) {
-                LOG.trace("Invoke Model command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Invoke Model command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -263,7 +288,7 @@ public class BedrockProducer extends DefaultProducer {
     }
 
     protected void setResponseText(InvokeModelResponse result, Message message) {
-        String modelId = getConfiguration().getModelId();
+        String modelId = resolveFoundationModelId(getConfiguration().getModelId());
         switch (modelId) {
             // Amazon Titan Models
             case "amazon.titan-text-express-v1":
@@ -369,8 +394,108 @@ public class BedrockProducer extends DefaultProducer {
                 }
                 break;
 
+            // Image generation models — use the invokeImageModel operation instead
+            case "amazon.titan-image-generator-v1":
+            case "amazon.titan-image-generator-v2:0":
+            case "amazon.nova-canvas-v1:0":
+            case "stability.sd3-5-large-v1:0":
+            case "stability.stable-image-control-sketch-v1:0":
+            case "stability.stable-image-control-structure-v1:0":
+            case "stability.stable-image-core-v1:1":
+                throw new IllegalArgumentException(
+                        "Model " + modelId
+                                                   + " is an image generation model and cannot be used with the invokeTextModel operation. Use the invokeImageModel operation instead.");
+
+            // Embedding models — use the invokeEmbeddingsModel operation instead
+            case "amazon.titan-embed-text-v1":
+            case "amazon.titan-embed-image-v1":
+            case "cohere.embed-english-v3":
+            case "cohere.embed-multilingual-v3":
+                throw new IllegalArgumentException(
+                        "Model " + modelId
+                                                   + " is an embedding model and cannot be used with the invokeTextModel operation. Use the invokeEmbeddingsModel operation instead.");
+
+            // Rerank models — not supported by the invokeTextModel operation
+            case "amazon.rerank-v1:0":
+            case "cohere.rerank-v3-5:0":
+                throw new IllegalArgumentException(
+                        "Model " + modelId
+                                                   + " is a rerank model and cannot be used with the invokeTextModel operation.");
+
+            // Video and speech models — not supported by the invokeTextModel operation
+            case "amazon.nova-reel-v1:0":
+            case "amazon.nova-reel-v1:1":
+            case "amazon.nova-sonic-v1:0":
+                throw new IllegalArgumentException(
+                        "Model " + modelId
+                                                   + " is a video/speech generation model and cannot be used with the invokeTextModel operation.");
+
             default:
+                setResponseTextByModelFamily(modelId, result, message);
+        }
+    }
+
+    /**
+     * Resolves the underlying foundation-model id for a model reference. Bedrock also accepts cross-region inference
+     * profile ids (for example {@code us.anthropic.claude-3-5-sonnet-20241022-v2:0}) and inference-profile or
+     * provisioned-throughput ARNs in place of the plain model id. They all address the same foundation model, so they
+     * must be handled the same way.
+     */
+    protected static String resolveFoundationModelId(String modelId) {
+        if (modelId == null) {
+            return null;
+        }
+        String resolved = modelId;
+        // an ARN carries the profile or model id in its last path segment
+        if (resolved.startsWith("arn:")) {
+            int slash = resolved.lastIndexOf('/');
+            if (slash >= 0 && slash < resolved.length() - 1) {
+                resolved = resolved.substring(slash + 1);
+            }
+        }
+        for (String prefix : INFERENCE_PROFILE_REGION_PREFIXES) {
+            if (resolved.startsWith(prefix)) {
+                return resolved.substring(prefix.length());
+            }
+        }
+        return resolved;
+    }
+
+    /**
+     * Fallback for model ids that are not listed explicitly, typically a model released after this component was built.
+     * Dispatching on the vendor/family prefix lets a new model of a known family work instead of failing, since the
+     * response format is defined by the family rather than the individual model.
+     */
+    private void setResponseTextByModelFamily(String modelId, InvokeModelResponse result, Message message) {
+        if (modelId == null) {
+            throw new IllegalStateException("Model id must be specified");
+        }
+        // families that do not produce a text completion must keep failing rather than being parsed as text
+        if (modelId.startsWith("stability.") || modelId.contains("image-generator") || modelId.contains("-canvas")
+                || modelId.contains("embed") || modelId.contains("rerank") || modelId.contains("-reel")
+                || modelId.contains("-sonic")) {
+            throw new IllegalArgumentException(
+                    "Model " + modelId
+                                               + " is not a text generation model and cannot be used with the invokeTextModel operation.");
+        }
+        try {
+            if (modelId.startsWith("amazon.titan-text")) {
+                setTitanText(result, message);
+            } else if (modelId.startsWith("anthropic.claude") || modelId.startsWith("amazon.nova")) {
+                setAnthropicV3Text(result, message);
+            } else if (modelId.startsWith("meta.llama")) {
+                setLlamaText(result, message);
+            } else if (modelId.startsWith("mistral.")) {
+                setMistralText(result, message);
+            } else if (modelId.startsWith("cohere.command")) {
+                setCohereText(result, message);
+            } else if (modelId.startsWith("ai21.")) {
+                setAi21Text(result, message);
+            } else {
                 throw new IllegalStateException("Unexpected model: " + modelId);
+            }
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -420,6 +545,9 @@ public class BedrockProducer extends DefaultProducer {
             Object payload = exchange.getMessage().getMandatoryBody();
             if (payload instanceof InvokeModelWithResponseStreamRequest streamRequest) {
                 processStreamingRequest(streamRequest, exchange);
+            } else {
+                throw new IllegalArgumentException(
+                        "Streaming invoke operations require InvokeModelWithResponseStreamRequest in POJO mode");
             }
         } else {
             InvokeModelWithResponseStreamRequest.Builder builder = InvokeModelWithResponseStreamRequest.builder();
@@ -507,7 +635,7 @@ public class BedrockProducer extends DefaultProducer {
             }
 
         } catch (AwsServiceException ase) {
-            LOG.trace("Invoke Model Streaming command returned the error code {}", ase.awsErrorDetails().errorCode());
+            LOG.trace("Invoke Model Streaming command returned the error code {}", AwsExceptionUtil.errorCode(ase));
             throw ase;
         }
     }
@@ -574,27 +702,27 @@ public class BedrockProducer extends DefaultProducer {
             }
 
             // Optional: Additional model request fields
-            software.amazon.awssdk.core.document.Document additionalFields = exchange.getMessage()
+            Document additionalFields = exchange.getMessage()
                     .getHeader(BedrockConstants.CONVERSE_ADDITIONAL_MODEL_REQUEST_FIELDS,
-                            software.amazon.awssdk.core.document.Document.class);
+                            Document.class);
             if (ObjectHelper.isNotEmpty(additionalFields)) {
                 builder.additionalModelRequestFields(additionalFields);
             }
 
             // Optional: Guardrail configuration
-            software.amazon.awssdk.services.bedrockruntime.model.GuardrailConfiguration guardrailConfig
+            GuardrailConfiguration guardrailConfig
                     = exchange.getMessage().getHeader(BedrockConstants.GUARDRAIL_CONFIG,
-                            software.amazon.awssdk.services.bedrockruntime.model.GuardrailConfiguration.class);
+                            GuardrailConfiguration.class);
             if (ObjectHelper.isNotEmpty(guardrailConfig)) {
                 builder.guardrailConfig(guardrailConfig);
             } else if (ObjectHelper.isNotEmpty(getConfiguration().getGuardrailIdentifier())) {
                 // Build from endpoint configuration
-                builder.guardrailConfig(software.amazon.awssdk.services.bedrockruntime.model.GuardrailConfiguration.builder()
+                builder.guardrailConfig(GuardrailConfiguration.builder()
                         .guardrailIdentifier(getConfiguration().getGuardrailIdentifier())
                         .guardrailVersion(getConfiguration().getGuardrailVersion())
                         .trace(getConfiguration().isGuardrailTrace()
-                                ? software.amazon.awssdk.services.bedrockruntime.model.GuardrailTrace.ENABLED
-                                : software.amazon.awssdk.services.bedrockruntime.model.GuardrailTrace.DISABLED)
+                                ? GuardrailTrace.ENABLED
+                                : GuardrailTrace.DISABLED)
                         .build());
             }
 
@@ -604,7 +732,7 @@ public class BedrockProducer extends DefaultProducer {
         try {
             ConverseResponse response = bedrockRuntimeClient.converse(request);
 
-            org.apache.camel.Message message = getMessageForResponse(exchange);
+            Message message = getMessageForResponse(exchange);
 
             // Set the output message content as body
             if (ObjectHelper.isNotEmpty(response.output()) && ObjectHelper.isNotEmpty(response.output().message())) {
@@ -633,7 +761,7 @@ public class BedrockProducer extends DefaultProducer {
             }
 
         } catch (AwsServiceException ase) {
-            LOG.trace("Converse command returned the error code {}", ase.awsErrorDetails().errorCode());
+            LOG.trace("Converse command returned the error code {}", AwsExceptionUtil.errorCode(ase));
             throw ase;
         }
     }
@@ -690,28 +818,28 @@ public class BedrockProducer extends DefaultProducer {
             }
 
             // Optional: Additional model request fields
-            software.amazon.awssdk.core.document.Document additionalFields = exchange.getMessage()
+            Document additionalFields = exchange.getMessage()
                     .getHeader(BedrockConstants.CONVERSE_ADDITIONAL_MODEL_REQUEST_FIELDS,
-                            software.amazon.awssdk.core.document.Document.class);
+                            Document.class);
             if (ObjectHelper.isNotEmpty(additionalFields)) {
                 builder.additionalModelRequestFields(additionalFields);
             }
 
             // Optional: Guardrail configuration (use GuardrailStreamConfiguration for streaming)
-            software.amazon.awssdk.services.bedrockruntime.model.GuardrailStreamConfiguration guardrailConfig
+            GuardrailStreamConfiguration guardrailConfig
                     = exchange.getMessage().getHeader(BedrockConstants.GUARDRAIL_CONFIG,
-                            software.amazon.awssdk.services.bedrockruntime.model.GuardrailStreamConfiguration.class);
+                            GuardrailStreamConfiguration.class);
             if (ObjectHelper.isNotEmpty(guardrailConfig)) {
                 builder.guardrailConfig(guardrailConfig);
             } else if (ObjectHelper.isNotEmpty(getConfiguration().getGuardrailIdentifier())) {
                 // Build from endpoint configuration
-                builder.guardrailConfig(software.amazon.awssdk.services.bedrockruntime.model.GuardrailStreamConfiguration
+                builder.guardrailConfig(GuardrailStreamConfiguration
                         .builder()
                         .guardrailIdentifier(getConfiguration().getGuardrailIdentifier())
                         .guardrailVersion(getConfiguration().getGuardrailVersion())
                         .streamProcessingMode(getConfiguration().isGuardrailTrace()
-                                ? software.amazon.awssdk.services.bedrockruntime.model.GuardrailStreamProcessingMode.ASYNC
-                                : software.amazon.awssdk.services.bedrockruntime.model.GuardrailStreamProcessingMode.SYNC)
+                                ? GuardrailStreamProcessingMode.ASYNC
+                                : GuardrailStreamProcessingMode.SYNC)
                         .build());
             }
 
@@ -733,16 +861,16 @@ public class BedrockProducer extends DefaultProducer {
                 streamOutputMode = exchange.getIn().getHeader(BedrockConstants.STREAM_OUTPUT_MODE, String.class);
             }
 
-            org.apache.camel.Message message = getMessageForResponse(exchange);
-            org.apache.camel.component.aws2.bedrock.runtime.stream.ConverseStreamHandler.StreamMetadata metadata
-                    = new org.apache.camel.component.aws2.bedrock.runtime.stream.ConverseStreamHandler.StreamMetadata();
+            Message message = getMessageForResponse(exchange);
+            ConverseStreamHandler.StreamMetadata metadata
+                    = new ConverseStreamHandler.StreamMetadata();
 
             if ("chunks".equals(streamOutputMode)) {
                 // Chunks mode - emit each chunk as separate message
                 List<String> allChunks = new ArrayList<>();
                 getEndpoint().getBedrockRuntimeAsyncClient().converseStream(
                         request,
-                        org.apache.camel.component.aws2.bedrock.runtime.stream.ConverseStreamHandler.createChunksHandler(
+                        ConverseStreamHandler.createChunksHandler(
                                 metadata,
                                 allChunks,
                                 null))
@@ -757,7 +885,7 @@ public class BedrockProducer extends DefaultProducer {
                 StringBuilder fullText = new StringBuilder();
                 getEndpoint().getBedrockRuntimeAsyncClient().converseStream(
                         request,
-                        org.apache.camel.component.aws2.bedrock.runtime.stream.ConverseStreamHandler.createCompleteHandler(
+                        ConverseStreamHandler.createCompleteHandler(
                                 metadata,
                                 fullText))
                         .join();
@@ -769,14 +897,14 @@ public class BedrockProducer extends DefaultProducer {
             }
 
         } catch (AwsServiceException ase) {
-            LOG.trace("Converse Stream command returned the error code {}", ase.awsErrorDetails().errorCode());
+            LOG.trace("Converse Stream command returned the error code {}", AwsExceptionUtil.errorCode(ase));
             throw ase;
         }
     }
 
     private void setConverseStreamingMetadata(
-            org.apache.camel.Message message,
-            org.apache.camel.component.aws2.bedrock.runtime.stream.ConverseStreamHandler.StreamMetadata metadata) {
+            Message message,
+            ConverseStreamHandler.StreamMetadata metadata) {
         if (ObjectHelper.isNotEmpty(metadata.getStopReason())) {
             message.setHeader(BedrockConstants.CONVERSE_STOP_REASON, metadata.getStopReason());
         }
@@ -790,11 +918,11 @@ public class BedrockProducer extends DefaultProducer {
     }
 
     private void applyGuardrail(BedrockRuntimeClient bedrockRuntimeClient, Exchange exchange) throws InvalidPayloadException {
-        software.amazon.awssdk.services.bedrockruntime.model.ApplyGuardrailRequest request;
+        ApplyGuardrailRequest request;
 
         if (getConfiguration().isPojoRequest()) {
             Object payload = exchange.getMessage().getMandatoryBody();
-            if (payload instanceof software.amazon.awssdk.services.bedrockruntime.model.ApplyGuardrailRequest guardrailRequest) {
+            if (payload instanceof ApplyGuardrailRequest guardrailRequest) {
                 request = guardrailRequest;
             } else {
                 throw new IllegalArgumentException(
@@ -802,11 +930,12 @@ public class BedrockProducer extends DefaultProducer {
             }
         } else {
             // Build request from headers and configuration
-            software.amazon.awssdk.services.bedrockruntime.model.ApplyGuardrailRequest.Builder builder
-                    = software.amazon.awssdk.services.bedrockruntime.model.ApplyGuardrailRequest.builder();
+            ApplyGuardrailRequest.Builder builder
+                    = ApplyGuardrailRequest.builder();
 
             // Guardrail identifier from header or configuration
-            String guardrailIdentifier = exchange.getMessage().getHeader(BedrockConstants.GUARDRAIL_CONFIG, String.class);
+            String guardrailIdentifier
+                    = exchange.getMessage().getHeader(BedrockConstants.GUARDRAIL_IDENTIFIER, String.class);
             if (ObjectHelper.isEmpty(guardrailIdentifier)) {
                 guardrailIdentifier = getConfiguration().getGuardrailIdentifier();
             }
@@ -824,11 +953,11 @@ public class BedrockProducer extends DefaultProducer {
             if (ObjectHelper.isEmpty(source)) {
                 source = "INPUT"; // Default to INPUT
             }
-            builder.source(software.amazon.awssdk.services.bedrockruntime.model.GuardrailContentSource.fromValue(source));
+            builder.source(GuardrailContentSource.fromValue(source));
 
             // Content blocks from header
             @SuppressWarnings("unchecked")
-            List<software.amazon.awssdk.services.bedrockruntime.model.GuardrailContentBlock> content
+            List<GuardrailContentBlock> content
                     = exchange.getMessage().getHeader(BedrockConstants.GUARDRAIL_CONTENT, List.class);
             if (ObjectHelper.isNotEmpty(content)) {
                 builder.content(content);
@@ -841,10 +970,10 @@ public class BedrockProducer extends DefaultProducer {
         }
 
         try {
-            software.amazon.awssdk.services.bedrockruntime.model.ApplyGuardrailResponse response
+            ApplyGuardrailResponse response
                     = bedrockRuntimeClient.applyGuardrail(request);
 
-            org.apache.camel.Message message = getMessageForResponse(exchange);
+            Message message = getMessageForResponse(exchange);
 
             // Set action as body
             message.setBody(response.action().toString());
@@ -862,7 +991,7 @@ public class BedrockProducer extends DefaultProducer {
             }
 
         } catch (AwsServiceException ase) {
-            LOG.trace("ApplyGuardrail command returned the error code {}", ase.awsErrorDetails().errorCode());
+            LOG.trace("ApplyGuardrail command returned the error code {}", AwsExceptionUtil.errorCode(ase));
             throw ase;
         }
     }

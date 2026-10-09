@@ -18,7 +18,9 @@ package org.apache.camel.component.docling;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.camel.CamelExecutionException;
 import org.apache.camel.builder.RouteBuilder;
@@ -46,7 +48,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--output", "/tmp/other-dir")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--output", "/tmp/other-dir")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -61,7 +63,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--output=/tmp/other-dir")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--output=/tmp/other-dir")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -75,7 +77,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("-o", "/tmp/other-dir")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("-o", "/tmp/other-dir")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -89,7 +91,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--artifacts-path", "../../etc/passwd")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--artifacts-path", "../../etc/passwd")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -99,13 +101,13 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
     @Test
     void customArgsWithNullEntryAreRejected() throws Exception {
         Path inputFile = createInputFile();
-        List<String> argsWithNull = new java.util.ArrayList<>();
+        List<String> argsWithNull = new ArrayList<>();
         argsWithNull.add(null);
 
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, argsWithNull));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, argsWithNull));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -123,7 +125,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "--table-mode", "fast")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "--table-mode", "fast")));
         });
 
         // The failure should be from process execution, not from argument validation
@@ -154,7 +156,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "; rm -rf /")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "; rm -rf /")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -168,7 +170,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "| cat /etc/passwd")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "| cat /etc/passwd")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -182,7 +184,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "`whoami`")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "`whoami`")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -196,7 +198,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "$(id)")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--verbose", "$(id)")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -212,7 +214,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--unknown-flag")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--unknown-flag")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -226,7 +228,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("-x")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("-x")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
@@ -241,7 +243,7 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("-vv")));
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("-vv")));
         });
 
         assertFalse(ex.getCause() instanceof IllegalArgumentException,
@@ -256,13 +258,43 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
             template.requestBodyAndHeaders("direct:cli-convert",
                     inputFile.toString(),
-                    java.util.Map.of(DoclingHeaders.CUSTOM_ARGUMENTS,
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS,
                             List.of("--artifacts-path", "/safe/path/subdir/../../etc/passwd")));
         });
 
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
         assertTrue(ex.getCause().getMessage().contains("path traversal") ||
                 ex.getCause().getMessage().contains("traversal after normalization"));
+    }
+
+    @Test
+    void customArgsWithAbsolutePathAreRejected() throws Exception {
+        Path inputFile = createInputFile();
+
+        // An absolute path contains no relative traversal sequence and no ".." component after
+        // normalization, so it must be rejected by the explicit absolute-path check.
+        CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
+            template.requestBodyAndHeaders("direct:cli-convert",
+                    inputFile.toString(),
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--artifacts-path", "/etc/cron.d")));
+        });
+
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause());
+        assertTrue(ex.getCause().getMessage().contains("absolute path"));
+    }
+
+    @Test
+    void customArgsWithAbsolutePathEqualsFormAreRejected() throws Exception {
+        Path inputFile = createInputFile();
+
+        CamelExecutionException ex = assertThrows(CamelExecutionException.class, () -> {
+            template.requestBodyAndHeaders("direct:cli-convert",
+                    inputFile.toString(),
+                    Map.of(DoclingHeaders.CUSTOM_ARGUMENTS, List.of("--artifacts-path=/var/www/html/uploads")));
+        });
+
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause());
+        assertTrue(ex.getCause().getMessage().contains("absolute path"));
     }
 
     private Path createInputFile() throws Exception {
@@ -276,9 +308,10 @@ class DoclingCustomArgsValidationTest extends CamelTestSupport {
         return new RouteBuilder() {
             @Override
             public void configure() {
-                // CLI mode (useDoclingServe=false is the default)
+                // CLI mode (useDoclingServe=false is the default). These tests hand the input file path in
+                // the message body, which has to be opted into via allowFilePathSource.
                 from("direct:cli-convert")
-                        .to("docling:convert?operation=CONVERT_TO_MARKDOWN");
+                        .to("docling:convert?operation=CONVERT_TO_MARKDOWN&allowFilePathSource=true");
             }
         };
     }

@@ -1,7 +1,7 @@
 = Poll EIP
 :doctitle: Poll
 :shortname: poll
-:description: Polls a message from a static endpoint
+:description: Polls a single message from a consumer endpoint and sets it as the message body. Useful for fetching data on-demand from file, database, or messaging endpoints.
 :since: 
 :supportlevel: Stable
 :tabs-sync-option:
@@ -95,7 +95,9 @@ YAML::
       uri: direct:payload
       steps:
         - poll:
-            uri: ftp:myserver.com/myfolder?fileName=report-file.pdf
+            uri: ftp:myserver.com/myfolder
+            parameters:
+              fileName: report-file.pdf
 ----
 ====
 
@@ -130,7 +132,9 @@ YAML::
       uri: direct:payload
       steps:
         - poll:
-            uri: "ftp:myserver.com/myfolder?fileName=report-${header.id}.pdf"
+            uri: ftp:myserver.com/myfolder
+            parameters:
+              fileName: "report-${header.id}.pdf"
 ----
 ====
 
@@ -157,7 +161,7 @@ XML::
 +
 [source,xml]
 ----
-<rest path="/report" desription="Report REST API">
+<rest path="/report" description="Report REST API">
     <get path="/{id}/payload">
         <to uri="direct:payload"/>
     </get>
@@ -184,7 +188,11 @@ YAML::
       uri: direct:payload
       steps:
         - poll:
-            uri: aws-s3:xavier-dev?amazonS3Client=#s3client&deleteAfterRead=false&fileName=report-file.pdf
+            uri: aws-s3:xavier-dev
+            parameters:
+              amazonS3Client: "#s3client"
+              deleteAfterRead: false
+              fileName: report-file.pdf
 ----
 ====
 

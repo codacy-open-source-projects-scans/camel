@@ -7,8 +7,6 @@
 :supportlevel: Stable
 :tabs-sync-option:
 :component-header: Both producer and consumer are supported
-//Manually maintained attributes
-:camel-spring-boot-name: coap
 
 *Since Camel {since}*
 
@@ -23,14 +21,14 @@ Maven users will need to add the following dependency to their pom.xml
 for this component:
 
 [source,xml]
----------------------------------------------------------
+----
 <dependency>
  <groupId>org.apache.camel</groupId>
  <artifactId>camel-coap</artifactId>
  <version>x.x.x</version>
  <!-- use the same version as your Camel core version -->
 </dependency>
----------------------------------------------------------
+----
 
 
 // component options: START
@@ -68,14 +66,22 @@ The following rules determine which request method the CoAP producer will use to
  3. `POST` if the message exchange body is not null.
  4. `GET` otherwise.
 
+=== Error responses from the CoAP consumer
 
-include::spring-boot:partial$starter.adoc[]
+When the exchange fails, the CoAP consumer answers the request with `5.00 Internal Server Error`. The same applies
+when the response cannot be built once the route has completed, for example when the body cannot be converted to
+the response payload.
+
+By default the error response has no payload, so the exception's message is not sent to the client. Set
+`muteException=false` on the endpoint to send the exception's message as the payload instead.
+
 
 == Configuring COAP Server
 
 The COAP server has many configuration options, and this can be configured from a properties file such as `Californium3.properties`.
 You can specfiy the location of this configuration file on the Camel CoAPComponent, such as:
 
+._Java-only: configuring the CoAP component programmatically_
 [source,java]
 ----
 CoAPComponent coap = context.getComponent("coap", CoAPComponent.class);

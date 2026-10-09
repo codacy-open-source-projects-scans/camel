@@ -23,6 +23,7 @@ import org.apache.camel.AsyncCallback;
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelContextAware;
 import org.apache.camel.CamelExchangeException;
+import org.apache.camel.EndpointSending;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePattern;
 import org.apache.camel.ExchangePropertyKey;
@@ -32,9 +33,11 @@ import org.apache.camel.spi.HeadersMapFactory;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.ProcessorExchangeFactory;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.MessageHelper;
+import org.apache.camel.support.UnitOfWorkHelper;
 import org.apache.camel.support.service.ServiceHelper;
 
 import static org.apache.camel.support.ExchangeHelper.copyResultsPreservePattern;
@@ -49,11 +52,13 @@ import static org.apache.camel.support.ExchangeHelper.copyResultsPreservePattern
  *
  * @see PollEnricher
  */
-public class Enricher extends BaseProcessorSupport implements IdAware, RouteIdAware, CamelContextAware {
+public class Enricher extends BaseProcessorSupport
+        implements EndpointSending, IdAware, RouteIdAware, StepIdAware, CamelContextAware {
 
     private CamelContext camelContext;
     private String id;
     private String routeId;
+    private String stepId;
     private final Expression expression;
     private final String uri;
     private String variableSend;
@@ -68,6 +73,7 @@ public class Enricher extends BaseProcessorSupport implements IdAware, RouteIdAw
     private HeadersMapFactory headersMapFactory;
     private ProcessorExchangeFactory processorExchangeFactory;
     private SendDynamicProcessor sendDynamicProcessor;
+    private String allowedSchemes;
 
     public Enricher(Expression expression, String uri) {
         this.expression = expression;
@@ -102,6 +108,16 @@ public class Enricher extends BaseProcessorSupport implements IdAware, RouteIdAw
     @Override
     public void setRouteId(String routeId) {
         this.routeId = routeId;
+    }
+
+    @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
     }
 
     public Expression getExpression() {
@@ -168,6 +184,10 @@ public class Enricher extends BaseProcessorSupport implements IdAware, RouteIdAw
         this.ignoreInvalidEndpoint = ignoreInvalidEndpoint;
     }
 
+    public void setAllowedSchemes(String allowedSchemes) {
+        this.allowedSchemes = allowedSchemes;
+    }
+
     public boolean isAllowOptimisedComponents() {
         return allowOptimisedComponents;
     }
@@ -209,6 +229,8 @@ public class Enricher extends BaseProcessorSupport implements IdAware, RouteIdAw
         return sendDynamicProcessor.process(resourceExchange, new AsyncCallback() {
             @Override
             public void done(boolean doneSync) {
+                // whether the resource was used (aggregated, or discarded by the aggregation strategy)
+                boolean used = false;
                 if (!isAggregateOnException() && resourceExchange.isFailed()) {
                     // copy resource exchange onto original exchange (preserving pattern)
                     copyResultsWithoutCorrelationId(exchange, resourceExchange);
@@ -230,14 +252,26 @@ public class Enricher extends BaseProcessorSupport implements IdAware, RouteIdAw
                             }
                             // copy aggregation result onto original exchange (preserving pattern)
                             copyResultsWithoutCorrelationId(exchange, aggregatedExchange);
-                            // handover any synchronization (if unit of work is not shared)
-                            if (resourceExchange != null && !isShareUnitOfWork()) {
-                                resourceExchange.getExchangeExtension().handoverCompletions(exchange);
-                            }
                         }
+                        used = true;
                     } catch (Exception e) {
                         // if the aggregationStrategy threw an exception, set it on the original exchange
                         exchange.setException(new CamelExchangeException("Error occurred during aggregation", exchange, e));
+                        if (resourceExchange.getException() == null) {
+                            resourceExchange.setException(e);
+                        }
+                    }
+                }
+                if (!isShareUnitOfWork()) {
+                    if (used) {
+                        // handover any synchronization to complete together with the exchange
+                        resourceExchange.getExchangeExtension().handoverCompletions(exchange);
+                    } else {
+                        // the resource or the aggregation failed, so release the resource as failed now (such as
+                        // closing a response stream), and not together with the exchange, which may still complete
+                        // successfully (such as by redelivery)
+                        UnitOfWorkHelper.doneSynchronizations(resourceExchange,
+                                resourceExchange.getExchangeExtension().handoverCompletions());
                     }
                 }
 
@@ -294,6 +328,7 @@ public class Enricher extends BaseProcessorSupport implements IdAware, RouteIdAw
         this.sendDynamicProcessor.setIgnoreInvalidEndpoint(ignoreInvalidEndpoint);
         this.sendDynamicProcessor.setAllowOptimisedComponents(allowOptimisedComponents);
         this.sendDynamicProcessor.setAutoStartupComponents(autoStartupComponents);
+        this.sendDynamicProcessor.setAllowedSchemes(allowedSchemes);
         this.sendDynamicProcessor.setVariableSend(variableSend);
 
         // create a per processor exchange factory

@@ -7,8 +7,6 @@
 :supportlevel: Stable
 :tabs-sync-option:
 :component-header: Both producer and consumer are supported
-//Manually maintained attributes
-:camel-spring-boot-name: jgroups
 
 *Since Camel {since}*
 
@@ -22,20 +20,20 @@ Maven users will need to add the following dependency to their `pom.xml`
 for this component.
 
 [source,xml]
-------------------------------------------------------------
+----
 <dependency>
     <groupId>org.apache.camel</groupId>
     <artifactId>camel-jgroups</artifactId>
     <!-- use the same version as your Camel core version -->
     <version>x.y.z</version>
 </dependency>
-------------------------------------------------------------
+----
 
 == URI format
 
------------------------------
+----
 jgroups:clusterName[?options]
------------------------------
+----
 
 Where *clusterName* represents the name of the JGroups cluster, the
 component should connect to.
@@ -47,6 +45,100 @@ include::partial$component-endpoint-options.adoc[]
 include::partial$component-endpoint-headers.adoc[]
 // component options: END
 
+== Security
+
+The `jgroups` consumer converts an incoming cluster message into the exchange
+body by calling `org.jgroups.Message.getObject()`, which Java-deserializes the
+payload carried by the message. Deserialization is performed by JGroups on its
+own receive path, and the bodies a consumer receives originate from any peer
+that has joined the cluster.
+
+The default JGroups protocol stack (`udp.xml`) multicasts over UDP and does
+*not* authenticate or encrypt peers: any host able to reach the cluster's
+multicast group or bind port can join and send messages. Treat cluster peers as
+part of your trust boundary and harden the deployment accordingly.
+
+* *Authenticate and encrypt the channel.* Supply a hardened JGroups
+configuration through the `channelProperties` option and add the `AUTH`
+protocol together with `SYM_ENCRYPT` or `ASYM_ENCRYPT`, so that only trusted
+peers can join and message contents are protected on the wire. See the
+https://www.jgroups.org[JGroups documentation] for the protocol-stack reference.
+* *Constrain deserialization before it happens.* Set a JVM-wide JEP-290
+serialization filter (`-Djdk.serialFilter=...` or
+`ObjectInputFilter.Config.setSerialFilter(...)`), or the JGroups-native
+`-Djgroups.deserialization.filter=...` system property, to restrict which classes
+may be deserialized from the network. Because JGroups deserializes messages inside
+its own receive path, these filters run _before_ `readObject()` and are the
+mechanism that actually constrains that deserialization.
+* *Restrict the accepted body types in Camel.* The consumer applies a JEP-290
+`ObjectInputFilter` pattern to the type of the message body before the exchange
+is routed, and refuses bodies whose type is not allowed. This is a
+defense-in-depth allow-list applied _after_ JGroups has deserialized the
+message; it complements, but does not replace, the JVM-wide `jdk.serialFilter`
+and the channel authentication and encryption above.
+
+=== The consumer deserialization filter
+
+The class check is applied by default. When the `deserializationFilter` option
+is not configured, the JVM-wide `jdk.serialFilter` is honoured if it is set,
+otherwise the shared Camel default allow-list is applied: it permits standard
+Java and Apache Camel types, denies `java.net.**`, and rejects everything else.
+
+A route that exchanges its own classes over the cluster must widen the filter
+through the `deserializationFilter` option, listing the packages it accepts:
+
+[source,java]
+----
+from("jgroups:clusterName?deserializationFilter=com.example.model.**;java.**;!*")
+  .to("seda:queue");
+----
+
+The snippet below accepts only `String` bodies from the cluster, on top of a
+hardened, authenticated and encrypted channel supplied through `channelProperties`:
+
+[source,java]
+----
+from("jgroups:clusterName?channelProperties=secure-udp.xml&deserializationFilter=java.lang.String;!*")
+  .to("seda:queue");
+----
+
+Setting `deserializationFilter=*` accepts any type and so opts out of the check.
+
+A refused message is not routed. It is reported to the consumer's
+`ExceptionHandler`, which logs it at WARN level by default, and is passed to the
+route error handler when `bridgeErrorHandler=true` is set.
+
+=== Startup guard on the default channel
+
+Because the post-read class check above cannot prevent code that runs _during_
+deserialization, the consumer refuses to start when it would deserialize cluster
+messages on the default, unauthenticated channel without any pre-read protection
+in place. A pre-read protection is any of:
+
+* a JVM-wide `-Djdk.serialFilter` (or `ObjectInputFilter.Config.setSerialFilter`);
+* the JGroups-native `-Djgroups.deserialization.filter` system property; or
+* a channel secured with `AUTH` and/or `SYM_ENCRYPT`/`ASYM_ENCRYPT`, supplied
+through `channelProperties`.
+
+`AUTH` alone (without encryption) satisfies the guard, since it already restricts
+who may join the cluster and send messages. The `deserializationFilter` option is
+_not_ a pre-read control: it is a defense-in-depth class check applied _after_
+JGroups has already deserialized the payload, so it does not satisfy the guard. A
+filter installed only through a custom `jdk.serialFilterFactory` (rather than
+`jdk.serialFilter`) is not detected either; those deployments should set
+`jgroups.deserialization.filter` or `acceptAllObjects=true`.
+
+When none of these is configured, the consumer fails to start with a message
+pointing here. To keep the previous behaviour of accepting any serialized type
+without a pre-read control, set `acceptAllObjects=true` on the consumer; this opts
+out of the guard and also disables the post-read class check.
+
+[source,java]
+----
+// explicitly accept the risk (no pre-read control) - restores the old behaviour
+from("jgroups:clusterName?acceptAllObjects=true").to("seda:queue");
+----
+
 == Usage
 
 Using `jgroups` component on the consumer side of the route will capture
@@ -55,22 +147,73 @@ forward them to the Camel route. JGroups consumer processes incoming
 messages
 http://camel.apache.org/asynchronous-routing-engine.html[asynchronously].
 
+[tabs]
+====
+Java::
++
 [source,java]
-----------------------------------------------
-// Capture messages from cluster named
-// 'clusterName' and send them to Camel route.
+----
 from("jgroups:clusterName").to("seda:queue");
-----------------------------------------------
+----
+
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="jgroups:clusterName"/>
+  <to uri="seda:queue"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: jgroups:clusterName
+      steps:
+        - to:
+            uri: seda:queue
+----
+====
 
 Using `jgroups` component on the producer side of the route will forward
 body of the Camel exchanges to the `JChannel` instance managed by the
 endpoint.
 
+[tabs]
+====
+Java::
++
 [source,java]
---------------------------------------------------
-// Send a message to the cluster named 'clusterName'
+----
 from("direct:start").to("jgroups:clusterName");
---------------------------------------------------
+----
+
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="direct:start"/>
+  <to uri="jgroups:clusterName"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:start
+      steps:
+        - to:
+            uri: jgroups:clusterName
+----
+====
 
 === Predefined filters
 
@@ -85,14 +228,15 @@ master in the cluster, because messages passing this filter notifies you
 below demonstrates how to collect only messages received by the master
 node.
 
+._Java-only: Java static import and filter EIP_
 [source,java]
-----------------------------------------------------------------------------------------
+----
 import static org.apache.camel.component.jgroups.JGroupsFilters.dropNonCoordinatorViews;
 ...
 from("jgroups:clusterName?enableViewMessages=true").
   filter(dropNonCoordinatorViews()).
   to("seda:masterNodeEventsQueue");
-----------------------------------------------------------------------------------------
+----
 
 === Predefined expressions
 
@@ -117,8 +261,9 @@ The snippet below demonstrates how to use conditional delaying with the
 JGroups component to delay the initial startup of master node in the
 cluster.
 
+._Java-only: Java static imports with conditional delay expression_
 [source,java]
------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.camel.component.jgroups.JGroupsExpressions.delayIfContextNotStarted;
 import static org.apache.camel.component.jgroups.JGroupsFilters.dropNonCoordinatorViews;
@@ -129,7 +274,7 @@ from("jgroups:clusterName?enableViewMessages=true").
   to("controlbus:route?routeId=masterRoute&action=start&async=true");
 
 from("timer://master?repeatCount=1").routeId("masterRoute").autoStartup(false).to(masterMockUri); 
------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----
 
 == Examples
 
@@ -138,26 +283,28 @@ from("timer://master?repeatCount=1").routeId("masterRoute").autoStartup(false).t
 To send a message to the JGroups cluster, use producer endpoint,
 just as demonstrated in the snippet below.
 
+._Java-only: Java test API (ProducerTemplate)_
 [source,java]
-------------------------------------------------
+----
 from("direct:start").to("jgroups:myCluster");
 ...
 producerTemplate.sendBody("direct:start", "msg")
-------------------------------------------------
+----
 
 To receive the message from the snippet above (on the same, or the other
 physical machine), listen to the messages coming from the given cluster,
 just as demonstrated on the code fragment below.
 
+._Java-only: Java test API (MockEndpoint assertions)_
 [source,java]
-------------------------------------------------------------
+----
 mockEndpoint.setExpectedMessageCount(1);
 mockEndpoint.message(0).body().isEqualTo("msg");
 ...
 from("jgroups:myCluster").to("mock:messagesFromTheCluster");
 ...
 mockEndpoint.assertIsSatisfied();
-------------------------------------------------------------
+----
 
 === Receive cluster view change notifications
 
@@ -165,12 +312,13 @@ The snippet below demonstrates how to create the consumer endpoint
 listening to the notifications regarding cluster membership changes. By
 default, the endpoint consumes only regular messages.
 
+._Java-only: Java test API (MockEndpoint assertions)_
 [source,java]
----------------------------------------------------------------------
+----
 mockEndpoint.setExpectedMessageCount(1);
 mockEndpoint.message(0).body().isInstanceOf(org.jgroups.View.class);
 ...
 from("jgroups:clusterName?enableViewMessages=true").to(mockEndpoint);
 ...
 mockEndpoint.assertIsSatisfied();
----------------------------------------------------------------------
+----

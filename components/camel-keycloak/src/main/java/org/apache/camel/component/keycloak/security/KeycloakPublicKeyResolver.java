@@ -27,6 +27,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
@@ -46,6 +47,7 @@ public class KeycloakPublicKeyResolver {
     private final String serverUrl;
     private final String realm;
     private final Map<String, PublicKey> keyCache = new ConcurrentHashMap<>();
+    private final ReentrantLock lock = new ReentrantLock();
     private volatile long lastRefreshTime = 0;
     private static final long CACHE_REFRESH_INTERVAL_MS = 300_000; // 5 minutes
 
@@ -57,7 +59,8 @@ public class KeycloakPublicKeyResolver {
     /**
      * Gets the public key for verifying JWT signatures. Keys are cached and refreshed periodically.
      *
-     * @param  kid         the key ID from the JWT header (optional, uses first key if null)
+     * @param  kid         the key ID from the JWT header; the matching key is selected, and resolution fails closed
+     *                     when a kid is given but no key matches (a {@code null} kid falls back to the first key)
      * @return             the public key
      * @throws IOException if fetching keys fails
      */
@@ -68,11 +71,33 @@ public class KeycloakPublicKeyResolver {
             refreshKeys();
         }
 
-        if (kid != null && keyCache.containsKey(kid)) {
-            return keyCache.get(kid);
+        // If the kid is not known yet, force a refresh once to pick up rotated keys
+        if (kid != null && !keyCache.containsKey(kid)) {
+            refreshKeys();
         }
 
-        // If no kid specified or not found, return the first available key
+        return selectKey(kid);
+    }
+
+    /**
+     * Selects the cached key matching the given kid. Fails closed (throws) when a kid is provided but no key matches,
+     * so a token is never verified against the wrong key during key rotation. Falls back to the first available key
+     * only when the token carries no kid.
+     *
+     * @param  kid         the key ID from the JWT header, or {@code null}
+     * @return             the matching public key
+     * @throws IOException if no matching key (or, for a {@code null} kid, no key at all) is available
+     */
+    PublicKey selectKey(String kid) throws IOException {
+        if (kid != null) {
+            PublicKey key = keyCache.get(kid);
+            if (key == null) {
+                throw new IOException("No public key found in Keycloak JWKS for kid: " + kid);
+            }
+            return key;
+        }
+
+        // No kid in the token header - fall back to the first available key
         if (!keyCache.isEmpty()) {
             return keyCache.values().iterator().next();
         }
@@ -83,29 +108,34 @@ public class KeycloakPublicKeyResolver {
     /**
      * Refreshes the public keys from the JWKS endpoint.
      */
-    public synchronized void refreshKeys() throws IOException {
-        String jwksUrl = String.format("%s/realms/%s/protocol/openid-connect/certs", serverUrl, realm);
-        LOG.debug("Fetching public keys from: {}", jwksUrl);
+    public void refreshKeys() throws IOException {
+        lock.lock();
+        try {
+            String jwksUrl = String.format("%s/realms/%s/protocol/openid-connect/certs", serverUrl, realm);
+            LOG.debug("Fetching public keys from: {}", jwksUrl);
 
-        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-            HttpGet request = new HttpGet(jwksUrl);
+            try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+                HttpGet request = new HttpGet(jwksUrl);
 
-            String responseBody = httpClient.execute(request, response -> {
-                int statusCode = response.getCode();
-                if (statusCode != 200) {
-                    throw new IOException("Failed to fetch JWKS: HTTP " + statusCode);
-                }
-                return EntityUtils.toString(response.getEntity());
-            });
+                String responseBody = httpClient.execute(request, response -> {
+                    int statusCode = response.getCode();
+                    if (statusCode != 200) {
+                        throw new IOException("Failed to fetch JWKS: HTTP " + statusCode);
+                    }
+                    return EntityUtils.toString(response.getEntity());
+                });
 
-            parseJwks(responseBody);
-            lastRefreshTime = System.currentTimeMillis();
-            LOG.debug("Successfully loaded {} public keys from JWKS endpoint", keyCache.size());
+                parseJwks(responseBody);
+                lastRefreshTime = System.currentTimeMillis();
+                LOG.debug("Successfully loaded {} public keys from JWKS endpoint", keyCache.size());
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
     @SuppressWarnings("unchecked")
-    private void parseJwks(String jwksJson) throws IOException {
+    void parseJwks(String jwksJson) throws IOException {
         Map<String, Object> jwks = OBJECT_MAPPER.readValue(jwksJson, Map.class);
         List<Map<String, Object>> keys = (List<Map<String, Object>>) jwks.get("keys");
 

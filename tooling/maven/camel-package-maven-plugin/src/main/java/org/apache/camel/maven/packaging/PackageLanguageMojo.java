@@ -153,7 +153,7 @@ public class PackageLanguageMojo extends AbstractGeneratorMojo {
                     for (Map.Entry<String, String> entry : javaTypes.entrySet()) {
                         String name = entry.getKey();
                         Class<?> javaType = loadClass(entry.getValue());
-                        String modelName = asModelName(name);
+                        String modelName = modelName(name, javaType);
 
                         String json = PackageHelper.loadText(new File(
                                 core, "src/generated/resources/META-INF/org/apache/camel/model/language/" + modelName
@@ -210,6 +210,20 @@ public class PackageLanguageMojo extends AbstractGeneratorMojo {
 
     protected LanguageModel extractLanguageModel(MavenProject project, String json, String name, Class<?> javaType) {
         EipModel def = JsonMapper.generateEipModel(json);
+        Language language = javaType.getAnnotation(Language.class);
+        if ("language".equals(language.modelName())) {
+            Metadata metadata = javaType.getAnnotation(Metadata.class);
+            if (metadata == null || metadata.title().isBlank() || metadata.description().isBlank()
+                    || metadata.label().isBlank() || metadata.firstVersion().isBlank()) {
+                throw new IllegalArgumentException(
+                        "Languages using the generic model require @Metadata with title, "
+                                                   + "description, label and firstVersion: " + javaType.getName());
+            }
+            def.setTitle(metadata.title());
+            def.setDescription(metadata.description());
+            def.setLabel(metadata.label());
+            def.setFirstVersion(metadata.firstVersion());
+        }
         LanguageModel model = new LanguageModel();
         model.setName(name);
         model.setTitle(asTitle(name, def.getTitle()));
@@ -286,7 +300,30 @@ public class PackageLanguageMojo extends AbstractGeneratorMojo {
             }
         }
 
+        // read class and find operatorsClass and add each field as an operator in the model
+        if (lan.operatorsClass() != void.class) {
+            classElement = loadClass(lan.operatorsClass().getName());
+            if (classElement != null) {
+                for (Field field : classElement.getFields()) {
+                    final boolean isEnum = classElement.isEnum();
+                    if ((isEnum || isStatic(field.getModifiers()) && field.getType() == String.class)
+                            && field.isAnnotationPresent(Metadata.class)) {
+                        try {
+                            addOperator(model, field);
+                        } catch (Exception e) {
+                            getLog().warn(e);
+                        }
+                    }
+                }
+            }
+        }
+
         return model;
+    }
+
+    static String modelName(String name, Class<?> javaType) {
+        String modelName = javaType.getAnnotation(Language.class).modelName();
+        return modelName.isEmpty() ? asModelName(name) : modelName;
     }
 
     private void addFunction(LanguageModel model, Field field) throws Exception {
@@ -348,7 +385,83 @@ public class PackageLanguageMojo extends AbstractGeneratorMojo {
         fun.setGroup(group);
         fun.setLabel(label);
         fun.setOgnl(ognl);
+        // parse examples from @Metadata.examples()
+        if (metadata.examples() != null) {
+            for (String ex : metadata.examples()) {
+                if (!Strings.isNullOrEmpty(ex)) {
+                    fun.addExample(ex.trim());
+                }
+            }
+        }
+        // parse param= entries from field-level @Metadata.annotations()
+        if (metadata.annotations() != null) {
+            for (String s : metadata.annotations()) {
+                if (s.startsWith("param=")) {
+                    LanguageModel.FunctionParamModel param = parseParam(s.substring(6));
+                    if (param != null) {
+                        fun.addParam(param);
+                    }
+                }
+            }
+        }
         model.addFunction(fun);
+    }
+
+    private void addOperator(LanguageModel model, Field field) throws Exception {
+        final Metadata metadata = field.getAnnotation(Metadata.class);
+        LanguageModel.LanguageOperatorModel op = new LanguageModel.LanguageOperatorModel();
+        op.setConstantName(String.format("%s#%s", field.getDeclaringClass().getName(), field.getName()));
+        op.setName((String) field.get(null));
+        op.setDescription(metadata.description().trim());
+        op.setKind("operator");
+        String displayName = metadata.displayName();
+        if (Strings.isNullOrEmpty(displayName)) {
+            displayName = Strings.asTitle(field.getName().replace('_', ' ').toLowerCase());
+        }
+        op.setDisplayName(displayName);
+        op.setDeprecated(field.isAnnotationPresent(Deprecated.class));
+        op.setDeprecationNote(metadata.deprecationNote());
+        op.setLabel(metadata.label());
+        if (metadata.examples() != null) {
+            for (String ex : metadata.examples()) {
+                if (!Strings.isNullOrEmpty(ex)) {
+                    op.addExample(ex.trim());
+                }
+            }
+        }
+        if (metadata.annotations() != null) {
+            for (String s : metadata.annotations()) {
+                if (s.startsWith("kind=")) {
+                    op.setOperatorKind(s.substring(5));
+                } else if (s.startsWith("syntax=")) {
+                    op.setOperatorSyntax(s.substring(7));
+                } else if (s.startsWith("precedence=")) {
+                    op.setPrecedence(Integer.parseInt(s.substring(11)));
+                }
+            }
+        }
+        model.addOperator(op);
+    }
+
+    private static LanguageModel.FunctionParamModel parseParam(String value) {
+        // format: name:javaType:required|optional:defaultValue:description
+        String[] parts = value.split(":", 5);
+        if (parts.length < 2) {
+            return null;
+        }
+        LanguageModel.FunctionParamModel param = new LanguageModel.FunctionParamModel();
+        param.setName(parts[0].trim());
+        param.setJavaType(parts[1].trim());
+        if (parts.length > 2) {
+            param.setRequired("required".equalsIgnoreCase(parts[2].trim()));
+        }
+        if (parts.length > 3 && !parts[3].trim().isEmpty()) {
+            param.setDefaultValue(parts[3].trim());
+        }
+        if (parts.length > 4) {
+            param.setDescription(parts[4].trim());
+        }
+        return param;
     }
 
     private static String readClassFromCamelResource(File file, StringBuilder buffer, BuildContext buildContext)

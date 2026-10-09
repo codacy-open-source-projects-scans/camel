@@ -53,8 +53,11 @@ import org.apache.camel.component.platform.http.cookie.CookieConfiguration;
 import org.apache.camel.component.platform.http.cookie.CookieHandler;
 import org.apache.camel.component.platform.http.spi.Method;
 import org.apache.camel.component.platform.http.spi.PlatformHttpConsumer;
+import org.apache.camel.component.platform.http.spi.PlatformHttpSecurityHandler;
+import org.apache.camel.http.base.HttpHelper;
 import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.spi.RestRegistry;
+import org.apache.camel.spi.RestRegistry.RestService;
 import org.apache.camel.support.DefaultConsumer;
 import org.apache.camel.support.PluginHelper;
 import org.apache.camel.util.FileUtil;
@@ -78,11 +81,16 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
 
     private static final Logger LOGGER = LoggerFactory.getLogger(VertxPlatformHttpConsumer.class);
     private static final Pattern PATH_PARAMETER_PATTERN = Pattern.compile("\\{([^/}]+)\\}");
+    private static final String PRE_AUTHENTICATED_EXCHANGE = VertxPlatformHttpConsumer.class.getName()
+                                                             + ".preAuthenticatedExchange";
+    private static final String AUTHORIZATION = "Authorization";
+    private static final long HTTP2_INTERNAL_ERROR = 2;
 
     private final List<Handler<RoutingContext>> handlers;
     private final String fileNameExtWhitelist;
     private final boolean muteExceptions;
     private final boolean handleWriteResponseError;
+    private final PlatformHttpSecurityHandler securityHandler;
     private final List<Route> routes = new ArrayList<>();
     private RestRegistry restRegistry;
     private Set<Method> methods;
@@ -96,6 +104,14 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
                                      Processor processor,
                                      List<Handler<RoutingContext>> handlers,
                                      String routerName) {
+        this(endpoint, processor, handlers, routerName, null);
+    }
+
+    public VertxPlatformHttpConsumer(PlatformHttpEndpoint endpoint,
+                                     Processor processor,
+                                     List<Handler<RoutingContext>> handlers,
+                                     String routerName,
+                                     PlatformHttpSecurityHandler securityHandler) {
         super(endpoint, processor);
 
         this.handlers = handlers;
@@ -104,6 +120,7 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
         this.muteExceptions = endpoint.isMuteException();
         this.handleWriteResponseError = endpoint.isHandleWriteResponseError();
         this.routerName = routerName;
+        this.securityHandler = securityHandler;
     }
 
     @Override
@@ -116,9 +133,7 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
         super.doInit();
 
         // camel-rest is optional
-        if (getEndpoint().getCamelContext().getCamelContextExtension().isContextPluginInUse(RestRegistry.class)) {
-            restRegistry = PluginHelper.getRestRegistry(getEndpoint().getCamelContext());
-        }
+        restRegistry = PluginHelper.getRestRegistry(getEndpoint().getCamelContext());
 
         methods = Method.parseList(getEndpoint().getHttpMethodRestrict());
         path = configureEndpointPath(getEndpoint());  // in vertx-web we should replace path parameters from {xxx} to :xxx syntax
@@ -146,13 +161,25 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
     protected void doStart() throws Exception {
         super.doStart();
 
+        boolean catchAll = false;
         if (restRegistry != null && startRestServicesContractFirst()) {
-            // rest-dsl contract first using multiple routers per api endpoint
-            return;
+            // rest-dsl contract-first using multiple routers per api endpoint
+            boolean routeUnmatchedToCamel = "camel".equalsIgnoreCase(getEndpoint().getUnmatchedRequestHandling());
+            if (!routeUnmatchedToCamel) {
+                return;
+            }
+            // unmatchedRequestHandling=camel: fall through and also register a catch-all route
+            catchAll = true;
         }
 
         // standard http consumer using a single router
         final Route newRoute = router.route(path);
+        if (catchAll) {
+            // evaluate the catch-all after all other routes on the router so it cannot shadow
+            // operation routes of other consumers
+            // The call to .last() must stay the first call after router.route(path) for this to work
+            newRoute.last();
+        }
         if (getEndpoint().getRequestTimeout() > 0) {
             newRoute.handler(TimeoutHandler.create(getEndpoint().getRequestTimeout()));
         }
@@ -176,6 +203,7 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
                 }
             }
         }
+        configureSecurityHandler(newRoute);
         httpRequestBodyHandler.configureRoute(newRoute);
         for (Handler<RoutingContext> handler : handlers) {
             newRoute.handler(handler);
@@ -208,7 +236,7 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
             }
             if (r.isContractFirst() && target.equals(r.getBasePath())) {
                 matched = true;
-                String u = r.getBasePath() + r.getBaseUrl();
+                String u = buildNormalizedEndpoint(r);
                 u = configureEndpointPath(u); // in vertx-web we should replace path parameters from {xxx} to :xxx syntax
                 String v = r.getMethod();
                 String c = r.getConsumes();
@@ -228,6 +256,7 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
                         }
                     }
                 }
+                configureSecurityHandler(sr);
                 httpRequestBodyHandler.configureRoute(sr);
                 for (Handler<RoutingContext> handler : handlers) {
                     sr.handler(handler);
@@ -244,7 +273,7 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
                 target = target.substring(0, target.length() - 1);
             }
             if (r.isSpecification() && target.equals(r.getBasePath())) {
-                String u = r.getBasePath() + r.getBaseUrl();
+                String u = buildNormalizedEndpoint(r);
                 String v = r.getMethod();
                 String p = r.getProduces();
 
@@ -257,6 +286,7 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
                         }
                     }
                 }
+                configureSecurityHandler(sr);
                 httpRequestBodyHandler.configureRoute(sr);
                 for (Handler<RoutingContext> handler : handlers) {
                     sr.handler(handler);
@@ -266,6 +296,15 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
             }
         }
         return matched;
+    }
+
+    static String buildNormalizedEndpoint(RestService restService) {
+        String base = restService.getBasePath();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        String u = base + restService.getBaseUrl();
+        return u;
     }
 
     private String configureEndpointPath(PlatformHttpEndpoint endpoint) {
@@ -288,7 +327,7 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
         }
 
         final Vertx vertx = ctx.vertx();
-        final Exchange exchange = createExchange(false);
+        final Exchange exchange = getOrCreateExchange(ctx);
         exchange.setPattern(ExchangePattern.InOut);
 
         //
@@ -347,10 +386,31 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
     }
 
     private void handleFailure(Exchange exchange, RoutingContext ctx, Throwable failure) {
-        getExceptionHandler().handleException(
-                "Failed handling platform-http endpoint " + getEndpoint().getPath(),
-                failure);
-        ctx.fail(failure);
+        // A failed response write is reported before Vert.x has processed the connection close, so the response may
+        // not be flagged as closed yet
+        boolean responseWriteFailed = failure instanceof ResponseWriteException;
+        if (responseWriteFailed) {
+            failure = failure.getCause();
+        }
+
+        if (responseWriteFailed || ctx.response().closed()) {
+            LOGGER.debug("Client closed the connection of platform-http endpoint {} before the response completed",
+                    getEndpoint().getPath(), failure);
+        } else {
+            getExceptionHandler().handleException(
+                    "Failed handling platform-http endpoint " + getEndpoint().getPath(),
+                    failure);
+            if (!ctx.response().headWritten()) {
+                ctx.fail(failure);
+            } else if (!ctx.response().ended() && !ctx.response().closed()) {
+                // The response has already started, so there is no error status left to send, and failing the
+                // routing context would only log the failure a second time as an unhandled router exception.
+                // Reset it directly instead: the client still has to be told that the response it is reading is
+                // truncated, rather than being left waiting for a body that will never be completed.
+                ctx.response().reset(HTTP2_INTERNAL_ERROR);
+            }
+        }
+
         if (handleWriteResponseError && failure != null) {
             Exception existing = exchange.getException();
             if (existing != null) {
@@ -368,6 +428,53 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
         return null;
     }
 
+    private void configureSecurityHandler(Route route) {
+        if (securityHandler != null) {
+            route.handler(this::handleSecurity);
+        }
+    }
+
+    private void handleSecurity(RoutingContext ctx) {
+        if (isSuspended()) {
+            handleSuspend(ctx);
+            return;
+        }
+
+        ctx.request().pause();
+        Exchange exchange = createExchange(false);
+        exchange.setPattern(ExchangePattern.InOut);
+        Message in = initializeHttpMessage(exchange, ctx);
+        populateCamelHeaders(ctx, in.getHeaders(), exchange, getEndpoint().getHeaderFilterStrategy());
+
+        ctx.vertx().executeBlocking(() -> securityHandler.authenticate(getEndpoint(), exchange), false)
+                .onComplete(result -> {
+                    if (result.failed()) {
+                        ctx.request().resume();
+                        handleFailure(exchange, ctx, result.cause());
+                    } else if (Boolean.TRUE.equals(result.result())) {
+                        exchange.getMessage().reset();
+                        ctx.put(PRE_AUTHENTICATED_EXCHANGE, exchange);
+                        ctx.next();
+                        ctx.request().resume();
+                    } else {
+                        ctx.request().resume();
+                        writeResponse(ctx, exchange, getEndpoint().getHeaderFilterStrategy(), muteExceptions)
+                                .onComplete(writeResponseResult -> {
+                                    if (writeResponseResult.succeeded()) {
+                                        releaseExchange(exchange, false);
+                                    } else {
+                                        handleFailure(exchange, ctx, writeResponseResult.cause());
+                                    }
+                                });
+                    }
+                });
+    }
+
+    private Exchange getOrCreateExchange(RoutingContext ctx) {
+        Exchange exchange = ctx.get(PRE_AUTHENTICATED_EXCHANGE);
+        return exchange != null ? exchange : createExchange(false);
+    }
+
     private static void handleSuspend(RoutingContext ctx) {
         ctx.response().setStatusCode(503);
         ctx.end();
@@ -382,13 +489,7 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
 
     protected Future<Void> processHttpRequest(Exchange exchange, RoutingContext ctx) {
         // reuse existing http message if pooled
-        Message in = exchange.getIn();
-        if (in instanceof HttpMessage hm) {
-            hm.init(exchange, ctx.request(), ctx.response());
-        } else {
-            in = new HttpMessage(exchange, ctx.request(), ctx.response());
-            exchange.setMessage(in);
-        }
+        Message in = initializeHttpMessage(exchange, ctx);
 
         final String charset = ctx.parsedHeaders().contentType().parameter("charset");
         if (charset != null) {
@@ -407,9 +508,27 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
         return populateCamelMessage(ctx, exchange, in);
     }
 
+    private Message initializeHttpMessage(Exchange exchange, RoutingContext ctx) {
+        Message in = exchange.getIn();
+        if (in instanceof HttpMessage hm) {
+            hm.init(exchange, ctx.request(), ctx.response());
+        } else {
+            in = new HttpMessage(exchange, ctx.request(), ctx.response());
+            exchange.setMessage(in);
+        }
+        return in;
+    }
+
     protected Future<Void> populateCamelMessage(RoutingContext ctx, Exchange exchange, Message message) {
         final HeaderFilterStrategy headerFilterStrategy = getEndpoint().getHeaderFilterStrategy();
         populateCamelHeaders(ctx, message.getHeaders(), exchange, headerFilterStrategy);
+        if (getEndpoint().isStripUriPrefix()) {
+            String httpPath = (String) message.getHeader(Exchange.HTTP_PATH);
+            message.setHeader(Exchange.HTTP_PATH, HttpHelper.stripUriPrefix(httpPath, getEndpoint().getPath()));
+        }
+        if (securityHandler != null) {
+            message.removeHeader(AUTHORIZATION);
+        }
         return httpRequestBodyHandler.handle(ctx, message);
     }
 
@@ -449,18 +568,10 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
 
             LOGGER.trace("HTTP attachment {} = {}", name, fileName);
 
-            // is the file name accepted
-            boolean accepted = true;
-
-            if (fileNameExtWhitelist != null) {
-                String ext = FileUtil.onlyExt(fileName);
-                if (ext != null) {
-                    ext = ext.toLowerCase(Locale.US);
-                    if (!fileNameExtWhitelist.equals("*") && !fileNameExtWhitelist.contains(ext)) {
-                        accepted = false;
-                    }
-                }
-            }
+            // is the file name accepted - shared with the http bindings so the whitelist matches whole
+            // comma-separated extension tokens, not a substring: a whitelist of "txt" must not accept an upload
+            // named "evil.x" just because "txt".contains("x") (CAMEL-24652)
+            boolean accepted = HttpHelper.isFileNameExtWhitelisted(fileNameExtWhitelist, fileName);
             if (accepted) {
                 final File localFile = new File(upload.uploadedFileName());
                 final AttachmentMessage attachmentMessage = message.getExchange().getMessage(AttachmentMessage.class);
@@ -470,7 +581,10 @@ public class VertxPlatformHttpConsumer extends DefaultConsumer
                 if (uploads.size() == 1) {
                     message.setHeader(Exchange.FILE_PATH, localFile.getAbsolutePath());
                     message.setHeader(Exchange.FILE_LENGTH, upload.size());
-                    message.setHeader(Exchange.FILE_NAME, upload.fileName());
+                    // FILE_NAME is a Camel control header consumed by file/ftp producers; the raw
+                    // client-supplied multipart filename may contain path segments, so reduce it to a
+                    // leaf name (CAMEL-24293)
+                    message.setHeader(Exchange.FILE_NAME, FileUtil.stripPath(upload.fileName()));
                     String ct = MimeTypeHelper.probeMimeType(upload.fileName());
                     if (ct == null) {
                         ct = upload.contentType();

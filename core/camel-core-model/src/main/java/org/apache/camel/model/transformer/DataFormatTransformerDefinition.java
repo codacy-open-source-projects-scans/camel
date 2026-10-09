@@ -64,6 +64,8 @@ import org.apache.camel.model.dataformat.SwiftMxDataFormat;
 import org.apache.camel.model.dataformat.SyslogDataFormat;
 import org.apache.camel.model.dataformat.TarFileDataFormat;
 import org.apache.camel.model.dataformat.ThriftDataFormat;
+import org.apache.camel.model.dataformat.ToonDataFormat;
+import org.apache.camel.model.dataformat.UblDataFormat;
 import org.apache.camel.model.dataformat.UniVocityCsvDataFormat;
 import org.apache.camel.model.dataformat.UniVocityFixedDataFormat;
 import org.apache.camel.model.dataformat.UniVocityTsvDataFormat;
@@ -78,7 +80,8 @@ import org.apache.camel.spi.Metadata;
  * {@link org.apache.camel.spi.DataFormat} to perform transformation. One of the DataFormat 'ref' or DataFormat 'type'
  * needs to be specified.
  */
-@Metadata(label = "dataformat,transformation")
+@Metadata(label = "dataformat,transformation",
+          description = "Uses a Camel data format to perform data type transformation between input and output types")
 @XmlRootElement(name = "dataFormatTransformer")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class DataFormatTransformerDefinition extends TransformerDefinition {
@@ -124,6 +127,8 @@ public class DataFormatTransformerDefinition extends TransformerDefinition {
             @XmlElement(name = "swiftMx", type = SwiftMxDataFormat.class),
             @XmlElement(name = "syslog", type = SyslogDataFormat.class),
             @XmlElement(name = "tarFile", type = TarFileDataFormat.class),
+            @XmlElement(name = "toon", type = ToonDataFormat.class),
+            @XmlElement(name = "ubl", type = UblDataFormat.class),
             @XmlElement(name = "thrift", type = ThriftDataFormat.class),
             @XmlElement(name = "univocityCsv", type = UniVocityCsvDataFormat.class),
             @XmlElement(name = "univocityFixed", type = UniVocityFixedDataFormat.class),
@@ -132,6 +137,7 @@ public class DataFormatTransformerDefinition extends TransformerDefinition {
             @XmlElement(name = "yaml", type = YAMLDataFormat.class),
             @XmlElement(name = "zipDeflater", type = ZipDeflaterDataFormat.class),
             @XmlElement(name = "zipFile", type = ZipFileDataFormat.class) })
+    @Metadata(description = "The data format to be used for transformation.")
     private DataFormatDefinition dataFormatType;
 
     public DataFormatTransformerDefinition() {
@@ -151,9 +157,6 @@ public class DataFormatTransformerDefinition extends TransformerDefinition {
         return dataFormatType;
     }
 
-    /**
-     * The data format to be used
-     */
     public void setDataFormatType(DataFormatDefinition dataFormatType) {
         this.dataFormatType = dataFormatType;
     }

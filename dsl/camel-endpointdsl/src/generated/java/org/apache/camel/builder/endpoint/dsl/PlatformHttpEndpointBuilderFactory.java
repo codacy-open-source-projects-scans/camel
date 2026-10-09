@@ -311,6 +311,77 @@ public interface PlatformHttpEndpointBuilderFactory {
             doSetProperty("produces", produces);
             return this;
         }
+        /**
+         * Whether to strip the registered consumer path from CamelHttpPath
+         * after the request has been matched, so the exchange sees the path
+         * relative to this consumer instead of the full raw request path.
+         * Combined with the http producer's bridgeEndpoint option this allows
+         * building a path-based reverse proxy without manual header
+         * manipulation, e.g. a route on platform-http:/reverse-proxy with
+         * matchOnUriPrefix=true and stripUriPrefix=true bridged to
+         * http://backend forwards /reverse-proxy/get to http://backend/get
+         * instead of http://backend/reverse-proxy/get. CamelHttpUri and
+         * CamelHttpUrl are left untouched. The other HTTP consumers
+         * (camel-servlet, camel-jetty, camel-netty-http, camel-undertow)
+         * already behave this way by default; this option brings platform-http
+         * in line with them without changing its default behavior.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: consumer
+         * 
+         * @param stripUriPrefix the value to set
+         * @return the dsl builder
+         */
+        default PlatformHttpEndpointBuilder stripUriPrefix(boolean stripUriPrefix) {
+            doSetProperty("stripUriPrefix", stripUriPrefix);
+            return this;
+        }
+        /**
+         * Whether to strip the registered consumer path from CamelHttpPath
+         * after the request has been matched, so the exchange sees the path
+         * relative to this consumer instead of the full raw request path.
+         * Combined with the http producer's bridgeEndpoint option this allows
+         * building a path-based reverse proxy without manual header
+         * manipulation, e.g. a route on platform-http:/reverse-proxy with
+         * matchOnUriPrefix=true and stripUriPrefix=true bridged to
+         * http://backend forwards /reverse-proxy/get to http://backend/get
+         * instead of http://backend/reverse-proxy/get. CamelHttpUri and
+         * CamelHttpUrl are left untouched. The other HTTP consumers
+         * (camel-servlet, camel-jetty, camel-netty-http, camel-undertow)
+         * already behave this way by default; this option brings platform-http
+         * in line with them without changing its default behavior.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: consumer
+         * 
+         * @param stripUriPrefix the value to set
+         * @return the dsl builder
+         */
+        default PlatformHttpEndpointBuilder stripUriPrefix(String stripUriPrefix) {
+            doSetProperty("stripUriPrefix", stripUriPrefix);
+            return this;
+        }
+        /**
+         * OAuth profile name for validating incoming Authorization: Bearer
+         * tokens. When set, the request is authenticated before the route is
+         * processed. This requires an OAuthTokenValidationFactory; camel-oauth
+         * provides the default implementation.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param oauthProfile the value to set
+         * @return the dsl builder
+         */
+        default PlatformHttpEndpointBuilder oauthProfile(String oauthProfile) {
+            doSetProperty("oauthProfile", oauthProfile);
+            return this;
+        }
     }
 
     /**
@@ -684,6 +755,26 @@ public interface PlatformHttpEndpointBuilderFactory {
          */
         default AdvancedPlatformHttpEndpointBuilder fileNameExtWhitelist(String fileNameExtWhitelist) {
             doSetProperty("fileNameExtWhitelist", fileNameExtWhitelist);
+            return this;
+        }
+        /**
+         * Who answers requests that match no registered operation when using
+         * rest-dsl contract-first (such as the rest-openapi component): the
+         * HTTP layer (platform) or Camel via the route (camel). When set to
+         * camel, a catch-all is registered so unmatched requests are routed to
+         * Camel. Currently supported by camel-platform-http-vertx (Camel Main,
+         * Quarkus) and the Spring Boot platform-http-starter.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Default: platform
+         * Group: consumer (advanced)
+         * 
+         * @param unmatchedRequestHandling the value to set
+         * @return the dsl builder
+         */
+        default AdvancedPlatformHttpEndpointBuilder unmatchedRequestHandling(String unmatchedRequestHandling) {
+            doSetProperty("unmatchedRequestHandling", unmatchedRequestHandling);
             return this;
         }
         /**

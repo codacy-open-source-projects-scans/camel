@@ -24,6 +24,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.input.Prompt;
 import dev.langchain4j.model.input.PromptTemplate;
 import dev.langchain4j.rag.content.Content;
@@ -31,7 +32,15 @@ import dev.langchain4j.rag.content.injector.ContentInjector;
 import dev.langchain4j.rag.content.injector.DefaultContentInjector;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
+import org.apache.camel.Message;
 import org.apache.camel.NoSuchHeaderException;
+import org.apache.camel.component.ai.observability.GenAiErrorSupport;
+import org.apache.camel.component.ai.observability.GenAiModelResolver;
+import org.apache.camel.component.ai.observability.GenAiObservability;
+import org.apache.camel.component.ai.observability.GenAiObservation;
+import org.apache.camel.component.ai.observability.GenAiObservationContext;
+import org.apache.camel.component.ai.observability.GenAiOperationName;
+import org.apache.camel.component.ai.observability.GenAiUsage;
 import org.apache.camel.support.DefaultProducer;
 import org.apache.camel.util.ObjectHelper;
 
@@ -80,14 +89,17 @@ public class LangChain4jChatProducer extends DefaultProducer {
     }
 
     private void processSingleMessage(Exchange exchange) throws InvalidPayloadException {
-        // Retrieve the mandatory body from the exchange
-        final var message = exchange.getIn().getMandatoryBody();
+        final var body = exchange.getIn().getMandatoryBody();
 
-        // Use pattern matching with instanceof to streamline type checks and assignments
-        ChatMessage userMessage = (message instanceof String str) ? new UserMessage(str) : (ChatMessage) message;
+        ChatMessage userMessage;
+        if (body instanceof ChatMessage cm) {
+            userMessage = cm;
+        } else {
+            String text = exchange.getIn().getMandatoryBody(String.class);
+            userMessage = new UserMessage(text);
+        }
 
         populateResponse(sendChatMessage(userMessage, exchange), exchange);
-
     }
 
     @SuppressWarnings("unchecked")
@@ -107,6 +119,30 @@ public class LangChain4jChatProducer extends DefaultProducer {
         exchange.getMessage().setBody(response);
     }
 
+    private void populateTokenUsageHeaders(ChatResponse chatResponse, Exchange exchange, String requestModel) {
+        Message message = exchange.getMessage();
+
+        if (requestModel != null) {
+            message.setHeader(LangChain4jChatHeaders.REQUEST_MODEL, requestModel);
+        }
+
+        if (chatResponse.finishReason() != null) {
+            message.setHeader(LangChain4jChatHeaders.FINISH_REASON, chatResponse.finishReason());
+        }
+
+        if (chatResponse.tokenUsage() != null) {
+            message.setHeader(LangChain4jChatHeaders.INPUT_TOKEN_COUNT, chatResponse.tokenUsage().inputTokenCount());
+            message.setHeader(LangChain4jChatHeaders.OUTPUT_TOKEN_COUNT, chatResponse.tokenUsage().outputTokenCount());
+            message.setHeader(LangChain4jChatHeaders.TOTAL_TOKEN_COUNT, chatResponse.tokenUsage().totalTokenCount());
+        }
+
+        String responseModel = GenAiModelResolver.resolveResponseModelName(
+                exchange.getContext().getClassResolver(), chatResponse, requestModel);
+        if (responseModel != null) {
+            message.setHeader(LangChain4jChatHeaders.RESPONSE_MODEL, responseModel);
+        }
+    }
+
     /**
      * Send a ChatMessage
      *
@@ -115,9 +151,25 @@ public class LangChain4jChatProducer extends DefaultProducer {
      */
     private String sendChatMessage(ChatMessage chatMessage, Exchange exchange) {
         var augmentedChatMessage = addAugmentedData(chatMessage, exchange);
-
-        AiMessage response = this.chatModel.chat(augmentedChatMessage).aiMessage();
-        return extractAiResponse(response);
+        GenAiObservationContext observationContext = buildObservationContext();
+        GenAiObservation observation = GenAiObservability.start(exchange, observationContext);
+        try {
+            ChatResponse chatResponse = this.chatModel.chat(augmentedChatMessage);
+            populateTokenUsageHeaders(chatResponse, exchange, observationContext.requestModel());
+            observation.recordSuccess(GenAiUsage.of(
+                    chatResponse.tokenUsage() != null ? chatResponse.tokenUsage().inputTokenCount() : null,
+                    chatResponse.tokenUsage() != null ? chatResponse.tokenUsage().outputTokenCount() : null,
+                    chatResponse.finishReason(),
+                    GenAiModelResolver.resolveResponseModelName(
+                            exchange.getContext().getClassResolver(), chatResponse, observationContext.requestModel())));
+            return extractAiResponse(chatResponse.aiMessage());
+        } catch (RuntimeException e) {
+            GenAiErrorSupport.apply(exchange, e);
+            observation.recordError(e);
+            throw e;
+        } finally {
+            observation.close();
+        }
     }
 
     /**
@@ -162,8 +214,37 @@ public class LangChain4jChatProducer extends DefaultProducer {
 
         }
 
-        response = this.chatModel.chat(chatMessages).aiMessage();
-        return extractAiResponse(response);
+        GenAiObservationContext observationContext = buildObservationContext();
+        GenAiObservation observation = GenAiObservability.start(exchange, observationContext);
+        try {
+            ChatResponse chatResponse = this.chatModel.chat(chatMessages);
+            populateTokenUsageHeaders(chatResponse, exchange, observationContext.requestModel());
+            observation.recordSuccess(GenAiUsage.of(
+                    chatResponse.tokenUsage() != null ? chatResponse.tokenUsage().inputTokenCount() : null,
+                    chatResponse.tokenUsage() != null ? chatResponse.tokenUsage().outputTokenCount() : null,
+                    chatResponse.finishReason(),
+                    GenAiModelResolver.resolveResponseModelName(
+                            exchange.getContext().getClassResolver(), chatResponse, observationContext.requestModel())));
+            response = chatResponse.aiMessage();
+            return extractAiResponse(response);
+        } catch (RuntimeException e) {
+            GenAiErrorSupport.apply(exchange, e);
+            observation.recordError(e);
+            throw e;
+        } finally {
+            observation.close();
+        }
+    }
+
+    private GenAiObservationContext buildObservationContext() {
+        String requestModel
+                = GenAiModelResolver.resolveModelName(getEndpoint().getCamelContext().getClassResolver(), chatModel);
+        return GenAiObservationContext.builder()
+                .operationName(GenAiOperationName.CHAT)
+                .system(GenAiModelResolver.resolveSystem(getEndpoint().getCamelContext().getClassResolver(), chatModel))
+                .requestModel(requestModel)
+                .componentScheme("langchain4j-chat")
+                .build();
     }
 
     private String extractAiResponse(AiMessage response) {

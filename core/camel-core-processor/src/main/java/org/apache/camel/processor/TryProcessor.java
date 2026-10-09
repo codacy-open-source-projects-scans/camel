@@ -32,6 +32,7 @@ import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.InterceptableProcessor;
 import org.apache.camel.spi.ReactiveExecutor;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.AsyncProcessorConverterHelper;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.service.ServiceHelper;
@@ -42,7 +43,7 @@ import org.slf4j.LoggerFactory;
  * Implements try/catch/finally type processing
  */
 public class TryProcessor extends BaseProcessorSupport
-        implements Navigate<Processor>, Traceable, IdAware, RouteIdAware, InterceptableProcessor {
+        implements Navigate<Processor>, Traceable, IdAware, RouteIdAware, StepIdAware, InterceptableProcessor {
 
     private static final Logger LOG = LoggerFactory.getLogger(TryProcessor.class);
 
@@ -50,6 +51,7 @@ public class TryProcessor extends BaseProcessorSupport
     protected final ReactiveExecutor reactiveExecutor;
     protected String id;
     protected String routeId;
+    protected String stepId;
     protected final Processor tryProcessor;
     protected final List<Processor> catchClauses;
     protected final Processor finallyProcessor;
@@ -90,18 +92,39 @@ public class TryProcessor extends BaseProcessorSupport
         final AsyncCallback callback;
         final Iterator<Processor> processors;
         final Object lastHandled;
+        // the previous try route block (such as when this doTry is nested in another doTry)
+        final Object lastTryRouteBlock;
+        // the failure details of an earlier failure (before this doTry), which the doFinally must not remove
+        final Object lastFailureEndpoint;
+        final Object lastFailureRouteId;
+        final Object lastFailureNodeId;
+        final Object lastFailureLocation;
+        boolean failureOriginCaptured;
 
         public TryState(Exchange exchange, AsyncCallback callback) {
             this.exchange = exchange;
             this.callback = callback;
             this.processors = next().iterator();
             this.lastHandled = exchange.getProperty(ExchangePropertyKey.EXCEPTION_HANDLED);
+            this.lastTryRouteBlock = exchange.getProperty(ExchangePropertyKey.TRY_ROUTE_BLOCK);
+            this.lastFailureEndpoint = exchange.getProperty(ExchangePropertyKey.FAILURE_ENDPOINT);
+            this.lastFailureRouteId = exchange.getProperty(ExchangePropertyKey.FAILURE_ROUTE_ID);
+            this.lastFailureNodeId = exchange.getProperty(ExchangePropertyKey.FAILURE_NODE_ID);
+            this.lastFailureLocation = exchange.getProperty(ExchangePropertyKey.FAILURE_LOCATION);
             exchange.removeProperty(ExchangePropertyKey.EXCEPTION_HANDLED);
         }
 
         @Override
         public void run() {
             if (continueRouting(processors, exchange)) {
+                // capture where the exchange failed as soon as the exception appears, before handing off to a
+                // doCatch/doFinally clause which is itself a channeled node and would otherwise add its own
+                // entry to the message history, hiding the node that actually failed
+                if (!failureOriginCaptured && exchange.getException() != null) {
+                    failureOriginCaptured = true;
+                    ExchangeHelper.captureFailureOrigin(exchange);
+                }
+
                 exchange.setProperty(ExchangePropertyKey.TRY_ROUTE_BLOCK, true);
                 ExchangeHelper.prepareOutToIn(exchange);
 
@@ -114,12 +137,30 @@ public class TryProcessor extends BaseProcessorSupport
                 async.process(exchange, doneSync -> reactiveExecutor.schedule(this));
             } else {
                 ExchangeHelper.prepareOutToIn(exchange);
-                exchange.removeProperty(ExchangePropertyKey.TRY_ROUTE_BLOCK);
+                // restore the previous try route block, so an outer doTry is still in its try block
+                if (lastTryRouteBlock != null) {
+                    exchange.setProperty(ExchangePropertyKey.TRY_ROUTE_BLOCK, lastTryRouteBlock);
+                } else {
+                    exchange.removeProperty(ExchangePropertyKey.TRY_ROUTE_BLOCK);
+                }
                 exchange.setProperty(ExchangePropertyKey.EXCEPTION_HANDLED, lastHandled);
+                if (exchange.getException() == null) {
+                    // restore the failure details of an earlier failure (which the doFinally removed)
+                    restoreProperty(ExchangePropertyKey.FAILURE_ENDPOINT, lastFailureEndpoint);
+                    restoreProperty(ExchangePropertyKey.FAILURE_ROUTE_ID, lastFailureRouteId);
+                    restoreProperty(ExchangePropertyKey.FAILURE_NODE_ID, lastFailureNodeId);
+                    restoreProperty(ExchangePropertyKey.FAILURE_LOCATION, lastFailureLocation);
+                }
                 if (LOG.isTraceEnabled()) {
                     LOG.trace("Processing complete for exchangeId: {} >>> {}", exchange.getExchangeId(), exchange);
                 }
                 callback.done(false);
+            }
+        }
+
+        private void restoreProperty(ExchangePropertyKey key, Object value) {
+            if (value != null) {
+                exchange.setProperty(key, value);
             }
         }
 
@@ -198,5 +239,15 @@ public class TryProcessor extends BaseProcessorSupport
     @Override
     public void setRouteId(String routeId) {
         this.routeId = routeId;
+    }
+
+    @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
     }
 }

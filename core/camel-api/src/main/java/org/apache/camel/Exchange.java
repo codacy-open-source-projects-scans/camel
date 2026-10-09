@@ -22,14 +22,15 @@ import org.apache.camel.clock.Clock;
 import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.UnitOfWork;
 import org.apache.camel.spi.annotations.ConstantProvider;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An Exchange is the message container holding the information during the entire routing of a {@link Message} received
  * by a {@link Consumer}.
  * <p/>
- * During processing down the {@link Processor} chain, the {@link Exchange} provides access to the current (not the
- * original) request and response {@link Message} messages. The {@link Exchange} also holds meta-data during its entire
- * lifetime stored as properties accessible using the various {@link #getProperty(String)} methods. The
+ * During processing down the {@link Processor} chain, the {@link Exchange} provides access to the current
+ * {@link Message} via {@link #getMessage()}. The {@link Exchange} also holds meta-data during its entire lifetime
+ * stored as properties accessible using the various {@link #getProperty(String)} methods. The
  * {@link #setProperty(String, Object)} is used to store a property. For example, you can use this to store security,
  * SLA related data or any other information deemed useful throughout processing. If an {@link Exchange} failed during
  * routing the {@link Exception} that caused the failure is stored and accessible via the {@link #getException()}
@@ -38,30 +39,30 @@ import org.apache.camel.spi.annotations.ConstantProvider;
  * An Exchange is created when a {@link Consumer} receives a request. A new {@link Message} is created, the request is
  * set as the body of the {@link Message} and depending on the {@link Consumer} other {@link Endpoint} and protocol
  * related information is added as headers on the {@link Message}. Then an Exchange is created and the newly created
- * {@link Message} is set as the in on the Exchange. Therefore, an Exchange starts its life in a {@link Consumer}. The
- * Exchange is then sent down the {@link Route} for processing along a {@link Processor} chain. The {@link Processor} as
- * the name suggests is what processes the {@link Message} in the Exchange and Camel, in addition to providing
- * out-of-the-box a large number of useful processors, it also allows you to create your own. The rule Camel uses is to
- * take the out {@link Message} produced by the previous {@link Processor} and set it as the in for the next
- * {@link Processor}. If the previous {@link Processor} did not produce an out, then the in of the previous
- * {@link Processor} is sent as the next in. At the end of the processing chain, depending on the {@link ExchangePattern
- * Message Exchange Pattern} (or MEP) the last out (or in of no out available) is sent by the {@link Consumer} back to
- * the original caller.
+ * {@link Message} is set on the Exchange. Therefore, an Exchange starts its life in a {@link Consumer}. The Exchange is
+ * then sent down the {@link Route} for processing along a {@link Processor} chain. The {@link Processor} as the name
+ * suggests is what processes the {@link Message} in the Exchange. Camel provides a large number of useful processors
+ * out-of-the-box, and it also allows you to create your own.
  * <p/>
- * Camel, in addition to providing out-of-the-box a large number of useful processors, it also allows you to implement
- * and use your own. When the Exchange is passed to a {@link Processor}, it always contains an in {@link Message} and no
- * out {@link Message}. The {@link Processor} <b>may</b> produce an out, depending on the nature of the
- * {@link Processor}. The in {@link Message} can be accessed using the {@link #getIn()} method. Since the out message is
- * null when entering the {@link Processor}, the {@link #getOut()} method is actually a convenient factory method that
- * will lazily instantiate a {@link org.apache.camel.support.DefaultMessage} which you could populate. As an alternative
- * you could also instantiate your specialized {@link Message} and set it on the exchange using the
- * {@link #setOut(org.apache.camel.Message)} method. Please note that a {@link Message} contains not only the body but
- * also headers and attachments. If you are creating a new {@link Message} the headers and attachments of the in
- * {@link Message} are not automatically copied to the out by Camel, and you'll have to set the headers and attachments
- * you need yourself. If your {@link Processor} is not producing a different {@link Message} but only needs to slightly
- * modify the in, you can simply update the in {@link Message} returned by {@link #getIn()}.
+ * To access or modify the current message, use the {@link #getMessage()} method. Camel uses {@link #getMessage()} to
+ * obtain the current message during routing. If a {@link Processor} modifies the message, those changes are visible to
+ * subsequent processors. The {@link ExchangePattern} determines whether a reply is expected (InOut) or not (InOnly).
+ *
+ * @see Message
+ * @see ExchangePattern
+ * @see ExchangeExtension
+ * @see Processor
  */
 @ConstantProvider("org.apache.camel.ExchangeConstantProvider")
+@Metadata(label = "api",
+          description = "The container that flows through a route: the current Message (the body and headers are on the "
+                        + "message, not on the exchange), the exchange properties, the variables, the exception when a "
+                        + "step failed, and the CamelContext. Camel 4 for code written against older Camel: getMessage() "
+                        + "is the current message and getIn() its alias; getOut() is deprecated, set a reply on "
+                        + "getMessage() instead; the exchange has no getHeader/setHeader, use "
+                        + "exchange.getMessage().getHeader(name) and .setHeader(name, value); header names are plain "
+                        + "strings such as \"CamelFileName\" (constants on Exchange or on the component's constants "
+                        + "class).")
 public interface Exchange extends VariableAware {
 
     String AUTHENTICATION = "CamelAuthentication";
@@ -150,6 +151,14 @@ public interface Exchange extends VariableAware {
               description = "Route ID where the Exchange failed during processing",
               javaType = "String")
     String FAILURE_ROUTE_ID = "CamelFailureRouteId";
+    @Metadata(label = "doCatch,doFinally,errorHandler,onException",
+              description = "Node ID where the Exchange failed during processing",
+              javaType = "String")
+    String FAILURE_NODE_ID = "CamelFailureNodeId";
+    @Metadata(label = "doCatch,doFinally,errorHandler,onException",
+              description = "Source code location where the Exchange failed during processing",
+              javaType = "String")
+    String FAILURE_LOCATION = "CamelFailureLocation";
     String FATAL_FALLBACK_ERROR_HANDLER = "CamelFatalFallbackErrorHandler";
     String FILE_CONTENT_TYPE = "CamelFileContentType";
     String FILE_LOCAL_WORK_PATH = "CamelFileLocalWorkPath";
@@ -164,10 +173,12 @@ public interface Exchange extends VariableAware {
     String FILE_LENGTH = "CamelFileLength";
     String FILE_LOCK_FILE_ACQUIRED = "CamelFileLockFileAcquired";
     String FILE_LOCK_FILE_NAME = "CamelFileLockFileName";
+    String FILE_LOCK_IDEMPOTENT_ACQUIRED = "CamelFileLockIdempotentAcquired";
     String FILE_LOCK_EXCLUSIVE_LOCK = "CamelFileLockExclusiveLock";
     String FILE_LOCK_RANDOM_ACCESS_FILE = "CamelFileLockRandomAccessFile";
     String FILE_LOCK_CHANNEL_FILE = "CamelFileLockChannelFile";
     String FILE_EXCHANGE_FILE = "CamelFileExchangeFile";
+    String FILE_IDEMPOTENT_KEY = "CamelFileIdempotentKey";
     String FILTER_NON_XML_CHARS = "CamelFilterNonXmlChars";
 
     String GROUPED_EXCHANGE = "CamelGroupedExchange";
@@ -231,6 +242,8 @@ public interface Exchange extends VariableAware {
     String MESSAGE_HISTORY_HEADER_FORMAT = "CamelMessageHistoryHeaderFormat";
     String MESSAGE_HISTORY_OUTPUT_FORMAT = "CamelMessageHistoryOutputFormat";
     String MESSAGE_TIMESTAMP = "CamelMessageTimestamp";
+    String MESSAGE_BODY_SIZE = "CamelMessageBodySize";
+    String MESSAGE_HEADERS_SIZE = "CamelMessageHeadersSize";
     @Metadata(label = "multicast",
               description = "An index counter that increases for each Exchange being multicasted. The counter starts from 0.",
               javaType = "int")
@@ -242,6 +255,17 @@ public interface Exchange extends VariableAware {
               description = "Flag to mark that this exchange is currently being executed as onCompletion", javaType = "boolean")
     String ON_COMPLETION = "CamelOnCompletion";
     String ON_COMPLETION_ROUTE_IDS = "CamelOnCompletionRouteIds";
+    /**
+     * Exchange property key for tracking which OnCompletionProcessor instances (by processor id) have already fired
+     * their onCompletion handler for this exchange. Used to ensure a named route configuration's onCompletion fires at
+     * most once per exchange, even when multiple opted-in routes are traversed in the same exchange.
+     */
+    String ON_COMPLETION_FIRED_IDS = "CamelOnCompletionFiredIds";
+    /**
+     * Exchange property key for tracking which routes have registered a synchronization for each named route
+     * configuration ID. Used to defer BeforeConsumer firing from an inner route when the consumer route also opted in.
+     */
+    String ON_COMPLETION_CONFIG_REGISTERED_ROUTES = "CamelOnCompletionConfigRegisteredRoutes";
     String OFFSET = "CamelOffset";
     String OVERRULE_FILE_NAME = "CamelOverruleFileName";
 
@@ -282,6 +306,20 @@ public interface Exchange extends VariableAware {
               javaType = "int",
               important = true)
     String SPLIT_SIZE = "CamelSplitSize";
+    /**
+     * @since 4.22
+     */
+    @Metadata(label = "split",
+              description = "The result of a Splitter EIP operation with error thresholds, providing structured failure details.",
+              javaType = "org.apache.camel.SplitResult")
+    String SPLIT_RESULT = "CamelSplitResult";
+    /**
+     * @since 4.22
+     */
+    @Metadata(label = "split",
+              description = "The current watermark value from the watermark store, set before split processing begins.",
+              javaType = "String")
+    String SPLIT_WATERMARK = "CamelSplitWatermark";
     @Metadata(label = "step", description = "The id of the Step EIP", javaType = "String")
     String STEP_ID = "CamelStepId";
 
@@ -319,12 +357,23 @@ public interface Exchange extends VariableAware {
     String OTEL_ACTIVE_SPAN = "OpenTracing.activeSpan";
     @Deprecated(since = "4.19.0")
     String OTEL_CLOSE_CLIENT_SCOPE = "OpenTracing.closeClientScope";
+    /**
+     * Exchange property set by tracing implementations (e.g., camel-telemetry) containing span decorator attributes as
+     * a {@code Map<String, String>}. Used by the BacklogTracer activity feature to enrich endpoint send entries with
+     * component-specific details (e.g., Kafka topic, SQL query, HTTP method).
+     *
+     * @since 4.22
+     */
+    String ACTIVITY_SPAN_TAGS = "CamelActivitySpanTags";
 
     /**
      * Returns the {@link ExchangePattern} (MEP) of this exchange.
      *
      * @return the message exchange pattern of this exchange
      */
+    @Metadata(label = "api",
+              description = "InOnly or InOut: whether the caller waits for a reply (the body of getMessage() at the end of "
+                            + "the route).")
     ExchangePattern getPattern();
 
     /**
@@ -342,7 +391,9 @@ public interface Exchange extends VariableAware {
      *
      * @param  key the exchange key
      * @return     the value of the given property or <tt>null</tt> if there is no property for the given key
+     * @since      3.9
      */
+    @Nullable
     Object getProperty(ExchangePropertyKey key);
 
     /**
@@ -352,8 +403,10 @@ public interface Exchange extends VariableAware {
      * @param  type the type of the property
      * @return      the value of the given property or <tt>null</tt> if there is no property for the given name or
      *              <tt>null</tt> if it cannot be converted to the given type
+     *
+     * @since       3.9
      */
-    <T> T getProperty(ExchangePropertyKey key, Class<T> type);
+    <T> @Nullable T getProperty(ExchangePropertyKey key, Class<T> type);
 
     /**
      * Returns a property associated with this exchange by name and specifying the type required
@@ -363,23 +416,28 @@ public interface Exchange extends VariableAware {
      * @param  type         the type of the property
      * @return              the value of the given property or <tt>defaultValue</tt> if there is no property for the
      *                      given name or <tt>null</tt> if it cannot be converted to the given type
+     *
+     * @since               3.9
      */
-    <T> T getProperty(ExchangePropertyKey key, Object defaultValue, Class<T> type);
+    <T> @Nullable T getProperty(ExchangePropertyKey key, Object defaultValue, Class<T> type);
 
     /**
      * Sets a property on the exchange
      *
      * @param key   the exchange key
      * @param value to associate with the name
+     * @since       3.9
      */
-    void setProperty(ExchangePropertyKey key, Object value);
+    void setProperty(ExchangePropertyKey key, @Nullable Object value);
 
     /**
      * Removes the given property on the exchange
      *
      * @param  key the exchange key
      * @return     the old value of the property
+     * @since      3.9
      */
+    @Nullable
     Object removeProperty(ExchangePropertyKey key);
 
     /**
@@ -388,6 +446,14 @@ public interface Exchange extends VariableAware {
      * @param  name the name of the property
      * @return      the value of the given property or <tt>null</tt> if there is no property for the given name
      */
+    @Nullable
+    @Metadata(label = "api",
+              description = "An exchange property: data Camel and the route keep for the whole routing next to the message "
+                            + "(not sent to endpoints), e.g. Exchange.EXCEPTION_CAUGHT in an onException block, "
+                            + "Exchange.AGGREGATED_SIZE after aggregate.",
+              examples = {
+                      "exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)",
+                      "exchange.getProperty(\"orderId\", String.class)" })
     Object getProperty(String name);
 
     /**
@@ -398,7 +464,7 @@ public interface Exchange extends VariableAware {
      * @return      the value of the given property or <tt>null</tt> if there is no property for the given name or
      *              <tt>null</tt> if it cannot be converted to the given type
      */
-    <T> T getProperty(String name, Class<T> type);
+    <T> @Nullable T getProperty(String name, Class<T> type);
 
     /**
      * Returns a property associated with this exchange by name and specifying the type required
@@ -409,7 +475,7 @@ public interface Exchange extends VariableAware {
      * @return              the value of the given property or <tt>defaultValue</tt> if there is no property for the
      *                      given name or <tt>null</tt> if it cannot be converted to the given type
      */
-    <T> T getProperty(String name, Object defaultValue, Class<T> type);
+    <T> @Nullable T getProperty(String name, Object defaultValue, Class<T> type);
 
     /**
      * Sets a property on the exchange
@@ -417,7 +483,10 @@ public interface Exchange extends VariableAware {
      * @param name  of the property
      * @param value to associate with the name
      */
-    void setProperty(String name, Object value);
+    @Metadata(label = "api",
+              description = "Sets an exchange property for the rest of the routing; removeProperty(name) removes it.",
+              examples = { "exchange.setProperty(\"orderId\", id)" })
+    void setProperty(String name, @Nullable Object value);
 
     /**
      * Removes the given property on the exchange
@@ -425,6 +494,7 @@ public interface Exchange extends VariableAware {
      * @param  name of the property
      * @return      the old value of the property
      */
+    @Nullable
     Object removeProperty(String name);
 
     /**
@@ -474,7 +544,13 @@ public interface Exchange extends VariableAware {
      * @param  name the variable name. Can be prefixed with repo-id:name to lookup the variable from a specific
      *              repository. If no repo-id is provided, then variables will be from the current exchange.
      * @return      the value of the given variable or <tt>null</tt> if there is no variable for the given name
+     * @since       4.4
      */
+    @Nullable
+    @Metadata(label = "api",
+              description = "A variable of this exchange (setVariable or the setVariable EIP); global:name reads a global "
+                            + "variable, route:routeId:name a route's.",
+              examples = { "exchange.getVariable(\"total\", Integer.class)" })
     Object getVariable(String name);
 
     /**
@@ -485,8 +561,10 @@ public interface Exchange extends VariableAware {
      * @param  type the type of the variable
      * @return      the value of the given variable or <tt>null</tt> if there is no variable for the given name or
      *              <tt>null</tt> if it cannot be converted to the given type
+     *
+     * @since       4.4
      */
-    <T> T getVariable(String name, Class<T> type);
+    <T> @Nullable T getVariable(String name, Class<T> type);
 
     /**
      * Returns a variable by name and specifying the type required
@@ -497,8 +575,10 @@ public interface Exchange extends VariableAware {
      * @param  type         the type of the variable
      * @return              the value of the given variable or <tt>defaultValue</tt> if there is no variable for the
      *                      given name or <tt>null</tt> if it cannot be converted to the given type
+     *
+     * @since               4.4
      */
-    <T> T getVariable(String name, Object defaultValue, Class<T> type);
+    <T> @Nullable T getVariable(String name, Object defaultValue, Class<T> type);
 
     /**
      * Sets a variable on the exchange
@@ -506,8 +586,12 @@ public interface Exchange extends VariableAware {
      * @param name  the variable name. Can be prefixed with repo-id:name to store the variable in a specific repository.
      *              If no repo-id is provided, then variables will be stored in the current exchange.
      * @param value the value of the variable
+     * @since       4.4
      */
-    void setVariable(String name, Object value);
+    @Metadata(label = "api",
+              description = "Sets a variable on this exchange; global:name sets a global variable shared by all exchanges.",
+              examples = { "exchange.setVariable(\"total\", sum)" })
+    void setVariable(String name, @Nullable Object value);
 
     /**
      * Removes the given variable
@@ -517,13 +601,16 @@ public interface Exchange extends VariableAware {
      * @param  name the variable name. Can be prefixed with repo-id:name to remove the variable in a specific
      *              repository. If no repo-id is provided, then the variable from the current exchange will be removed
      * @return      the old value of the variable, or <tt>null</tt> if there was no variable for the given name
+     * @since       4.4
      */
+    @Nullable
     Object removeVariable(String name);
 
     /**
      * Returns the variables from the current exchange
      *
      * @return the variables from the current exchange in a Map.
+     * @since  4.4
      */
     Map<String, Object> getVariables();
 
@@ -531,6 +618,7 @@ public interface Exchange extends VariableAware {
      * Returns whether any variables have been set on the current exchange
      *
      * @return <tt>true</tt> if any variables has been set on the current exchange
+     * @since  4.4
      */
     boolean hasVariables();
 
@@ -539,27 +627,39 @@ public interface Exchange extends VariableAware {
      *
      * @return the message
      */
+    @Metadata(label = "api",
+              description = "Alias of getMessage(): Camel 4 has one message on the exchange, not an in and an out.")
     Message getIn();
 
     /**
      * Returns the current message
      *
      * @return the current message
+     * @since  3.0
      */
+    @Metadata(label = "api",
+              important = true,
+              description = "The current message: its body and headers are what a step reads and writes; the result of a "
+                            + "step goes here. getIn() is an alias.",
+              examples = {
+                      "exchange.getMessage().getBody(String.class)",
+                      "exchange.getMessage().setHeader(\"CamelFileName\", \"out.txt\")" })
     Message getMessage();
 
     /**
      * Returns the current message as the given type
      *
      * @param  type the given type
-     * @return      the message as the given type or <tt>null</tt> if not possible to covert to given type
+     * @return      the message as the given type or <tt>null</tt> if not possible to convert to given type
+     * @since       3.0
      */
-    <T> T getMessage(Class<T> type);
+    <T> @Nullable T getMessage(Class<T> type);
 
     /**
      * Replace the current message instance.
      *
      * @param message the new message
+     * @since         3.0
      */
     void setMessage(Message message);
 
@@ -567,9 +667,9 @@ public interface Exchange extends VariableAware {
      * Returns the inbound request message as the given type
      *
      * @param  type the given type
-     * @return      the message as the given type or <tt>null</tt> if not possible to covert to given type
+     * @return      the message as the given type or <tt>null</tt> if not possible to convert to given type
      */
-    <T> T getIn(Class<T> type);
+    <T> @Nullable T getIn(Class<T> type);
 
     /**
      * Sets the inbound message instance
@@ -606,12 +706,12 @@ public interface Exchange extends VariableAware {
      * If you want to test whether an OUT message has been set or not, use the {@link #hasOut()} method.
      *
      * @param      type the given type
-     * @return          the message as the given type or <tt>null</tt> if not possible to covert to given type
+     * @return          the message as the given type or <tt>null</tt> if not possible to convert to given type
      * @see             #getIn(Class)
      * @deprecated      use {@link #getMessage(Class)}
      */
     @Deprecated(since = "3.0.0")
-    <T> T getOut(Class<T> type);
+    <T> @Nullable T getOut(Class<T> type);
 
     /**
      * Returns whether an OUT message has been set or not.
@@ -636,6 +736,11 @@ public interface Exchange extends VariableAware {
      *
      * @return the exception (or null if no faults)
      */
+    @Nullable
+    @Metadata(label = "api",
+              description = "The exception that failed the exchange, null when none. Inside onException the exception was "
+                            + "moved to the property Exchange.EXCEPTION_CAUGHT and getException() is null.",
+              examples = { "exchange.getException(IOException.class)" })
     Exception getException();
 
     /**
@@ -649,7 +754,7 @@ public interface Exchange extends VariableAware {
      * @param  type the exception type
      * @return      the exception (or <tt>null</tt> if no caused exception matched)
      */
-    <T> T getException(Class<T> type);
+    <T> @Nullable T getException(Class<T> type);
 
     /**
      * Sets the exception associated with this exchange
@@ -659,7 +764,10 @@ public interface Exchange extends VariableAware {
      *
      * @param t the caused exception
      */
-    void setException(Throwable t);
+    @Metadata(label = "api",
+              description = "Fails the exchange with the exception so the error handler takes over; setException(null) "
+                            + "clears it. A Processor can also just throw.")
+    void setException(@Nullable Throwable t);
 
     /**
      * Returns true if this exchange failed due to an exception
@@ -667,6 +775,7 @@ public interface Exchange extends VariableAware {
      * @return true if this exchange failed due to an exception
      * @see    Exchange#getException()
      */
+    @Metadata(label = "api", description = "Whether an exception is set on the exchange.")
     boolean isFailed();
 
     /**
@@ -722,6 +831,9 @@ public interface Exchange extends VariableAware {
      *
      * @return the container which owns this exchange
      */
+    @Metadata(label = "api",
+              description = "The CamelContext: the registry, the type converter, the routes and the templates.",
+              examples = { "exchange.getContext().getRegistry().lookupByName(\"myBean\")" })
     CamelContext getContext();
 
     /**
@@ -731,7 +843,7 @@ public interface Exchange extends VariableAware {
 
     /**
      * Returns the endpoint which originated this message exchange if a consumer on an endpoint created the message
-     * exchange, otherwise his property will be <tt>null</tt>.
+     * exchange, otherwise this property will be <tt>null</tt>.
      *
      * Note: In case this message exchange has been cloned through another parent message exchange (which itself has
      * been created through the consumer of it's own endpoint), then if desired one could still retrieve the consumer
@@ -741,6 +853,7 @@ public interface Exchange extends VariableAware {
      * getContext().getRoute(getFromRouteId()).getEndpoint()
      * </pre>
      */
+    @Nullable
     Endpoint getFromEndpoint();
 
     /**
@@ -750,11 +863,21 @@ public interface Exchange extends VariableAware {
      * Note: In case this message exchange has been cloned through another parent message exchange then this method
      * would return the <tt>fromRouteId<tt> property of that exchange.
      */
+    @Nullable
+    @Metadata(label = "api", description = "The id of the route that created the exchange.")
     String getFromRouteId();
+
+    /**
+     * Returns the route group of the route that originated this message exchange, or <tt>null</tt> if the route has no
+     * group or if this exchange was not created by a route consumer.
+     */
+    @Nullable
+    String getFromRouteGroup();
 
     /**
      * Returns the unit of work that this exchange belongs to; which may map to zero, one or more physical transactions
      */
+    @Nullable
     UnitOfWork getUnitOfWork();
 
     /**
@@ -780,11 +903,14 @@ public interface Exchange extends VariableAware {
      * intended for internal usage within Camel and end-users should avoid using them.
      *
      * @return the {@link ExchangeExtension} point for this exchange.
+     * @since  4.0
      */
     ExchangeExtension getExchangeExtension();
 
     /**
      * Gets {@link Clock} that holds time information about the exchange
+     *
+     * @since 4.4
      */
     Clock getClock();
 

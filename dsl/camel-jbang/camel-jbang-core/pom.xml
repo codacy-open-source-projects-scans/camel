@@ -25,7 +25,7 @@
     <parent>
         <groupId>org.apache.camel</groupId>
         <artifactId>camel-jbang-parent</artifactId>
-        <version>4.21.0-SNAPSHOT</version>
+        <version>4.23.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -33,18 +33,26 @@
     <packaging>jar</packaging>
 
     <name>Camel :: JBang :: Core</name>
-    <description>Camel JBang Core</description>
+    <description>Camel CLI Core</description>
 
     <properties>
         <firstVersion>3.12.0</firstVersion>
         <label>jbang</label>
-        <supportLevel>Preview</supportLevel>
+        <supportLevel>Stable</supportLevel>
         <camel-prepare-component>false</camel-prepare-component>
         <camel.surefire.reuseForks>false</camel.surefire.reuseForks>
     </properties>
 
     <dependencies>
         <!-- camel -->
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-dataweave</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-diagram</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.apache.camel</groupId>
             <artifactId>camel-main</artifactId>
@@ -62,8 +70,23 @@
             <artifactId>camel-resourceresolver-github</artifactId>
         </dependency>
         <dependency>
+            <!-- the Java DSL parser for the project overview; also comes with camel-kamelet-main -->
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-java-io</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <!-- camel transform route writes YAML from Java routes read without compiling them -->
+            <artifactId>camel-yaml-io</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.apache.camel</groupId>
             <artifactId>camel-xml-io-util</artifactId>
+        </dependency>
+        <!-- source validation for the shared AI authoring tools (CAMEL-24695) -->
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-yaml-dsl-validator</artifactId>
         </dependency>
 
         <!-- yaml -->
@@ -140,12 +163,6 @@
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-slf4j2-impl</artifactId>
         </dependency>
-        <!-- color logging -->
-        <dependency>
-            <groupId>org.fusesource.jansi</groupId>
-            <artifactId>jansi</artifactId>
-            <version>${jansi-version}</version>
-        </dependency>
 
         <dependency>
             <groupId>org.codehaus.plexus</groupId>
@@ -182,6 +199,47 @@
             <version>${awaitility-version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock</artifactId>
+            <version>${wiremock-version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>${mockito-version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-platform-http-main</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-mcp-server</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-core</artifactId>
+            <version>${mcp-java-sdk-version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-json-jackson2</artifactId>
+            <version>${mcp-java-sdk-version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- the YAML DSL validator (source validation for the AI authoring tools) and the MCP SDK schema validation
+             in the tests need networknt 2.0.1 (Dialects); wiremock transitively pulls 1.5.x -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>${networknt-json-schema-validator-version}</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -205,6 +263,48 @@
                             <goal>prepare-jbang-commands-doc</goal>
                         </goals>
                         <phase>process-classes</phase>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!-- the YAML samples per EIP and file entry that the AI tools return, from the documentation (CAMEL-24713) -->
+                <groupId>org.apache.camel</groupId>
+                <artifactId>camel-yaml-dsl-validator-maven-plugin</artifactId>
+                <version>${project.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-doc-samples</id>
+                        <goals>
+                            <goal>generate-doc-samples</goal>
+                        </goals>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <!-- user manual pages whose YAML examples are the samples of a file entry -->
+                            <pages>
+                                <routes>route</routes>
+                                <rest-dsl>rest</rest-dsl>
+                                <route-template>routeTemplate</route-template>
+                                <route-configuration>routeConfiguration</route-configuration>
+                                <exception-clause>onException</exception-clause>
+                                <error-handler>errorHandler</error-handler>
+                                <oncompletion>onCompletion</oncompletion>
+                                <try-catch-finally>doTry</try-catch-finally>
+                            </pages>
+                            <entryPages>
+                                <entryPage>../../camel-yaml-dsl/camel-yaml-dsl/src/main/docs/yaml-dsl.adoc=beans</entryPage>
+                                <!-- the contract-first rest, next to the path-based examples of rest-dsl -->
+                                <entryPage>../../../docs/user-manual/modules/ROOT/pages/rest-dsl-openapi.adoc=rest</entryPage>
+                            </entryPages>
+                            <!-- user manual pages that show old syntax or YAML that is not a Camel file -->
+                            <excludes>
+                                <exclude>camel-*upgrade-guide*.adoc</exclude>
+                                <exclude>camel-4-migration-guide.adoc</exclude>
+                                <exclude>camel-jbang-transforming.adoc</exclude>
+                                <exclude>camel-report-maven-plugin.adoc</exclude>
+                                <exclude>improving-the-documentation.adoc</exclude>
+                                <exclude>release-guide*.adoc</exclude>
+                            </excludes>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -245,5 +345,80 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+
+        <profile>
+            <id>sync-example-catalog</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.apache.groovy</groupId>
+                                <artifactId>groovy-ant</artifactId>
+                                <version>${groovy-version}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.apache.groovy</groupId>
+                                <artifactId>groovy-json</artifactId>
+                                <version>${groovy-version}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.apache.groovy</groupId>
+                                <artifactId>groovy</artifactId>
+                                <version>${groovy-version}</version>
+                            </dependency>
+                        </dependencies>
+                        <executions>
+                            <execution>
+                                <id>download-example-catalog</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <property name="examples.base" value="https://raw.githubusercontent.com/apache/camel-jbang-examples/main"/>
+                                        <property name="examples.dest" value="${project.basedir}/src/main/resources/examples"/>
+                                        <!-- the catalog first; the bundled examples and their files are read from it -->
+                                        <get src="${examples.base}/camel-jbang-example-catalog.json"
+                                             dest="${examples.dest}/camel-jbang-example-catalog.json"/>
+                                        <taskdef name="groovy" classname="org.codehaus.groovy.ant.Groovy" classpathref="maven.plugin.classpath"/>
+                                        <groovy><![CDATA[
+                                            import groovy.json.JsonSlurper
+                                            def base = properties['examples.base']
+                                            def dest = new File(properties['examples.dest'])
+                                            def catalog = new JsonSlurper().parse(new File(dest, 'camel-jbang-example-catalog.json'))
+                                            // start from a clean tree so examples that left the catalog, or moved, do not linger
+                                            def files = dest.listFiles()
+                                            if (files == null) {
+                                                throw new RuntimeException("Cannot list ${dest}: does it exist and is it a directory?")
+                                            }
+                                            files.findAll { it.directory }.each { it.deleteDir() }
+                                            catalog.findAll { it.bundled }.each { ex ->
+                                                ex.files.each { f ->
+                                                    def target = new File(dest, ex.name + '/' + f)
+                                                    target.parentFile.mkdirs()
+                                                    try {
+                                                        new URL("${base}/${ex.name}/${f}").withInputStream { i -> target.withOutputStream { o -> o << i } }
+                                                    } catch (Exception e) {
+                                                        throw new RuntimeException("Failed to fetch ${ex.name}/${f} from ${base}: ${e.message}", e)
+                                                    }
+                                                    println "synced ${ex.name}/${f}"
+                                                }
+                                            }
+                                        ]]></groovy>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

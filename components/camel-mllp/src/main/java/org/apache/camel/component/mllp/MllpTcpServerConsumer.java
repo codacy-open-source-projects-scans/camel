@@ -236,6 +236,14 @@ public class MllpTcpServerConsumer extends DefaultConsumer {
         acceptThread.start();
     }
 
+    /**
+     * Returns the local port the server socket is bound to, or -1 if not yet bound. Useful when the consumer is
+     * configured with port 0 to let the OS assign a port atomically.
+     */
+    public int getLocalPort() {
+        return acceptThread != null ? acceptThread.getLocalPort() : -1;
+    }
+
     public void startConsumer(Socket clientSocket, MllpSocketBuffer mllpBuffer) {
         TcpSocketConsumerRunnable client = new TcpSocketConsumerRunnable(
                 this, clientSocket, mllpBuffer, hl7Util, logPhi);
@@ -384,7 +392,7 @@ public class MllpTcpServerConsumer extends DefaultConsumer {
                     fieldSeparatorIndexes.add(i);
                 } else if (MllpProtocolConstants.SEGMENT_DELIMITER == hl7MessageBytes[i]) {
                     // If the MSH Segment doesn't have a trailing field separator, add one so the field can be extracted into a header
-                    if (fieldSeparator != hl7MessageBytes[i - 1]) {
+                    if (i > 0 && fieldSeparator != hl7MessageBytes[i - 1]) {
                         fieldSeparatorIndexes.add(i);
                     }
                     endOfMSH = i;
@@ -392,7 +400,7 @@ public class MllpTcpServerConsumer extends DefaultConsumer {
                 }
             }
 
-            if (-1 == endOfMSH) {
+            if (endOfMSH <= 0) {
                 // TODO:  May want to throw some sort of an Exception here
                 log.warn("Population of message headers failed - unable to find the end of the MSH segment");
             } else {
@@ -569,7 +577,7 @@ public class MllpTcpServerConsumer extends DefaultConsumer {
             final byte fieldSeparator = originalHl7MessageBytes[3];
             // Acknowledgment is specified in exchange property - determine the acknowledgement type
             for (int i = 0; i < originalHl7MessageBytes.length; ++i) {
-                if (MllpProtocolConstants.SEGMENT_DELIMITER == i) {
+                if (MllpProtocolConstants.SEGMENT_DELIMITER == originalHl7MessageBytes[i]) {
                     if (i + 7 < originalHl7MessageBytes.length // Make sure we don't run off the end of the message
                             && bM == originalHl7MessageBytes[i + 1] && bS == originalHl7MessageBytes[i + 2]
                             && bA == originalHl7MessageBytes[i + 3] && fieldSeparator == originalHl7MessageBytes[i + 4]) {
@@ -633,7 +641,7 @@ public class MllpTcpServerConsumer extends DefaultConsumer {
                 log.debug("sendAcknowledgement(originalHl7MessageBytes[{}], Exchange[{}], {}) - Sending Acknowledgement: {}",
                         originalHl7MessageBytes == null ? -1 : originalHl7MessageBytes.length, exchange.getExchangeId(),
                         consumerRunnable.getSocket(),
-                        consumerRunnable.getMllpBuffer().toPrintFriendlyHl7String());
+                        hl7Util.convertToLoggableString(consumerRunnable.getMllpBuffer().toMllpPayload()));
             }
 
             try {
@@ -657,7 +665,7 @@ public class MllpTcpServerConsumer extends DefaultConsumer {
                 log.debug("sendAcknowledgement(originalHl7MessageBytes[{}], Exchange[{}], {}) - Sending Acknowledgement: {}",
                         originalHl7MessageBytes == null ? -1 : originalHl7MessageBytes.length, exchange.getExchangeId(),
                         consumerRunnable.getSocket(),
-                        hl7Util.convertToPrintFriendlyString(acknowledgementMessageBytes));
+                        hl7Util.convertToLoggableString(acknowledgementMessageBytes));
             }
 
             try {

@@ -39,6 +39,8 @@ import org.apache.camel.spi.LifecycleStrategy;
 import org.apache.camel.spi.ManagementNameStrategy;
 import org.apache.camel.spi.ManagementStrategy;
 import org.apache.camel.spi.MessageHistoryFactory;
+import org.apache.camel.spi.MessageSizeStrategy;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.PropertiesComponent;
 import org.apache.camel.spi.Registry;
 import org.apache.camel.spi.RestConfiguration;
@@ -57,17 +59,25 @@ import org.apache.camel.spi.Validator;
 import org.apache.camel.spi.ValidatorRegistry;
 import org.apache.camel.support.jsse.SSLContextParameters;
 import org.apache.camel.vault.VaultConfiguration;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Interface used to represent the CamelContext used to configure routes and the policies to use during message
- * exchanges between endpoints.
+ * The <a href="https://camel.apache.org/manual/camelcontext.html">CamelContext</a> is the runtime container of an
+ * Apache Camel application: it owns the registries of {@link Component}s, {@link Endpoint}s, {@link Route}s,
+ * {@link org.apache.camel.spi.TypeConverter}s, {@link org.apache.camel.spi.Language}s, {@link DataFormat}s and the
+ * configuration that governs how {@link Exchange}s flow between them.
+ * <p/>
+ * A {@link CamelContext} is created once per application (or per deployment unit) by the chosen runtime (Main, Spring
+ * Boot or Quarkus). Routes are added to the context using a {@link RoutesBuilder}, and the context is then started to
+ * begin processing message exchanges.
  * <p/>
  * The CamelContext offers the following methods {@link CamelContextLifecycle} to control the lifecycle:
  * <ul>
  * <li>{@link #start()} - to start</li>
- * <li>{@link #stop()} - to shutdown (will stop all routes/components/endpoints etc and clear internal state/cache)</li>
- * <li>{@link #suspend()} - to pause routing messages</li>
- * <li>{@link #resume()} - to resume after a suspend</li>
+ * <li>{@link #stop()} - to shut down (will stop all routes/components/endpoints etc. and clear internal
+ * state/cache)</li>
+ * <li>{@link #suspend()} - to pause message routing message</li>
+ * <li>{@link #resume()} - to resume after a suspended execution</li>
  * </ul>
  * <p/>
  * <b>Notice:</b> {@link #stop()} and {@link #suspend()} will gracefully stop/suspend routes ensuring any messages in
@@ -82,7 +92,18 @@ import org.apache.camel.vault.VaultConfiguration;
  * <p/>
  * You can use the {@link CamelContext#getCamelContextExtension()} to obtain the extension point for the
  * {@link CamelContext}. This extension point exposes internal APIs via {@link ExtendedCamelContext}.
+ *
+ * @see CamelContextLifecycle
+ * @see ExtendedCamelContext
+ * @see RoutesBuilder
  */
+@Metadata(label = "api",
+          description = "The runtime that owns the routes, the registry, the components and the templates; from "
+                        + "exchange.getContext() or injected. Create a ProducerTemplate, FluentProducerTemplate or "
+                        + "ConsumerTemplate once (a field, reused) and never per exchange. getVariable(name) is the global "
+                        + "variable repository, exchange.getVariable(name) the exchange's. getEndpoint(uri) creates the "
+                        + "endpoint when it is not yet known, hasEndpoint(uri) only looks. getRoute(id) is null when the "
+                        + "route is unknown.")
 public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguration {
 
     /**
@@ -90,11 +111,14 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * are intended for internal usage within Camel and end-users should avoid using them.
      *
      * @return this {@link ExtendedCamelContext} extension point for this context.
+     * @since  4.0
      */
     ExtendedCamelContext getCamelContextExtension();
 
     /**
      * If CamelContext during the start procedure was vetoed, and therefore causing Camel to not start.
+     *
+     * @since 3.0
      */
     boolean isVetoStarted();
 
@@ -103,6 +127,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return the name
      */
+    @Metadata(label = "api", description = "The name of this CamelContext.")
     String getName();
 
     /**
@@ -110,6 +135,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return the description, or null if no description has been set.
      */
+    @Nullable
     String getDescription();
 
     /**
@@ -149,18 +175,20 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return the management name
      */
+    @Nullable
     String getManagementName();
 
     /**
      * Sets the name this {@link CamelContext} will be registered in JMX.
      */
-    void setManagementName(String name);
+    void setManagementName(@Nullable String name);
 
     /**
      * Gets the version of this CamelContext.
      *
      * @return the version
      */
+    @Metadata(label = "api", description = "The Camel version, e.g. 4.23.0.")
     String getVersion();
 
     /**
@@ -174,6 +202,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Gets a clock instance that keeps track of time for relevant CamelContext events
      *
      * @return A clock instance
+     * @since  4.4
      */
     EventClock<ContextEvents> getClock();
 
@@ -184,7 +213,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Adds a service to this CamelContext, which allows this CamelContext to control the lifecycle, ensuring the
      * service is stopped when the CamelContext stops.
      * <p/>
-     * The service will also have {@link CamelContext} injected if its {@link CamelContextAware}. The service will also
+     * The service will also have {@link CamelContext} injected if it's {@link CamelContextAware}. The service will also
      * be enlisted in JMX for management (if JMX is enabled).
      * <p/>
      * The service will also be deferred to be started together with other services are being started, as part of the
@@ -199,7 +228,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
     /**
      * Adds a service to this CamelContext.
      * <p/>
-     * The service will also have {@link CamelContext} injected if its {@link CamelContextAware}. The service will also
+     * The service will also have {@link CamelContext} injected if it's {@link CamelContextAware}. The service will also
      * be enlisted in JMX for management (if JMX is enabled).
      * <p/>
      * The service will also be deferred to be started together with other services are being started, as part of the
@@ -219,8 +248,8 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
     /**
      * Adds a service to this CamelContext.
      * <p/>
-     * The service will also have {@link CamelContext} injected if its {@link CamelContextAware}. The service will also
-     * be enlisted in JMX for management (if JMX is enabled). The service will be started, if its not already started.
+     * The service will also have {@link CamelContext} injected if it's {@link CamelContextAware}. The service will also
+     * be enlisted in JMX for management (if JMX is enabled). The service will be started, if it's not already started.
      * <p/>
      * The service will also be deferred to be started together with other services are being started, as part of the
      * Camel startup process. If Camel has already been started, then the service is started immediately.
@@ -241,8 +270,8 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
     /**
      * Adds a service to this CamelContext (prototype scope).
      * <p/>
-     * The service will also have {@link CamelContext} injected if its {@link CamelContextAware}. The service will be
-     * started, if its not already started.
+     * The service will also have {@link CamelContext} injected if it's {@link CamelContextAware}. The service will be
+     * started, if it's not already started.
      *
      * @param  object    the service
      * @throws Exception can be thrown when starting the service
@@ -275,7 +304,8 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  filter the filter
      * @return        the service if found or null if none found
      */
-    Service hasService(java.util.function.Predicate<Service> filter);
+    @Nullable
+    Service hasService(Predicate<Service> filter);
 
     /**
      * Has the given service type already been added to this CamelContext?
@@ -283,7 +313,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  type the class type
      * @return      the service instance or <tt>null</tt> if not already added.
      */
-    <T> T hasService(Class<T> type);
+    <T> @Nullable T hasService(Class<T> type);
 
     /**
      * Has the given service type already been added to this CamelContext?
@@ -343,6 +373,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  componentName the name of the component
      * @return               the registered Component or <tt>null</tt> if not registered
      */
+    @Nullable
     Component hasComponent(String componentName);
 
     /**
@@ -352,8 +383,12 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * {@link #getComponent(String, boolean, boolean)}.
      *
      * @param  componentName the name of the component
-     * @return               the component
+     * @return               the component, or <tt>null</tt> if not found and could not be auto created
      */
+    @Nullable
+    @Metadata(label = "api",
+              description = "A component by scheme, created when needed; getComponent(name, type) returns it typed.",
+              examples = { "context.getComponent(\"kafka\", KafkaComponent.class)" })
     Component getComponent(String componentName);
 
     /**
@@ -364,8 +399,9 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @param  name                 the name of the component
      * @param  autoCreateComponents whether or not the component should be lazily created if it does not already exist
-     * @return                      the component
+     * @return                      the component, or <tt>null</tt> if not found
      */
+    @Nullable
     Component getComponent(String name, boolean autoCreateComponents);
 
     /**
@@ -374,8 +410,9 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  name                 the name of the component
      * @param  autoCreateComponents whether or not the component should be lazily created if it does not already exist
      * @param  autoStart            whether to auto start the component if {@link CamelContext} is already started.
-     * @return                      the component
+     * @return                      the component, or <tt>null</tt> if not found
      */
+    @Nullable
     Component getComponent(String name, boolean autoCreateComponents, boolean autoStart);
 
     /**
@@ -402,6 +439,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  componentName the component name to remove
      * @return               the previously added component or null if it had not been previously added.
      */
+    @Nullable
     Component removeComponent(String componentName);
 
     // Endpoint Management Methods
@@ -420,6 +458,10 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  uri the URI of the endpoint
      * @return     the endpoint
      */
+    @Metadata(label = "api",
+              description = "The endpoint of a URI, created together with its component when not yet known; hasEndpoint(uri) "
+                            + "only checks.",
+              examples = { "context.getEndpoint(\"direct:orders\")" })
     Endpoint getEndpoint(String uri);
 
     /**
@@ -458,6 +500,8 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  uri the URI of the endpoint
      * @return     the registered endpoint or <tt>null</tt> if not registered
      */
+    @Nullable
+    @Metadata(label = "api", description = "The endpoint of the URI when it already exists, else null.")
     Endpoint hasEndpoint(String uri);
 
     /**
@@ -468,6 +512,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @return           the old endpoint that was previously registered or <tt>null</tt> if none was registered
      * @throws Exception if the new endpoint could not be started or the old endpoint could not be stopped
      */
+    @Nullable
     Endpoint addEndpoint(String uri, Endpoint endpoint) throws Exception;
 
     /**
@@ -513,6 +558,10 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return the route controller.
      */
+    @Metadata(label = "api",
+              description = "Starts, stops, suspends and resumes routes by id: startRoute(id), stopRoute(id), "
+                            + "getRouteStatus(id).",
+              examples = { "context.getRouteController().stopRoute(\"orders\")" })
     RouteController getRouteController();
 
     /**
@@ -520,6 +569,8 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return the current routes
      */
+    @Metadata(label = "api",
+              description = "All routes: getRouteId(), getEndpoint() (the from), getRouteController() for their status.")
     List<Route> getRoutes();
 
     /**
@@ -563,6 +614,8 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  id id of the route
      * @return    the route or <tt>null</tt> if not found
      */
+    @Nullable
+    @Metadata(label = "api", description = "The route with the id, null when unknown; getRoutes() lists them all.")
     Route getRoute(String id);
 
     /**
@@ -571,6 +624,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  id id of the processor
      * @return    the processor or <tt>null</tt> if not found
      */
+    @Nullable
     Processor getProcessor(String id);
 
     /**
@@ -581,7 +635,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @return                              the processor or <tt>null</tt> if not found
      * @throws java.lang.ClassCastException is thrown if the type is not correct type
      */
-    <T extends Processor> T getProcessor(String id, Class<T> type);
+    <T extends Processor> @Nullable T getProcessor(String id, Class<T> type);
 
     /**
      * Adds a collection of routes to this CamelContext using the given builder to build them.
@@ -606,6 +660,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @param  builder   the builder which has templated routes
      * @throws Exception if the routes could not be created for whatever reason
+     * @since            3.20
      */
     void addTemplatedRoutes(RoutesBuilder builder) throws Exception;
 
@@ -614,6 +669,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @param  builder   the builder which has routes configurations
      * @throws Exception if the routes configurations could not be created for whatever reason
+     * @since            3.12
      */
     void addRoutesConfigurations(RouteConfigurationsBuilder builder) throws Exception;
 
@@ -653,8 +709,10 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  parameters      parameters to use for the route template when creating the new route
      * @return                 the id of the route added (for example when an id was auto assigned)
      * @throws Exception       is thrown if error creating and adding the new route
+     * @since                  3.5
      */
-    String addRouteFromTemplate(String routeId, String routeTemplateId, Map<String, Object> parameters) throws Exception;
+    String addRouteFromTemplate(@Nullable String routeId, String routeTemplateId, Map<String, Object> parameters)
+            throws Exception;
 
     /**
      * Adds a new route from a given route template.
@@ -668,10 +726,12 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  parameters      parameters to use for the route template when creating the new route
      * @return                 the id of the route added (for example when an id was auto assigned)
      * @throws Exception       is thrown if error creating and adding the new route
+     *
+     * @since                  3.9
      */
     @Deprecated(since = "4.14.0")
     String addRouteFromTemplate(
-            String routeId, String routeTemplateId, String prefixId,
+            @Nullable String routeId, String routeTemplateId, @Nullable String prefixId,
             Map<String, Object> parameters)
             throws Exception;
 
@@ -688,9 +748,11 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  parameters      parameters to use for the route template when creating the new route
      * @return                 the id of the route added (for example when an id was auto assigned)
      * @throws Exception       is thrown if error creating and adding the new route
+     *
+     * @since                  4.9
      */
     String addRouteFromTemplate(
-            String routeId, String routeTemplateId, String prefixId, String group,
+            @Nullable String routeId, String routeTemplateId, @Nullable String prefixId, @Nullable String group,
             Map<String, Object> parameters)
             throws Exception;
 
@@ -706,10 +768,13 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  routeTemplateContext the route template context (mandatory)
      * @return                      the id of the route added (for example when an id was auto assigned)
      * @throws Exception            is thrown if error creating and adding the new route
+     *
+     * @since                       3.10
      */
     @Deprecated(since = "4.14.0")
     String addRouteFromTemplate(
-            String routeId, String routeTemplateId, String prefixId, RouteTemplateContext routeTemplateContext)
+            @Nullable String routeId, String routeTemplateId, @Nullable String prefixId,
+            RouteTemplateContext routeTemplateContext)
             throws Exception;
 
     /**
@@ -725,9 +790,12 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  routeTemplateContext the route template context (mandatory)
      * @return                      the id of the route added (for example when an id was auto assigned)
      * @throws Exception            is thrown if error creating and adding the new route
+     *
+     * @since                       4.9
      */
     String addRouteFromTemplate(
-            String routeId, String routeTemplateId, String prefixId, String group, RouteTemplateContext routeTemplateContext)
+            @Nullable String routeId, String routeTemplateId, @Nullable String prefixId, @Nullable String group,
+            RouteTemplateContext routeTemplateContext)
             throws Exception;
 
     /**
@@ -741,10 +809,12 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  parameters        parameters to use for the route template when creating the new route
      * @return                   the id of the route added (for example when an id was auto assigned)
      * @throws Exception         is thrown if error creating and adding the new route
+     *
+     * @since                    4.10
      */
     @Deprecated(since = "4.14.0")
     String addRouteFromKamelet(
-            String routeId, String routeTemplateId, String prefixId,
+            @Nullable String routeId, String routeTemplateId, @Nullable String prefixId,
             String parentRouteId, String parentProcessorId,
             Map<String, Object> parameters)
             throws Exception;
@@ -761,9 +831,11 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  parameters        parameters to use for the route template when creating the new route
      * @return                   the id of the route added (for example when an id was auto assigned)
      * @throws Exception         is thrown if error creating and adding the new route
+     *
+     * @since                    4.10
      */
     String addRouteFromKamelet(
-            String routeId, String routeTemplateId, String prefixId, String group,
+            @Nullable String routeId, String routeTemplateId, @Nullable String prefixId, @Nullable String group,
             String parentRouteId, String parentProcessorId,
             Map<String, Object> parameters)
             throws Exception;
@@ -773,6 +845,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @param  pattern   pattern, such as * for all, or foo* to remove all foo templates
      * @throws Exception is thrown if error during removing route templates
+     * @since            3.14
      */
     void removeRouteTemplates(String pattern) throws Exception;
 
@@ -790,6 +863,11 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      */
     List<RoutePolicyFactory> getRoutePolicyFactories();
 
+    /**
+     * Gets a light-weight API for the route model definitions.
+     */
+    List<NamedRoute> getNamedRouteDefinitions();
+
     // Rest Methods
     //-----------------------------------------------------------------------
 
@@ -805,12 +883,14 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return the configuration, or <tt>null</tt> if none has been configured.
      */
+    @Nullable
     RestConfiguration getRestConfiguration();
 
     /**
      * Sets a custom {@link VaultConfiguration}
      *
      * @param vaultConfiguration the vault configuration
+     * @since                    3.16
      */
     void setVaultConfiguration(VaultConfiguration vaultConfiguration);
 
@@ -818,7 +898,9 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Gets the vault configuration
      *
      * @return the configuration, or <tt>null</tt> if none has been configured.
+     * @since  3.16
      */
+    @Nullable
     VaultConfiguration getVaultConfiguration();
 
     /**
@@ -845,6 +927,10 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return the converter
      */
+    @Metadata(label = "api",
+              description = "Converts between types the way getBody(type) does: convertTo(type, value), mandatoryConvertTo, "
+                            + "tryConvertTo.",
+              examples = { "context.getTypeConverter().convertTo(String.class, body)" })
     TypeConverter getTypeConverter();
 
     /**
@@ -867,6 +953,11 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return the registry
      */
+    @Metadata(label = "api",
+              important = true,
+              description = "The bean registry: lookupByName(name), lookupByNameAndType(name, type), findByType(type), "
+                            + "bind(name, bean).",
+              examples = { "context.getRegistry().lookupByNameAndType(\"myDataSource\", DataSource.class)" })
     Registry getRegistry();
 
     /**
@@ -875,7 +966,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  type the registry type such as org.apache.camel.impl.JndiRegistry
      * @return      the registry, or <tt>null</tt> if the given type was not found as a registry implementation
      */
-    <T> T getRegistry(Class<T> type);
+    <T> @Nullable T getRegistry(Class<T> type);
 
     /**
      * Returns the injector used to instantiate objects by type
@@ -910,6 +1001,10 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @return                         the resolved language
      * @throws NoSuchLanguageException is thrown if language could not be resolved
      */
+    @Metadata(label = "api",
+              description = "A language by name (simple, groovy, jsonpath) to build an Expression or Predicate in code: "
+                            + "createExpression(text), createPredicate(text).",
+              examples = { "context.resolveLanguage(\"simple\").createExpression(\"${body}\")" })
     Language resolveLanguage(String language) throws NoSuchLanguageException;
 
     /**
@@ -923,6 +1018,9 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @throws IllegalArgumentException is thrown if property placeholders was used and there was an error resolving
      *                                  them
      */
+    @Metadata(label = "api",
+              description = "Replaces the {{key}} placeholders in the text with the property values.",
+              examples = { "context.resolvePropertyPlaceholders(\"{{greeting}}\")" })
     String resolvePropertyPlaceholders(String text);
 
     /**
@@ -931,18 +1029,23 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  name the variable name. Can be prefixed with repo-id:name to lookup the variable from a specific
      *              repository. If no repo-id is provided, then global repository will be used.
      * @return      the variable, or <tt>null</tt> if not found.
+     * @since       4.4
      */
+    @Nullable
+    @Metadata(label = "api",
+              description = "A global variable (the global repository); exchange.getVariable(name) is the exchange's own.")
     Object getVariable(String name);
 
     /**
-     * To get a variable by name and covert to the given type.
+     * To get a variable by name and convert to the given type.
      *
      * @param  name the variable name. Can be prefixed with repo-id:name to lookup the variable from a specific
      *              repository. If no repo-id is provided, then global repository will be used.
      * @param  type the type to convert the variable to
      * @return      the variable, or <tt>null</tt> if not found.
+     * @since       4.4
      */
-    <T> T getVariable(String name, Class<T> type);
+    <T> @Nullable T getVariable(String name, Class<T> type);
 
     /**
      * Sets a variable
@@ -950,6 +1053,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param name  the variable name. Can be prefixed with repo-id:name to store the variable in a specific repository.
      *              If no repo-id is provided, then global repository will be used.
      * @param value the value of the variable
+     * @since       4.4
      */
     void setVariable(String name, Object value);
 
@@ -958,6 +1062,8 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return the properties component
      */
+    @Metadata(label = "api",
+              description = "The application properties: resolveProperty(key) returns an Optional<String>.")
     PropertiesComponent getPropertiesComponent();
 
     /**
@@ -976,7 +1082,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Creates a new {@link ProducerTemplate} which is <b>started</b> and therefore ready to use right away.
      * <p/>
      * See this FAQ before use:
-     * <a href="http://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
+     * <a href="https://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
      * use too many threads with ProducerTemplate?</a>
      * <p/>
      * <b>Important:</b> Make sure to call {@link org.apache.camel.ProducerTemplate#stop()} when you are done using the
@@ -990,13 +1096,18 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @return                       the template
      * @throws RuntimeCamelException is thrown if error starting the template
      */
+    @Metadata(label = "api",
+              important = true,
+              description = "Creates a ProducerTemplate to send to endpoints from code (sendBody, requestBody); create once "
+                            + "and reuse, not per exchange.",
+              examples = { "context.createProducerTemplate().sendBody(\"direct:audit\", body)" })
     ProducerTemplate createProducerTemplate();
 
     /**
      * Creates a new {@link ProducerTemplate} which is <b>started</b> and therefore ready to use right away.
      * <p/>
      * See this FAQ before use:
-     * <a href="http://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
+     * <a href="https://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
      * use too many threads with ProducerTemplate?</a>
      * <p/>
      * <b>Important:</b> Make sure to call {@link ProducerTemplate#stop()} when you are done using the template, to
@@ -1012,7 +1123,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Creates a new {@link FluentProducerTemplate} which is <b>started</b> and therefore ready to use right away.
      * <p/>
      * See this FAQ before use:
-     * <a href="http://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
+     * <a href="https://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
      * use too many threads with ProducerTemplate?</a>
      * <p/>
      * <b>Important:</b> Make sure to call {@link org.apache.camel.FluentProducerTemplate#stop()} when you are done
@@ -1025,14 +1136,18 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * @return                       the template
      * @throws RuntimeCamelException is thrown if error starting the template
+     * @since                        3.0
      */
+    @Metadata(label = "api",
+              description = "Creates a FluentProducerTemplate: to(uri).withBody(body).withHeader(name, value).send() or "
+                            + ".request(type); create once and reuse.")
     FluentProducerTemplate createFluentProducerTemplate();
 
     /**
      * Creates a new {@link FluentProducerTemplate} which is <b>started</b> and therefore ready to use right away.
      * <p/>
      * See this FAQ before use:
-     * <a href="http://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
+     * <a href="https://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
      * use too many threads with ProducerTemplate?</a>
      * <p/>
      * <b>Important:</b> Make sure to call {@link FluentProducerTemplate#stop()} when you are done using the template,
@@ -1041,6 +1156,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  maximumCacheSize      the maximum cache size
      * @return                       the template
      * @throws RuntimeCamelException is thrown if error starting the template
+     * @since                        3.0
      */
     FluentProducerTemplate createFluentProducerTemplate(int maximumCacheSize);
 
@@ -1048,7 +1164,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Creates a new {@link ConsumerTemplate} which is <b>started</b> and therefore ready to use right away.
      * <p/>
      * See this FAQ before use:
-     * <a href="http://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
+     * <a href="https://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
      * use too many threads with ProducerTemplate?</a> as it also applies for ConsumerTemplate.
      * <p/>
      * <b>Important:</b> Make sure to call {@link ConsumerTemplate#stop()} when you are done using the template, to
@@ -1062,13 +1178,16 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @return                       the template
      * @throws RuntimeCamelException is thrown if error starting the template
      */
+    @Metadata(label = "api",
+              description = "Creates a ConsumerTemplate to poll an endpoint on demand: receiveBody(uri, timeout, type); "
+                            + "create once and reuse.")
     ConsumerTemplate createConsumerTemplate();
 
     /**
      * Creates a new {@link ConsumerTemplate} which is <b>started</b> and therefore ready to use right away.
      * <p/>
      * See this FAQ before use:
-     * <a href="http://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
+     * <a href="https://camel.apache.org/why-does-camel-use-too-many-threads-with-producertemplate.html"> Why does Camel
      * use too many threads with ProducerTemplate?</a> as it also applies for ConsumerTemplate.
      * <p/>
      * <b>Important:</b> Make sure to call {@link ConsumerTemplate#stop()} when you are done using the template, to
@@ -1081,11 +1200,14 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
     ConsumerTemplate createConsumerTemplate(int maximumCacheSize);
 
     /**
-     * Resolve an existing data format, or creates a new by the given its name
+     * Resolve an existing data format, or creates a new one with the given name
      *
      * @param  name the data format name or a reference to it in the {@link Registry}
      * @return      the resolved data format, or <tt>null</tt> if not found
      */
+    @Nullable
+    @Metadata(label = "api",
+              description = "A data format by name (jackson, csv, xml-jackson) to marshal and unmarshal in code.")
     DataFormat resolveDataFormat(String name);
 
     /**
@@ -1094,6 +1216,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  name the data format name or a reference to a data format factory in the {@link Registry}
      * @return      the created data format, or <tt>null</tt> if not found
      */
+    @Nullable
     DataFormat createDataFormat(String name);
 
     /**
@@ -1109,6 +1232,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  name the transformer name, usually a combination of some scheme and name.
      * @return      the resolved transformer, or <tt>null</tt> if not found
      */
+    @Nullable
     Transformer resolveTransformer(String name);
 
     /**
@@ -1118,6 +1242,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  to   to data type
      * @return      the resolved transformer, or <tt>null</tt> if not found
      */
+    @Nullable
     Transformer resolveTransformer(DataType from, DataType to);
 
     /**
@@ -1133,6 +1258,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param  type the data type
      * @return      the resolved validator, or <tt>null</tt> if not found
      */
+    @Nullable
     Validator resolveValidator(DataType type);
 
     /**
@@ -1148,7 +1274,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * <b>Important:</b> This has nothing to do with property placeholders, and is just a plain set of key/value pairs
      * which are used to configure global options on CamelContext, such as a maximum debug logging length etc. For
      * property placeholders use {@link #resolvePropertyPlaceholders(String)} method and see more details at the
-     * <a href="http://camel.apache.org/using-propertyplaceholder.html">property placeholder</a> documentation.
+     * <a href="https://camel.apache.org/using-propertyplaceholder.html">property placeholder</a> documentation.
      *
      * @param globalOptions global options that can be referenced in the camel context
      */
@@ -1160,7 +1286,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * <b>Important:</b> This has nothing to do with property placeholders, and is just a plain set of key/value pairs
      * which are used to configure global options on CamelContext, such as a maximum debug logging length etc. For
      * property placeholders use {@link #resolvePropertyPlaceholders(String)} method and see more details at the
-     * <a href="http://camel.apache.org/using-propertyplaceholder.html">property placeholder</a> documentation.
+     * <a href="https://camel.apache.org/using-propertyplaceholder.html">property placeholder</a> documentation.
      *
      * @return global options for this context
      */
@@ -1172,10 +1298,12 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * <b>Important:</b> This has nothing to do with property placeholders, and is just a plain set of key/value pairs
      * which are used to configure global options on CamelContext, such as a maximum debug logging length etc. For
      * property placeholders use {@link #resolvePropertyPlaceholders(String)} method and see more details at the
-     * <a href="http://camel.apache.org/using-propertyplaceholder.html">property placeholder</a> documentation.
+     * <a href="https://camel.apache.org/using-propertyplaceholder.html">property placeholder</a> documentation.
      *
      * @return the string value of the global option
      */
+    @Nullable
+    @Metadata(label = "api", description = "A global option by key (camel.main.globalOptions or getGlobalOptions()).")
     String getGlobalOption(String key);
 
     /**
@@ -1331,36 +1459,48 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
     /**
      * Whether to set tracing on standby. If on standby then the tracer is installed and made available. Then the tracer
      * can be enabled later at runtime via JMX or via {@link Tracer#setEnabled(boolean)}.
+     *
+     * @since 3.13
      */
     void setTracingStandby(boolean tracingStandby);
 
     /**
      * Whether to set tracing on standby. If on standby then the tracer is installed and made available. Then the tracer
      * can be enabled later at runtime via JMX or via {@link Tracer#setEnabled(boolean)}.
+     *
+     * @since 3.13
      */
     boolean isTracingStandby();
 
     /**
      * Whether to set backlog tracing on standby. If on standby then the backlog tracer is installed and made available.
      * Then the backlog tracer can be enabled later at runtime via JMX or via Java API.
+     *
+     * @since 4.0
      */
     void setBacklogTracingStandby(boolean backlogTracingStandby);
 
     /**
      * Whether to set backlog tracing on standby. If on standby then the backlog tracer is installed and made available.
      * Then the backlog tracer can be enabled later at runtime via JMX or via Java API.
+     *
+     * @since 4.0
      */
     boolean isBacklogTracingStandby();
 
     /**
      * Whether to set backlog debugger on standby. If on standby then the backlog debugger is installed and made
      * available. Then the backlog debugger can be enabled later at runtime via JMX or via Java API.
+     *
+     * @since 4.3
      */
     void setDebugStandby(boolean debugStandby);
 
     /**
      * Whether to set backlog debugger on standby. If on standby then the backlog debugger is installed and made
      * available. Then the backlog debugger can be enabled later at runtime via JMX or via Java API.
+     *
+     * @since 4.3
      */
     boolean isDebugStandby();
 
@@ -1435,7 +1575,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Multiple patterns can be specified separated by comma, as example, to exclude all the routes starting from kafka
      * or jms use: kafka,jms.
      */
-    void setAutoStartupExcludePattern(String autoStartupExcludePattern);
+    void setAutoStartupExcludePattern(@Nullable String autoStartupExcludePattern);
 
     /**
      * Used for exclusive filtering of routes to not automatically start with Camel starts.
@@ -1445,6 +1585,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Multiple patterns can be specified separated by comma, as example, to exclude all the routes starting from kafka
      * or jms use: kafka,jms.
      */
+    @Nullable
     String getAutoStartupExcludePattern();
 
     /**
@@ -1466,12 +1607,16 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
     void setSourceLocationEnabled(Boolean sourceLocationEnabled);
 
     /**
-     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel JBang
+     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel CLI
+     *
+     * @since 3.16
      */
     Boolean isModeline();
 
     /**
-     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel JBang
+     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel CLI
+     *
+     * @since 3.16
      */
     void setModeline(Boolean modeline);
 
@@ -1479,6 +1624,8 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Whether to enable developer console (requires camel-console on classpath).
      *
      * The developer console is only for assisting during development. This is NOT for production usage.
+     *
+     * @since 3.15
      */
     Boolean isDevConsole();
 
@@ -1486,6 +1633,8 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * Whether to enable developer console (requires camel-console on classpath)
      *
      * The developer console is only for assisting during development. This is NOT for production usage.
+     *
+     * @since 3.15
      */
     void setDevConsole(Boolean loadDevConsoles);
 
@@ -1545,6 +1694,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * </ul>
      */
     @Deprecated(since = "4.19.0")
+    @Nullable
     String getMDCLoggingKeysPattern();
 
     /**
@@ -1565,7 +1715,7 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      * @param pattern the pattern
      */
     @Deprecated(since = "4.19.0")
-    void setMDCLoggingKeysPattern(String pattern);
+    void setMDCLoggingKeysPattern(@Nullable String pattern);
 
     /**
      * To use a custom tracing logging format.
@@ -1614,23 +1764,30 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
      *
      * This requires to have camel-xml-jaxb on the classpath to be able to dump the routes as XML.
      *
-     * @return <tt>xml</tt>, or <tt>yaml</tt> if dumping is enabled
+     * Using json is a special feature to dump route structure in JSon which can be useful for tooling.
+     *
+     * @return <tt>xml</tt>, <tt>yaml</tt>, or <tt>json</tt> if dumping is enabled
      */
+    @Nullable
     String getDumpRoutes();
 
     /**
      * If dumping is enabled then Camel will during startup dump all loaded routes (incl rests and route templates)
-     * represented as XML/YAML DSL into the log. This is intended for trouble shooting or to assist during development.
+     * represented as XML, YAML, or Java DSL into the log. This is intended for trouble shooting or to assist during
+     * development.
      *
      * Sensitive information that may be configured in the route endpoints could potentially be included in the dump
      * output and is therefore not recommended being used for production usage.
      *
-     * This requires to have camel-xml-io/camel-yaml-io on the classpath to be able to dump the routes as XML/YAML.
+     * This requires to have camel-xml-io/camel-yaml-io/camel-java-io on the classpath to be able to dump the routes as
+     * XML/YAML/Java.
      *
-     * @param format xml or yaml (additional configuration can be specified using query parameters, eg
+     * Using json is a special feature to dump route structure in JSon which can be useful for tooling.
+     *
+     * @param format xml, yaml, java, or json (additional configuration can be specified using query parameters, eg
      *               ?include=all&uriAsParameters=true)
      */
-    void setDumpRoutes(String format);
+    void setDumpRoutes(@Nullable String format);
 
     /**
      * Whether to enable using data type on Camel messages.
@@ -1677,8 +1834,23 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
     void setStreamCachingStrategy(StreamCachingStrategy streamCachingStrategy);
 
     /**
+     * Gets the {@link MessageSizeStrategy} to use.
+     *
+     * @since 4.21
+     */
+    MessageSizeStrategy getMessageSizeStrategy();
+
+    /**
+     * Sets a custom {@link MessageSizeStrategy} to use.
+     *
+     * @since 4.21
+     */
+    void setMessageSizeStrategy(MessageSizeStrategy messageSizeStrategy);
+
+    /**
      * Gets the {@link org.apache.camel.spi.RuntimeEndpointRegistry} to use, or <tt>null</tt> if none is in use.
      */
+    @Nullable
     RuntimeEndpointRegistry getRuntimeEndpointRegistry();
 
     /**
@@ -1694,15 +1866,20 @@ public interface CamelContext extends CamelContextLifecycle, RuntimeConfiguratio
     /**
      * Gets the global SSL context parameters if configured.
      */
+    @Nullable
     SSLContextParameters getSSLContextParameters();
 
     /**
      * Controls the level of information logged during startup (and shutdown) of {@link CamelContext}.
+     *
+     * @since 3.8
      */
     void setStartupSummaryLevel(StartupSummaryLevel startupSummaryLevel);
 
     /**
      * Controls the level of information logged during startup (and shutdown) of {@link CamelContext}.
+     *
+     * @since 3.8
      */
     StartupSummaryLevel getStartupSummaryLevel();
 

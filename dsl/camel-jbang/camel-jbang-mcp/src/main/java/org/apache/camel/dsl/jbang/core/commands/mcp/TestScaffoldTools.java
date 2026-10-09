@@ -41,6 +41,7 @@ import org.apache.camel.util.json.JsonObject;
  * {@code @CamelSpringBootTest} for Spring Boot), mock endpoints for producers, and {@code @RegisterExtension} stubs for
  * infrastructure components like Kafka, JMS, MongoDB, etc.
  */
+@McpSecured
 @ApplicationScoped
 public class TestScaffoldTools {
 
@@ -80,12 +81,10 @@ public class TestScaffoldTools {
                         + "and @RegisterExtension stubs for infrastructure components (Kafka, AWS, etc.).")
     public String camel_route_test_scaffold(
             @ToolArg(description = "The Camel route definition (YAML or XML)") String route,
-            @ToolArg(description = "Route format: yaml or xml (default: yaml)") String format,
-            @ToolArg(description = "Target runtime: main or spring-boot (default: main)") String runtime,
-            @ToolArg(description = "Camel version to use for catalog lookups (e.g., 4.17.0). "
-                                   + "If not specified, uses the default catalog version.") String camelVersion,
-            @ToolArg(description = "Platform BOM coordinates in GAV format (groupId:artifactId:version). "
-                                   + "When provided, overrides camelVersion for catalog lookups.") String platformBom) {
+            @ToolArg(description = "Route format: yaml or xml (default: yaml)", required = false) String format,
+            @ToolArg(description = "Target runtime: main or spring-boot (default: main)", required = false) String runtime,
+            @ToolArg(description = ToolArgDocs.CAMEL_VERSION, required = false) String camelVersion,
+            @ToolArg(description = ToolArgDocs.PLATFORM_BOM, required = false) String platformBom) {
 
         if (route == null || route.isBlank()) {
             throw new ToolCallException("Route content is required", null);

@@ -88,7 +88,12 @@ public final class OpensearchActionRequestConverter {
     @Converter
     public static IndexRequest.Builder<?> toIndexRequestBuilder(Object document, Exchange exchange) throws IOException {
         if (document instanceof IndexRequest.Builder<?> builder) {
-            return builder.id(exchange.getIn().getHeader(OpensearchConstants.PARAM_INDEX_ID, String.class));
+            // only override the id when the header is present, otherwise a caller-supplied id would be cleared
+            String id = exchange.getIn().getHeader(OpensearchConstants.PARAM_INDEX_ID, String.class);
+            if (id != null) {
+                builder.id(id);
+            }
+            return builder;
         }
         JacksonJsonpMapper mapper = createMapper();
         IndexRequest.Builder<Object> builder = new IndexRequest.Builder<>();
@@ -116,7 +121,12 @@ public final class OpensearchActionRequestConverter {
     @Converter
     public static UpdateRequest.Builder<?, ?> toUpdateRequestBuilder(Object document, Exchange exchange) throws IOException {
         if (document instanceof UpdateRequest.Builder<?, ?> builder) {
-            return builder.id(exchange.getIn().getHeader(OpensearchConstants.PARAM_INDEX_ID, String.class));
+            // only override the id when the header is present, otherwise a caller-supplied id would be cleared
+            String id = exchange.getIn().getHeader(OpensearchConstants.PARAM_INDEX_ID, String.class);
+            if (id != null) {
+                builder.id(id);
+            }
+            return builder;
         }
         JacksonJsonpMapper mapper = createMapper();
         UpdateRequest.Builder<?, Object> builder = new UpdateRequest.Builder<>();
@@ -304,7 +314,7 @@ public final class OpensearchActionRequestConverter {
     private static JacksonJsonpMapper createMapper() {
         ObjectMapper objectMapper = new ObjectMapper()
                 .configure(SerializationFeature.INDENT_OUTPUT, false)
-                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+                .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
 
         return new JacksonJsonpMapper(objectMapper);
     }

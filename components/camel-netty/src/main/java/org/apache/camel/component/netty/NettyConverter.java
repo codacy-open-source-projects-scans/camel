@@ -19,7 +19,6 @@ package org.apache.camel.component.netty;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInput;
-import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.nio.charset.StandardCharsets;
 
@@ -33,24 +32,16 @@ import org.w3c.dom.Document;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufInputStream;
+import io.netty.buffer.ByteBufUtil;
 import org.apache.camel.Converter;
 import org.apache.camel.Exchange;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.camel.support.DeserializationFilterHelper;
 
 /**
  * A set of converter methods for working with Netty types
  */
 @Converter(generateLoader = true)
 public final class NettyConverter {
-    private static final Logger LOG = LoggerFactory.getLogger(NettyConverter.class);
-
-    /**
-     * Default deserialization filter that restricts which classes can be deserialized. Allows standard Java types and
-     * Apache Camel types. Can be overridden via the JVM system property {@code jdk.serialFilter}.
-     */
-    static final String DEFAULT_DESERIALIZATION_FILTER
-            = "!java.net.**;java.**;javax.**;org.apache.camel.**;!*";
 
     private NettyConverter() {
         //Utility Class
@@ -58,18 +49,12 @@ public final class NettyConverter {
 
     @Converter
     public static byte[] toByteArray(ByteBuf buffer, Exchange exchange) {
-        if (buffer.hasArray()) {
-            return buffer.array();
-        }
-        byte[] bytes = new byte[buffer.readableBytes()];
-        int readerIndex = buffer.readerIndex();
-        buffer.retain();
-        try {
-            buffer.getBytes(readerIndex, bytes);
-        } finally {
-            buffer.release();
-        }
-        return bytes;
+        // Copy only the readable region of the buffer. Returning buffer.array() directly would hand back the
+        // whole backing array, ignoring arrayOffset()/readerIndex()/readableBytes(): for a shared or pooled
+        // backing array that can include bytes outside this buffer's own slice, and it also exposes a reference
+        // to a buffer that may later be reused. ByteBufUtil.getBytes() copies exactly the readable bytes for
+        // every buffer kind (heap or direct, pooled or unpooled).
+        return ByteBufUtil.getBytes(buffer);
     }
 
     @Converter
@@ -91,14 +76,7 @@ public final class NettyConverter {
     public static ObjectInput toObjectInput(ByteBuf buffer, Exchange exchange) throws IOException {
         InputStream is = toInputStream(buffer, exchange);
         ObjectInputStream ois = new ObjectInputStream(is);
-        ObjectInputFilter jvmFilter = ObjectInputFilter.Config.getSerialFilter();
-        if (jvmFilter != null) {
-            ois.setObjectInputFilter(jvmFilter);
-        } else {
-            LOG.debug("No JVM-wide deserialization filter set, applying default Camel filter: {}",
-                    DEFAULT_DESERIALIZATION_FILTER);
-            ois.setObjectInputFilter(ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER));
-        }
+        ois.setObjectInputFilter(DeserializationFilterHelper.resolveDeserializationFilter(null));
         return ois;
     }
 
@@ -119,6 +97,13 @@ public final class NettyConverter {
             bytes = s.getBytes();
         }
         return toByteBuffer(bytes);
+    }
+
+    @Converter
+    public static ByteBuf toByteBuffer(InputStream is, Exchange exchange) {
+        // convert to byte array first
+        byte[] arr = exchange.getContext().getTypeConverter().convertTo(byte[].class, exchange, is);
+        return toByteBuffer(arr);
     }
 
     @Converter

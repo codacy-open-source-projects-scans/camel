@@ -57,6 +57,11 @@ public class HttpManagementServerConfigurationProperties implements BootstrapClo
     @Metadata(security = "insecure:dev")
     private boolean sendEnabled;
 
+    @Metadata(security = "insecure:dev")
+    private boolean openapiUiEnabled;
+    @Metadata(defaultValue = "/q/openapi.json")
+    private String openapiUiSpecPath = "/q/openapi.json";
+
     @Metadata(label = "security")
     private boolean useGlobalSslContextParameters;
     @Metadata(label = "security")
@@ -73,6 +78,16 @@ public class HttpManagementServerConfigurationProperties implements BootstrapClo
     private String jwtKeystorePath;
     @Metadata(label = "security", security = "secret")
     private String jwtKeystorePassword;
+    @Metadata(label = "security")
+    private String jwtIssuer;
+    @Metadata(label = "security")
+    private String jwtAudience;
+    @Metadata(label = "security", defaultValue = "false", security = "insecure:dev")
+    private boolean jwtAllowMissingIssuerAndAudience;
+    @Metadata(security = "insecure:dev")
+    private boolean mcpEnabled;
+    @Metadata(defaultValue = "/mcp")
+    private String mcpPath = "/mcp";
 
     public HttpManagementServerConfigurationProperties(MainConfigurationProperties parent) {
         this.parent = parent;
@@ -284,6 +299,30 @@ public class HttpManagementServerConfigurationProperties implements BootstrapClo
         this.sendEnabled = sendEnabled;
     }
 
+    public boolean isOpenapiUiEnabled() {
+        return openapiUiEnabled;
+    }
+
+    /**
+     * Whether to enable Swagger UI for REST DSL OpenAPI documents. If enabled then you can browse the API at
+     * context-path: /q/openapi. The OpenAPI document is expected at {@link #openapiUiSpecPath} (by default
+     * /q/openapi.json from REST DSL {@code apiContextPath}).
+     */
+    public void setOpenapiUiEnabled(boolean openapiUiEnabled) {
+        this.openapiUiEnabled = openapiUiEnabled;
+    }
+
+    public String getOpenapiUiSpecPath() {
+        return openapiUiSpecPath;
+    }
+
+    /**
+     * Path or URL of the OpenAPI document loaded by Swagger UI at /q/openapi.
+     */
+    public void setOpenapiUiSpecPath(String openapiUiSpecPath) {
+        this.openapiUiSpecPath = openapiUiSpecPath;
+    }
+
     public boolean isAuthenticationEnabled() {
         return authenticationEnabled;
     }
@@ -360,6 +399,43 @@ public class HttpManagementServerConfigurationProperties implements BootstrapClo
      */
     public void setJwtKeystorePassword(String jwtKeystorePassword) {
         this.jwtKeystorePassword = jwtKeystorePassword;
+    }
+
+    public String getJwtIssuer() {
+        return jwtIssuer;
+    }
+
+    /**
+     * Expected JWT issuer (iss claim) for token validation. When set, tokens whose issuer does not match are rejected.
+     */
+    public void setJwtIssuer(String jwtIssuer) {
+        this.jwtIssuer = jwtIssuer;
+    }
+
+    public String getJwtAudience() {
+        return jwtAudience;
+    }
+
+    /**
+     * Expected JWT audience (aud claim) for token validation. Multiple values can be separated by comma. When set,
+     * tokens whose audience does not contain any of the configured values are rejected.
+     */
+    public void setJwtAudience(String jwtAudience) {
+        this.jwtAudience = jwtAudience;
+    }
+
+    public boolean isJwtAllowMissingIssuerAndAudience() {
+        return jwtAllowMissingIssuerAndAudience;
+    }
+
+    /**
+     * Whether JWT authentication is allowed to run without an expected issuer or audience. By default the management
+     * server fails to start when a JWT keystore is configured but neither jwtIssuer nor jwtAudience is set, because the
+     * tokens would only be checked for signature and expiry. Enable this to accept that and validate signature and
+     * expiry only.
+     */
+    public void setJwtAllowMissingIssuerAndAudience(boolean jwtAllowMissingIssuerAndAudience) {
+        this.jwtAllowMissingIssuerAndAudience = jwtAllowMissingIssuerAndAudience;
     }
 
     /**
@@ -486,6 +562,57 @@ public class HttpManagementServerConfigurationProperties implements BootstrapClo
     }
 
     /**
+     * Whether to enable Swagger UI at /q/openapi (not intended for production use).
+     */
+    public HttpManagementServerConfigurationProperties withOpenapiUiEnabled(boolean openapiUiEnabled) {
+        this.openapiUiEnabled = openapiUiEnabled;
+        return this;
+    }
+
+    /**
+     * Path or URL of the OpenAPI document loaded by Swagger UI.
+     */
+    public HttpManagementServerConfigurationProperties withOpenapiUiSpecPath(String openapiUiSpecPath) {
+        this.openapiUiSpecPath = openapiUiSpecPath;
+        return this;
+    }
+
+    public boolean isMcpEnabled() {
+        return mcpEnabled;
+    }
+
+    /**
+     * Whether to expose dev/diagnostics MCP tools on this management server (requires camel-mcp-server on the
+     * classpath). Currently honored only when Camel JBang registers JbangDevMcpMainListener (for example camel run
+     * --mcp). For route-based MCP on the main HTTP server in plain camel-main, configure camel.server.mcpEnabled
+     * instead. Not intended for production use.
+     */
+    public void setMcpEnabled(boolean mcpEnabled) {
+        this.mcpEnabled = mcpEnabled;
+    }
+
+    public String getMcpPath() {
+        return mcpPath;
+    }
+
+    /**
+     * HTTP path where the management MCP endpoint is served.
+     */
+    public void setMcpPath(String mcpPath) {
+        this.mcpPath = mcpPath;
+    }
+
+    public HttpManagementServerConfigurationProperties withMcpEnabled(boolean mcpEnabled) {
+        this.mcpEnabled = mcpEnabled;
+        return this;
+    }
+
+    public HttpManagementServerConfigurationProperties withMcpPath(String mcpPath) {
+        this.mcpPath = mcpPath;
+        return this;
+    }
+
+    /**
      * Whether to enable HTTP authentication for embedded server (for standalone applications; not Spring Boot or
      * Quarkus).
      */
@@ -539,6 +666,35 @@ public class HttpManagementServerConfigurationProperties implements BootstrapClo
      */
     public HttpManagementServerConfigurationProperties withJwtKeystorePassword(String jwtKeystorePassword) {
         this.jwtKeystorePassword = jwtKeystorePassword;
+        return this;
+    }
+
+    /**
+     * Expected JWT issuer (iss claim) for token validation. When set, tokens whose issuer does not match are rejected.
+     */
+    public HttpManagementServerConfigurationProperties withJwtIssuer(String jwtIssuer) {
+        this.jwtIssuer = jwtIssuer;
+        return this;
+    }
+
+    /**
+     * Expected JWT audience (aud claim) for token validation. Multiple values can be separated by comma. When set,
+     * tokens whose audience does not contain any of the configured values are rejected.
+     */
+    public HttpManagementServerConfigurationProperties withJwtAudience(String jwtAudience) {
+        this.jwtAudience = jwtAudience;
+        return this;
+    }
+
+    /**
+     * Whether JWT authentication is allowed to run without an expected issuer or audience. By default the management
+     * server fails to start when a JWT keystore is configured but neither jwtIssuer nor jwtAudience is set, because the
+     * tokens would only be checked for signature and expiry. Enable this to accept that and validate signature and
+     * expiry only.
+     */
+    public HttpManagementServerConfigurationProperties withJwtAllowMissingIssuerAndAudience(
+            boolean jwtAllowMissingIssuerAndAudience) {
+        this.jwtAllowMissingIssuerAndAudience = jwtAllowMissingIssuerAndAudience;
         return this;
     }
 

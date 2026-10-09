@@ -21,6 +21,7 @@ import java.util.Iterator;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.Expression;
+import org.apache.camel.spi.annotations.Language;
 import org.apache.camel.support.ExpressionAdapter;
 import org.apache.camel.support.IteratorConvertTo;
 import org.apache.camel.support.SingleInputTypedLanguageSupport;
@@ -38,7 +39,7 @@ import org.apache.camel.support.builder.ExpressionBuilder;
  * The default mode supports the <tt>headerName</tt> and <tt>regex</tt> options. Where as the pair mode only supports
  * <tt>token</tt> and <tt>endToken</tt>. And the <tt>xml</tt> mode supports the <tt>inheritNamespaceTagName</tt> option.
  */
-@org.apache.camel.spi.annotations.Language("tokenize")
+@Language("tokenize")
 public class TokenizeLanguage extends SingleInputTypedLanguageSupport {
 
     @Override
@@ -70,32 +71,34 @@ public class TokenizeLanguage extends SingleInputTypedLanguageSupport {
             throw new IllegalArgumentException("The option includeTokens requires endToken to be specified.");
         }
 
-        Expression answer = null;
+        Expression answer;
         if (xml) {
             answer = ExpressionBuilder.tokenizeXMLExpression(source, token, inheritNamespaceTagName);
         } else if (endToken != null) {
-            answer = ExpressionBuilder.tokenizePairExpression(token, endToken, includeTokens);
+            answer = ExpressionBuilder.tokenizePairExpression(source, token, endToken, includeTokens);
+        } else if (regex) {
+            answer = ExpressionBuilder.regexTokenizeExpression(source, token);
+        } else {
+            answer = ExpressionBuilder.tokenizeExpression(source, token);
         }
 
-        if (answer == null) {
-            // use the regular tokenizer
-            if (regex) {
-                answer = ExpressionBuilder.regexTokenizeExpression(source, token);
-            } else {
-                answer = ExpressionBuilder.tokenizeExpression(source, token);
-            }
-            if (group == null && skipFirst) {
-                // wrap in skip first (if group then it has its own skip first logic)
-                answer = ExpressionBuilder.skipFirstExpression(answer);
-            }
+        if (group == null && skipFirst) {
+            // wrap in skip first (if group then it has its own skip first logic)
+            answer = ExpressionBuilder.skipFirstExpression(answer);
         }
 
         // if group then wrap answer in group expression
         if (group != null) {
             if (xml) {
-                answer = ExpressionBuilder.groupXmlIteratorExpression(answer, group);
+                answer = ExpressionBuilder.groupXmlIteratorExpression(answer, group, skipFirst);
             } else {
-                String delim = groupDelimiter != null ? groupDelimiter : token;
+                String delim = groupDelimiter;
+                if (delim == null) {
+                    // pairs that include their tokens are joined without a delimiter (as in xml mode), as the start
+                    // token between them would make them look like an unfinished pair; bare values keep the token
+                    // as boundary
+                    delim = endToken != null && includeTokens ? "" : token;
+                }
                 answer = ExpressionBuilder.groupIteratorExpression(answer, delim, group, skipFirst);
             }
         }

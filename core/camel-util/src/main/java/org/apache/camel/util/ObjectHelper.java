@@ -32,11 +32,13 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -303,7 +305,7 @@ public final class ObjectHelper {
      * @param supplier the supplier, the supplier to be used to get a value if value is null
      */
     public static <T> T supplyIfEmpty(T value, Supplier<T> supplier) {
-        org.apache.camel.util.ObjectHelper.notNull(supplier, "Supplier");
+        ObjectHelper.notNull(supplier, "Supplier");
         if (isNotEmpty(value)) {
             return value;
         }
@@ -434,19 +436,23 @@ public final class ObjectHelper {
     public static Class<?> loadClass(String name, ClassLoader loader, boolean needToWarn) {
         // must clean the name so its pure java name, eg removing \n or whatever people can do in the Spring XML
         name = StringHelper.normalizeClassName(name);
-        if (org.apache.camel.util.ObjectHelper.isEmpty(name)) {
+        if (ObjectHelper.isEmpty(name)) {
             return null;
         }
 
-        boolean array = false;
+        int dimensions = 0;
 
         // Try simple type first
         Class<?> clazz = loadSimpleType(name);
         if (clazz == null) {
             // special for array as we need to load the class and then after that instantiate an array class type
-            if (name.endsWith("[]")) {
+            while (name.endsWith("[]")) {
                 name = name.substring(0, name.length() - 2);
-                array = true;
+                dimensions++;
+            }
+            if (dimensions > 0) {
+                // the component type can be a simple type such as int or String
+                clazz = loadSimpleType(name);
             }
         }
 
@@ -462,8 +468,8 @@ public final class ObjectHelper {
             // and fallback to the loader the loaded the ObjectHelper class
             clazz = doLoadClass(name, ObjectHelper.class.getClassLoader());
         }
-        if (clazz != null && array) {
-            Object arr = Array.newInstance(clazz, 0);
+        if (clazz != null && dimensions > 0) {
+            Object arr = Array.newInstance(clazz, new int[dimensions]);
             clazz = arr.getClass();
         }
 
@@ -1087,7 +1093,7 @@ public final class ObjectHelper {
      * @param  type     the annotation
      * @return          the annotation, or <tt>null</tt> if the instance does not have the given annotation
      */
-    public static <A extends java.lang.annotation.Annotation> A getAnnotation(Object instance, Class<A> type) {
+    public static <A extends Annotation> A getAnnotation(Object instance, Class<A> type) {
         return instance.getClass().getAnnotation(type);
     }
 
@@ -1098,7 +1104,7 @@ public final class ObjectHelper {
      * @param  type     the annotation
      * @return          the annotation, or <tt>null</tt> if the instance does not have the given annotation
      */
-    public static <A extends java.lang.annotation.Annotation> A getAnnotationDeep(Object instance, Class<A> type) {
+    public static <A extends Annotation> A getAnnotationDeep(Object instance, Class<A> type) {
         Class<?> clazz = instance.getClass();
         while (clazz != Object.class) {
             A ann = clazz.getAnnotation(type);
@@ -1219,9 +1225,10 @@ public final class ObjectHelper {
     public static Iterable<Throwable> createExceptionIterable(Throwable exception) {
         List<Throwable> throwables = new ArrayList<>();
 
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         Throwable current = exception;
-        // spool to the bottom of the caused by tree
-        while (current != null) {
+        // spool to the bottom of the caused by tree (and stop if a cause refers back to an exception in the chain)
+        while (current != null && seen.add(current)) {
             throwables.add(current);
             current = current.getCause();
         }

@@ -27,6 +27,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.EnumSet;
+import java.util.concurrent.locks.ReentrantLock;
 
 import ai.djl.inference.Predictor;
 import ai.djl.modality.Input;
@@ -45,6 +46,7 @@ import org.slf4j.LoggerFactory;
 public abstract class AbstractTaskPredictor implements TaskPredictor {
 
     protected static final Logger LOG = LoggerFactory.getLogger(AbstractTaskPredictor.class);
+    private final ReentrantLock lock = new ReentrantLock();
     protected HuggingFaceEndpoint endpoint;
     protected HuggingFaceConfiguration config;
     protected ZooModel<Input, Output> model;
@@ -71,12 +73,14 @@ public abstract class AbstractTaskPredictor implements TaskPredictor {
         }
         Path handlerPath = tmpDir.resolve("handler.py");
         String pythonScript = getPythonScript();
-        Files.writeString(handlerPath, pythonScript);
-        Path reqPath = tmpDir.resolve("requirements.txt");
-        Files.writeString(reqPath, getRequirements());
+        // logged before the token is prepended: withAuthToken writes the configured token into the
+        // script, and this now runs for every task rather than only chat
         if (LOG.isDebugEnabled()) {
             LOG.debug("Generated Python script for task {}:\n{}", config.getTask(), pythonScript);
         }
+        Files.writeString(handlerPath, withAuthToken(pythonScript));
+        Path reqPath = tmpDir.resolve("requirements.txt");
+        Files.writeString(reqPath, getRequirements());
         String modelUrl = "file://" + tmpDir.toAbsolutePath();
         Criteria.Builder<Input, Output> criteriaBuilder = Criteria.builder()
                 .setTypes(Input.class, Output.class)
@@ -105,6 +109,22 @@ public abstract class AbstractTaskPredictor implements TaskPredictor {
 
     protected abstract String getPythonScript();
 
+    /**
+     * Prepends the configured Hugging Face token to the generated handler as the {@code HF_TOKEN} environment variable
+     * so that every task can load gated or private models. {@code transformers.pipeline()} reads {@code HF_TOKEN} from
+     * the environment when no explicit token is passed; previously only the chat task passed a token, so the other
+     * tasks failed with 401 on gated models. The token comes from the {@code authToken} option or is resolved from an
+     * OAuth profile (see {@link org.apache.camel.component.huggingface.HuggingFaceProducer}), both surfaced through
+     * {@code config.getAuthToken()}.
+     */
+    protected String withAuthToken(String pythonScript) {
+        String authToken = config.getAuthToken();
+        if (authToken == null || authToken.isEmpty()) {
+            return pythonScript;
+        }
+        return "import os\nos.environ['HF_TOKEN'] = '" + authToken.replace("'", "\\'") + "'\n\n" + pythonScript;
+    }
+
     protected String loadPythonScript(String resourcePath, Object... args) {
         InputStream is = null;
         try {
@@ -131,12 +151,15 @@ public abstract class AbstractTaskPredictor implements TaskPredictor {
     public void predict(Exchange exchange) throws Exception {
         Input input = prepareInput(exchange);
         if (config.isPooling()) {
-            synchronized (this) {
+            lock.lock();
+            try {
                 if (predictor == null) {
                     predictor = model.newPredictor();
                 }
                 Output output = predictor.predict(input);
                 processOutput(exchange, output);
+            } finally {
+                lock.unlock();
             }
         } else {
             try (Predictor<Input, Output> djlPredictor = model.newPredictor()) {

@@ -1447,14 +1447,14 @@ public interface MinioEndpointBuilderFactory {
          * Server-side encryption for source object while copy/move objects.
          * 
          * The option is a:
-         * <code>io.minio.ServerSideEncryptionCustomerKey</code> type.
+         * <code>io.minio.ServerSideEncryption.CustomerKey</code> type.
          * 
          * Group: security
          * 
          * @param serverSideEncryptionCustomerKey the value to set
          * @return the dsl builder
          */
-        default MinioEndpointConsumerBuilder serverSideEncryptionCustomerKey(io.minio.ServerSideEncryptionCustomerKey serverSideEncryptionCustomerKey) {
+        default MinioEndpointConsumerBuilder serverSideEncryptionCustomerKey(io.minio.ServerSideEncryption.CustomerKey serverSideEncryptionCustomerKey) {
             doSetProperty("serverSideEncryptionCustomerKey", serverSideEncryptionCustomerKey);
             return this;
         }
@@ -1462,7 +1462,7 @@ public interface MinioEndpointBuilderFactory {
          * Server-side encryption for source object while copy/move objects.
          * 
          * The option will be converted to a
-         * <code>io.minio.ServerSideEncryptionCustomerKey</code> type.
+         * <code>io.minio.ServerSideEncryption.CustomerKey</code> type.
          * 
          * Group: security
          * 
@@ -2055,14 +2055,14 @@ public interface MinioEndpointBuilderFactory {
          * Server-side encryption for source object while copy/move objects.
          * 
          * The option is a:
-         * <code>io.minio.ServerSideEncryptionCustomerKey</code> type.
+         * <code>io.minio.ServerSideEncryption.CustomerKey</code> type.
          * 
          * Group: security
          * 
          * @param serverSideEncryptionCustomerKey the value to set
          * @return the dsl builder
          */
-        default MinioEndpointProducerBuilder serverSideEncryptionCustomerKey(io.minio.ServerSideEncryptionCustomerKey serverSideEncryptionCustomerKey) {
+        default MinioEndpointProducerBuilder serverSideEncryptionCustomerKey(io.minio.ServerSideEncryption.CustomerKey serverSideEncryptionCustomerKey) {
             doSetProperty("serverSideEncryptionCustomerKey", serverSideEncryptionCustomerKey);
             return this;
         }
@@ -2070,7 +2070,7 @@ public interface MinioEndpointBuilderFactory {
          * Server-side encryption for source object while copy/move objects.
          * 
          * The option will be converted to a
-         * <code>io.minio.ServerSideEncryptionCustomerKey</code> type.
+         * <code>io.minio.ServerSideEncryption.CustomerKey</code> type.
          * 
          * Group: security
          * 
@@ -2437,14 +2437,14 @@ public interface MinioEndpointBuilderFactory {
          * Server-side encryption for source object while copy/move objects.
          * 
          * The option is a:
-         * <code>io.minio.ServerSideEncryptionCustomerKey</code> type.
+         * <code>io.minio.ServerSideEncryption.CustomerKey</code> type.
          * 
          * Group: security
          * 
          * @param serverSideEncryptionCustomerKey the value to set
          * @return the dsl builder
          */
-        default MinioEndpointBuilder serverSideEncryptionCustomerKey(io.minio.ServerSideEncryptionCustomerKey serverSideEncryptionCustomerKey) {
+        default MinioEndpointBuilder serverSideEncryptionCustomerKey(io.minio.ServerSideEncryption.CustomerKey serverSideEncryptionCustomerKey) {
             doSetProperty("serverSideEncryptionCustomerKey", serverSideEncryptionCustomerKey);
             return this;
         }
@@ -2452,7 +2452,7 @@ public interface MinioEndpointBuilderFactory {
          * Server-side encryption for source object while copy/move objects.
          * 
          * The option will be converted to a
-         * <code>io.minio.ServerSideEncryptionCustomerKey</code> type.
+         * <code>io.minio.ServerSideEncryption.CustomerKey</code> type.
          * 
          * Group: security
          * 
@@ -2519,6 +2519,7 @@ public interface MinioEndpointBuilderFactory {
          * 
          * @return the dsl builder for the headers' name.
          */
+        @Deprecated
         default MinioHeaderNameBuilder minio() {
             return MinioHeaderNameBuilder.INSTANCE;
         }
@@ -2539,6 +2540,7 @@ public interface MinioEndpointBuilderFactory {
          * @param path bucketName
          * @return the dsl builder
          */
+        @Deprecated
         default MinioEndpointBuilder minio(String path) {
             return MinioEndpointBuilderFactory.endpointBuilder("minio", path);
         }
@@ -2561,6 +2563,7 @@ public interface MinioEndpointBuilderFactory {
          * @param path bucketName
          * @return the dsl builder
          */
+        @Deprecated
         default MinioEndpointBuilder minio(String componentName, String path) {
             return MinioEndpointBuilderFactory.endpointBuilder(componentName, path);
         }
@@ -2574,7 +2577,7 @@ public interface MinioEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final MinioHeaderNameBuilder INSTANCE = new MinioHeaderNameBuilder();
+        public static final MinioHeaderNameBuilder INSTANCE = new MinioHeaderNameBuilder();
 
         /**
          * Consumer: The name of the bucket in which this object is contained.

@@ -16,14 +16,16 @@
  */
 package org.apache.camel.component.google.storage;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
-import java.util.*;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import com.google.cloud.storage.Blob;
@@ -36,8 +38,10 @@ import com.google.cloud.storage.Storage.CopyRequest;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.WrappedFile;
 import org.apache.camel.support.DefaultProducer;
+import org.apache.camel.support.PayloadHelper;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.ObjectHelper;
 import org.slf4j.Logger;
@@ -120,7 +124,7 @@ public class GoogleCloudStorageProducer extends DefaultProducer {
             objectMetadata.put("Content-Length", String.valueOf(fileLength));
         }
         // Handle Content-Length if not already set
-        is = setContentLength(objectMetadata, is);
+        is = setContentLength(exchange, objectMetadata, obj, is);
 
         Blob createdBlob;
         BlobId blobId = BlobId.of(bucketName, objectName);
@@ -136,7 +140,7 @@ public class GoogleCloudStorageProducer extends DefaultProducer {
         }
         String ce = objectMetadata.remove("Content-Encoding");
         if (ce != null) {
-            builder.setContentEncoding(ct);
+            builder.setContentEncoding(ce);
         }
         String md5 = objectMetadata.remove("Content-Md5");
         if (md5 != null) {
@@ -144,7 +148,7 @@ public class GoogleCloudStorageProducer extends DefaultProducer {
         }
         String cc = objectMetadata.remove("Cache-Control");
         if (cc != null) {
-            builder.setCacheControl(ct);
+            builder.setCacheControl(cc);
         }
         BlobInfo blobInfo = builder.setMetadata(objectMetadata).build();
         // According to documentation, this internally uses a WriteChannel
@@ -157,35 +161,35 @@ public class GoogleCloudStorageProducer extends DefaultProducer {
     }
 
     /**
-     * If no content-length header was found, calculate length by reading the content.
+     * If no content-length header was found, determine the length of the content.
      *
+     * @param  exchange       the exchange
      * @param  objectMetadata Metadata set from Exchange headers
+     * @param  body           the Exchange body
      * @param  is             InputStream to read the Exchange body content
-     * @return                the original InputStream if Content-Length is set or a ByteArrayInputStream if the
-     *                        original stream was read to determine the length.
+     * @return                the original InputStream, or a copy of it if the stream had to be copied to determine the
+     *                        length
      * @throws IOException    if the InputStream cannot be read.
      */
-    private InputStream setContentLength(Map<String, String> objectMetadata, InputStream is) throws IOException {
+    private InputStream setContentLength(Exchange exchange, Map<String, String> objectMetadata, Object body, InputStream is)
+            throws IOException {
         if (!objectMetadata.containsKey(Exchange.CONTENT_LENGTH) ||
                 objectMetadata.get(Exchange.CONTENT_LENGTH).equals("0")) {
-            LOG.debug(
-                    "The content length is not defined. It needs to be determined by reading the data into memory");
-            ByteArrayOutputStream baos = determineLengthInputStream(is);
-            objectMetadata.put("Content-Length", String.valueOf(baos.size()));
-            return new ByteArrayInputStream(baos.toByteArray());
-        } else {
-            return is;
+            // such as a java.nio.file.Path, byte[] or stream cache
+            long length = PayloadHelper.getLength(body);
+            if (length < 0) {
+                length = PayloadHelper.getLength(is);
+            }
+            if (length < 0) {
+                // copy the data to determine the length, which uses stream caching
+                // so big payloads are spooled to disk when spooling is enabled
+                LOG.debug("The content length is not defined. It needs to be determined by copying the data");
+                is = PayloadHelper.cacheStream(exchange, is);
+                length = PayloadHelper.getLength(is);
+            }
+            objectMetadata.put(Exchange.CONTENT_LENGTH, String.valueOf(length));
         }
-    }
-
-    private ByteArrayOutputStream determineLengthInputStream(InputStream is) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] bytes = new byte[1024];
-        int count;
-        while ((count = is.read(bytes)) > 0) {
-            out.write(bytes, 0, count);
-        }
-        return out;
+        return is;
     }
 
     private Map<String, String> determineMetadata(final Exchange exchange) {
@@ -231,18 +235,12 @@ public class GoogleCloudStorageProducer extends DefaultProducer {
     private void createDownloadLink(Storage storage, Exchange exchange) {
         final String bucketName = determineBucketName(exchange);
         final String objectName = determineObjectName(exchange);
-        Long expirationMillis
+        long expirationMillis
                 = exchange.getIn().getHeader(GoogleCloudStorageConstants.DOWNLOAD_LINK_EXPIRATION_TIME, 300000L, Long.class);
-        long milliSeconds = 0;
-        if (expirationMillis != null) {
-            milliSeconds += expirationMillis;
-        } else {
-            milliSeconds += 1000 * 60 * 60;
-        }
 
         BlobId blobId = BlobId.of(bucketName, objectName);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-        URL url = storage.signUrl(blobInfo, milliSeconds, TimeUnit.MILLISECONDS);
+        URL url = storage.signUrl(blobInfo, expirationMillis, TimeUnit.MILLISECONDS);
 
         Message message = getMessageForResponse(exchange);
         message.setBody(url.toString());
@@ -326,6 +324,10 @@ public class GoogleCloudStorageProducer extends DefaultProducer {
         final String objectName = determineObjectName(exchange);
 
         Blob blob = storage.get(BlobId.of(bucketName, objectName));
+        if (blob == null) {
+            throw new RuntimeCamelException(
+                    "Object " + objectName + " does not exist in bucket " + bucketName);
+        }
         Message message = getMessageForResponse(exchange);
         message.setBody(blob.getContent(Blob.BlobSourceOption.generationMatch()));
         message.setHeader(GoogleCloudStorageConstants.OBJECT_NAME, blob.getName());
@@ -372,6 +374,8 @@ public class GoogleCloudStorageProducer extends DefaultProducer {
     }
 
     private String determineObjectName(Exchange exchange) {
+        // the configured objectName deliberately wins over the header, see CAMEL-20998: a consumer in the
+        // same route sets the object name header, which would otherwise hijack the producer destination
         String key = getConfiguration().getObjectName();
         if (ObjectHelper.isEmpty(key)) {
             key = exchange.getIn().getHeader(GoogleCloudStorageConstants.OBJECT_NAME, String.class);

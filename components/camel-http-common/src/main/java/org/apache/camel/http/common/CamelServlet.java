@@ -41,6 +41,8 @@ import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePattern;
 import org.apache.camel.Processor;
 import org.apache.camel.RuntimeCamelException;
+import org.apache.camel.http.base.OAuthHttpSecuritySupport;
+import org.apache.camel.http.base.OAuthProfileAwareHttpEndpoint;
 import org.apache.camel.spi.ExecutorServiceManager;
 import org.apache.camel.support.LifecycleStrategySupport;
 import org.apache.camel.support.RestConsumerContextPathMatcher;
@@ -59,6 +61,12 @@ public class CamelServlet extends HttpServlet implements HttpRegistryProvider {
     public static final String EXECUTOR_REF_PARAM = "executorRef";
     public static final List<String> METHODS
             = Arrays.asList("GET", "HEAD", "POST", "PUT", "DELETE", "TRACE", "OPTIONS", "CONNECT", "PATCH");
+    /**
+     * Request attribute holding the {@link CompletionStage} of a request still being processed on another thread when
+     * {@link #doService(HttpServletRequest, HttpServletResponse)} returns. The {@link AsyncContext} must not be
+     * completed before it.
+     */
+    protected static final String ASYNC_PROMISE_ATTRIBUTE_NAME = "CamelAsyncPromise";
 
     private static final long serialVersionUID = -7061982839117697829L;
 
@@ -141,14 +149,25 @@ public class CamelServlet extends HttpServlet implements HttpRegistryProvider {
             HttpServletRequest req, HttpServletResponse resp, HttpConsumer consumer, AsyncContext context) {
         try {
             final CompletionStage<?> promise = doExecute(req, resp, consumer);
-            if (promise == null) { // early quit
-                context.complete();
-            } else {
-                promise.whenComplete((r, e) -> context.complete());
-            }
+            completeOnCompletion(context, promise);
         } catch (Exception e) {
-            onError(resp, e);
+            try {
+                onError(resp, e);
+            } finally {
+                context.complete();
+            }
+        }
+    }
+
+    /**
+     * Completes the {@link AsyncContext} once the promise is done, or immediately if the request was handled
+     * synchronously (no promise).
+     */
+    private static void completeOnCompletion(AsyncContext context, CompletionStage<?> promise) {
+        if (promise == null) {
             context.complete();
+        } else {
+            promise.whenComplete((r, e) -> context.complete());
         }
     }
 
@@ -213,11 +232,16 @@ public class CamelServlet extends HttpServlet implements HttpRegistryProvider {
         final HttpServletResponse response = (HttpServletResponse) context.getResponse();
         try {
             doService(request, response);
+            // doService is void (overridden by subclasses) so in-flight processing is handed over via the request
+            final CompletionStage<?> promise = (CompletionStage<?>) request.getAttribute(ASYNC_PROMISE_ATTRIBUTE_NAME);
+            completeOnCompletion(context, promise);
         } catch (Exception e) {
             //An error shouldn't occur as we should handle most of error in doService
-            onError(response, e);
-        } finally {
-            context.complete();
+            try {
+                onError(response, e);
+            } finally {
+                context.complete();
+            }
         }
     }
 
@@ -232,7 +256,11 @@ public class CamelServlet extends HttpServlet implements HttpRegistryProvider {
         log.trace("Service: {}", request);
         HttpConsumer consumer = doResolve(request, response);
         if (consumer != null) {
-            doExecute(request, response, consumer);
+            CompletionStage<?> promise = doExecute(request, response, consumer);
+            if (promise != null) {
+                // still in-flight on another thread, which will write the response
+                request.setAttribute(ASYNC_PROMISE_ATTRIBUTE_NAME, promise);
+            }
         }
     }
 
@@ -298,6 +326,15 @@ public class CamelServlet extends HttpServlet implements HttpRegistryProvider {
             exchange.setException(e);
         }
 
+        if (exchange.getException() == null && !authenticateOAuth(req, exchange, consumer)) {
+            try {
+                afterProcess(res, consumer, exchange, true);
+            } finally {
+                restoreTccl(exchange, oldTccl);
+            }
+            return null;
+        }
+
         boolean isAsync = false;
         CompletionStage<?> result = null;
         try {
@@ -314,6 +351,8 @@ public class CamelServlet extends HttpServlet implements HttpRegistryProvider {
             }
         } catch (Exception e) {
             exchange.setException(e);
+            // processAsync failed synchronously so write the response here
+            isAsync = false;
         }
 
         try {
@@ -326,6 +365,34 @@ public class CamelServlet extends HttpServlet implements HttpRegistryProvider {
         return result;
     }
 
+    /**
+     * Authenticates the request with the endpoint OAuth profile, when configured, before route processing.
+     */
+    protected boolean authenticateOAuth(HttpServletRequest req, Exchange exchange, HttpConsumer consumer) {
+        if (consumer.getEndpoint() instanceof OAuthProfileAwareHttpEndpoint endpoint) {
+            OAuthHttpSecuritySupport security = endpoint.getOauthHttpSecurity();
+            if (security == null) {
+                if (ObjectHelper.isNotEmpty(endpoint.getOauthProfile())) {
+                    // fail closed: the endpoint requires OAuth validation but the security support is not
+                    // initialized, so the request cannot be authenticated
+                    OAuthHttpSecuritySupport.reject(exchange, OAuthHttpSecuritySupport.Validation.serviceUnavailable());
+                    return false;
+                }
+                return true;
+            }
+            OAuthHttpSecuritySupport.Validation validation = security.validate(
+                    exchange.getContext(), Collections.list(req.getHeaders("Authorization")));
+            OAuthHttpSecuritySupport.removeAuthorizationHeader(exchange.getMessage());
+            if (validation.isAuthenticated()) {
+                OAuthHttpSecuritySupport.applyAuthenticatedResult(exchange, validation.getValidationResult());
+                return true;
+            }
+            OAuthHttpSecuritySupport.reject(exchange, validation);
+            return false;
+        }
+        return true;
+    }
+
     private CompletionStage<?> tryAsyncProcess(
             HttpServletResponse res, HttpConsumer consumer, Processor processor, Exchange exchange) {
         CompletionStage<?> result;
@@ -334,12 +401,12 @@ public class CamelServlet extends HttpServlet implements HttpRegistryProvider {
                 .whenComplete((r, ex) -> {
                     if (ex != null) {
                         exchange.setException(ex);
-                    } else {
-                        try {
-                            afterProcess(res, consumer, exchange, false);
-                        } catch (Exception e) {
-                            exchange.setException(e);
-                        }
+                    }
+                    // always write the response (error or not) and finish the UoW
+                    try {
+                        afterProcess(res, consumer, exchange, false);
+                    } catch (Exception e) {
+                        exchange.setException(e);
                     }
                 });
         return result;

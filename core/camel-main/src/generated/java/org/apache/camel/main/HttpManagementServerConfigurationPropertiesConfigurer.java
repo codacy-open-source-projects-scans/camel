@@ -36,10 +36,17 @@ public class HttpManagementServerConfigurationPropertiesConfigurer extends org.a
         map.put("InfoPath", java.lang.String.class);
         map.put("JolokiaEnabled", boolean.class);
         map.put("JolokiaPath", java.lang.String.class);
+        map.put("JwtAllowMissingIssuerAndAudience", boolean.class);
+        map.put("JwtAudience", java.lang.String.class);
+        map.put("JwtIssuer", java.lang.String.class);
         map.put("JwtKeystorePassword", java.lang.String.class);
         map.put("JwtKeystorePath", java.lang.String.class);
         map.put("JwtKeystoreType", java.lang.String.class);
+        map.put("McpEnabled", boolean.class);
+        map.put("McpPath", java.lang.String.class);
         map.put("MetricsEnabled", boolean.class);
+        map.put("OpenapiUiEnabled", boolean.class);
+        map.put("OpenapiUiSpecPath", java.lang.String.class);
         map.put("Path", java.lang.String.class);
         map.put("Port", int.class);
         map.put("SendEnabled", boolean.class);
@@ -79,14 +86,28 @@ public class HttpManagementServerConfigurationPropertiesConfigurer extends org.a
         case "jolokiaEnabled": target.setJolokiaEnabled(property(camelContext, boolean.class, value)); return true;
         case "jolokiapath":
         case "jolokiaPath": target.setJolokiaPath(property(camelContext, java.lang.String.class, value)); return true;
+        case "jwtallowmissingissuerandaudience":
+        case "jwtAllowMissingIssuerAndAudience": target.setJwtAllowMissingIssuerAndAudience(property(camelContext, boolean.class, value)); return true;
+        case "jwtaudience":
+        case "jwtAudience": target.setJwtAudience(property(camelContext, java.lang.String.class, value)); return true;
+        case "jwtissuer":
+        case "jwtIssuer": target.setJwtIssuer(property(camelContext, java.lang.String.class, value)); return true;
         case "jwtkeystorepassword":
         case "jwtKeystorePassword": target.setJwtKeystorePassword(property(camelContext, java.lang.String.class, value)); return true;
         case "jwtkeystorepath":
         case "jwtKeystorePath": target.setJwtKeystorePath(property(camelContext, java.lang.String.class, value)); return true;
         case "jwtkeystoretype":
         case "jwtKeystoreType": target.setJwtKeystoreType(property(camelContext, java.lang.String.class, value)); return true;
+        case "mcpenabled":
+        case "mcpEnabled": target.setMcpEnabled(property(camelContext, boolean.class, value)); return true;
+        case "mcppath":
+        case "mcpPath": target.setMcpPath(property(camelContext, java.lang.String.class, value)); return true;
         case "metricsenabled":
         case "metricsEnabled": target.setMetricsEnabled(property(camelContext, boolean.class, value)); return true;
+        case "openapiuienabled":
+        case "openapiUiEnabled": target.setOpenapiUiEnabled(property(camelContext, boolean.class, value)); return true;
+        case "openapiuispecpath":
+        case "openapiUiSpecPath": target.setOpenapiUiSpecPath(property(camelContext, java.lang.String.class, value)); return true;
         case "path": target.setPath(property(camelContext, java.lang.String.class, value)); return true;
         case "port": target.setPort(property(camelContext, int.class, value)); return true;
         case "sendenabled":
@@ -135,14 +156,28 @@ public class HttpManagementServerConfigurationPropertiesConfigurer extends org.a
         case "jolokiaEnabled": return boolean.class;
         case "jolokiapath":
         case "jolokiaPath": return java.lang.String.class;
+        case "jwtallowmissingissuerandaudience":
+        case "jwtAllowMissingIssuerAndAudience": return boolean.class;
+        case "jwtaudience":
+        case "jwtAudience": return java.lang.String.class;
+        case "jwtissuer":
+        case "jwtIssuer": return java.lang.String.class;
         case "jwtkeystorepassword":
         case "jwtKeystorePassword": return java.lang.String.class;
         case "jwtkeystorepath":
         case "jwtKeystorePath": return java.lang.String.class;
         case "jwtkeystoretype":
         case "jwtKeystoreType": return java.lang.String.class;
+        case "mcpenabled":
+        case "mcpEnabled": return boolean.class;
+        case "mcppath":
+        case "mcpPath": return java.lang.String.class;
         case "metricsenabled":
         case "metricsEnabled": return boolean.class;
+        case "openapiuienabled":
+        case "openapiUiEnabled": return boolean.class;
+        case "openapiuispecpath":
+        case "openapiUiSpecPath": return java.lang.String.class;
         case "path": return java.lang.String.class;
         case "port": return int.class;
         case "sendenabled":
@@ -187,14 +222,28 @@ public class HttpManagementServerConfigurationPropertiesConfigurer extends org.a
         case "jolokiaEnabled": return target.isJolokiaEnabled();
         case "jolokiapath":
         case "jolokiaPath": return target.getJolokiaPath();
+        case "jwtallowmissingissuerandaudience":
+        case "jwtAllowMissingIssuerAndAudience": return target.isJwtAllowMissingIssuerAndAudience();
+        case "jwtaudience":
+        case "jwtAudience": return target.getJwtAudience();
+        case "jwtissuer":
+        case "jwtIssuer": return target.getJwtIssuer();
         case "jwtkeystorepassword":
         case "jwtKeystorePassword": return target.getJwtKeystorePassword();
         case "jwtkeystorepath":
         case "jwtKeystorePath": return target.getJwtKeystorePath();
         case "jwtkeystoretype":
         case "jwtKeystoreType": return target.getJwtKeystoreType();
+        case "mcpenabled":
+        case "mcpEnabled": return target.isMcpEnabled();
+        case "mcppath":
+        case "mcpPath": return target.getMcpPath();
         case "metricsenabled":
         case "metricsEnabled": return target.isMetricsEnabled();
+        case "openapiuienabled":
+        case "openapiUiEnabled": return target.isOpenapiUiEnabled();
+        case "openapiuispecpath":
+        case "openapiUiSpecPath": return target.getOpenapiUiSpecPath();
         case "path": return target.getPath();
         case "port": return target.getPort();
         case "sendenabled":

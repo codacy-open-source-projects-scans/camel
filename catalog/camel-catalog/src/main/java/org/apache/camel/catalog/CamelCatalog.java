@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.camel.tooling.model.ApiReferenceModel;
 import org.apache.camel.tooling.model.ArtifactModel;
 import org.apache.camel.tooling.model.BaseModel;
 import org.apache.camel.tooling.model.BaseOptionModel;
@@ -36,6 +37,7 @@ import org.apache.camel.tooling.model.MainModel;
 import org.apache.camel.tooling.model.OtherModel;
 import org.apache.camel.tooling.model.PojoBeanModel;
 import org.apache.camel.tooling.model.ReleaseModel;
+import org.apache.camel.tooling.model.SecurityAdvisoryModel;
 import org.apache.camel.tooling.model.TransformerModel;
 
 /**
@@ -81,7 +83,8 @@ public interface CamelCatalog {
     boolean isCaching();
 
     /**
-     * To plugin a custom {@link SuggestionStrategy} to provide suggestion for unknown options
+     * To plugin a custom {@link SuggestionStrategy} to provide suggestion for unknown options. An edit-distance based
+     * strategy is used by default (since 4.23); set null to turn suggestions off.
      */
     void setSuggestionStrategy(SuggestionStrategy suggestionStrategy);
 
@@ -224,6 +227,13 @@ public interface CamelCatalog {
     List<String> findBeansNames();
 
     /**
+     * Find all the API reference names (Exchange, Message, CamelContext, ...) from the Camel catalog
+     *
+     * @since 4.23
+     */
+    List<String> findApiReferenceNames();
+
+    /**
      * @param  kind the kind to look for
      * @return      the list of part names of the given {@link Kind} available in this {@link CamelCatalog}
      */
@@ -237,6 +247,7 @@ public interface CamelCatalog {
             case other -> findOtherNames();
             case eip, model -> findModelNames();
             case bean -> findBeansNames();
+            case api -> findApiReferenceNames();
         };
     }
 
@@ -264,6 +275,65 @@ public interface CamelCatalog {
      * Find all the other (miscellaneous) names from the Camel catalog that matches the label
      */
     List<String> findOtherNames(String filter);
+
+    /**
+     * Finds component names that match a term such as a protocol or product name, best match first: the exact scheme,
+     * then declared aliases, alternative schemes, words of the title, words of the scheme, and finally schemes
+     * containing the term. Components that share one implementation under several schemes (such as imap, pop3 and smtp)
+     * are returned once, by the scheme that matched or otherwise their primary scheme.
+     * <p>
+     * For example <tt>mqtt</tt> finds <tt>paho-mqtt5</tt>, <tt>s3</tt> finds <tt>aws2-s3</tt>, and <tt>amq</tt> finds
+     * <tt>activemq</tt>.
+     *
+     * @param  term the protocol, product, or component name to look for
+     * @param  max  the maximum number of names to return, or 0 for no limit
+     * @return      the matching component names, or an empty list if none match
+     * @since       4.23
+     */
+    default List<String> suggestComponentNames(String term, int max) {
+        return CatalogTermMatcher.suggestComponentNames(this, term, max);
+    }
+
+    /**
+     * Finds data format names that match a term such as a format or library name (for example <tt>yaml</tt> finds
+     * <tt>snakeYaml</tt>), best match first: the exact name, then declared aliases, words of the title, words of the
+     * name, and finally names containing the term.
+     *
+     * @param  term the format, library, or data format name to look for
+     * @param  max  the maximum number of names to return, or 0 for no limit
+     * @return      the matching data format names, or an empty list if none match
+     * @since       4.23
+     */
+    default List<String> suggestDataFormatNames(String term, int max) {
+        return CatalogTermMatcher.suggestNames(findDataFormatNames(), this::dataFormatModel, term, max);
+    }
+
+    /**
+     * Finds language names that match a term, best match first: the exact name, then declared aliases, words of the
+     * title, words of the name, and finally names containing the term.
+     *
+     * @param  term the language name to look for
+     * @param  max  the maximum number of names to return, or 0 for no limit
+     * @return      the matching language names, or an empty list if none match
+     * @since       4.23
+     */
+    default List<String> suggestLanguageNames(String term, int max) {
+        return CatalogTermMatcher.suggestNames(findLanguageNames(), this::languageModel, term, max);
+    }
+
+    /**
+     * Finds EIP names that match a term that need not be the EIP name (for example {@code fan-out} finds
+     * {@code multicast} and {@code dedup} finds {@code idempotentConsumer}), best match first: the exact name, then
+     * declared aliases, words of the title, words of the name, and finally names containing the term.
+     *
+     * @param  term the pattern, alias, or EIP name to look for
+     * @param  max  the maximum number of names to return, or 0 for no limit
+     * @return      the matching EIP names, or an empty list if none match
+     * @since       4.23
+     */
+    default List<String> suggestEipNames(String term, int max) {
+        return CatalogTermMatcher.suggestNames(findModelNames(), this::eipModel, term, max);
+    }
 
     /**
      * Returns the component information as JSON format.
@@ -312,6 +382,68 @@ public interface CamelCatalog {
      * @return      model details in JSon
      */
     String modelJSonSchema(String name);
+
+    /**
+     * Find all the available documentation page names.
+     *
+     * @return a list of documentation names (without the .adoc extension)
+     */
+    List<String> findDocNames();
+
+    /**
+     * Returns the AsciiDoc documentation for the given name.
+     * <p>
+     * The name corresponds to the documentation filename without the .adoc extension, such as {@code kafka-component},
+     * {@code split-eip}, {@code simple-language}, or {@code jackson2-dataformat}.
+     *
+     * @param  name the documentation name (without .adoc extension)
+     * @return      the documentation in AsciiDoc format, or {@code null} if not found
+     */
+    String asciiDoc(String name);
+
+    /**
+     * Returns the AsciiDoc documentation for the given component.
+     *
+     * @param  name the component name
+     * @return      the documentation in AsciiDoc format, or {@code null} if not found
+     */
+    String componentAsciiDoc(String name);
+
+    /**
+     * Returns the AsciiDoc documentation for the given data format.
+     *
+     * @param  name the data format name
+     * @return      the documentation in AsciiDoc format, or {@code null} if not found
+     */
+    String dataFormatAsciiDoc(String name);
+
+    /**
+     * Returns the AsciiDoc documentation for the given language.
+     *
+     * @param  name the language name
+     * @return      the documentation in AsciiDoc format, or {@code null} if not found
+     */
+    String languageAsciiDoc(String name);
+
+    /**
+     * Returns the AsciiDoc documentation for the given EIP model.
+     * <p>
+     * Delegates directly to {@link #asciiDoc(String)} since model doc names are not consistently suffixed.
+     *
+     * @param  name the model name
+     * @return      the documentation in AsciiDoc format, or {@code null} if not found
+     */
+    String modelAsciiDoc(String name);
+
+    /**
+     * Returns the AsciiDoc documentation for the given other (miscellaneous) component.
+     * <p>
+     * Delegates directly to {@link #asciiDoc(String)} since other doc names are not consistently suffixed.
+     *
+     * @param  name the other component name
+     * @return      the documentation in AsciiDoc format, or {@code null} if not found
+     */
+    String otherAsciiDoc(String name);
 
     /**
      * Find all the unique label names all the components are using.
@@ -491,6 +623,9 @@ public interface CamelCatalog {
 
     /**
      * Creates an endpoint uri in Java style from the information from the properties
+     * <p/>
+     * The options are in the order of the properties when the map has one (such as a {@code LinkedHashMap}), otherwise
+     * they are sorted by name.
      *
      * @param  scheme                      the endpoint schema
      * @param  properties                  the properties as key value pairs
@@ -502,6 +637,9 @@ public interface CamelCatalog {
 
     /**
      * Creates an endpoint uri in XML style from the information from the properties
+     * <p/>
+     * The options are in the order of the properties when the map has one (such as a {@code LinkedHashMap}), otherwise
+     * they are sorted by name.
      *
      * @param  scheme                      the endpoint schema
      * @param  properties                  the properties as key value pairs
@@ -535,6 +673,11 @@ public interface CamelCatalog {
      * Lists all the dev-consoles summary details in JSon
      */
     String listDevConsolesAsJson();
+
+    /**
+     * The OpenAPI 3.0 specification describing every dev console endpoint, aggregated across all dev consoles.
+     */
+    String devConsolesOpenApiSpec();
 
     /**
      * Lists all the models (EIPs) summary details in JSon
@@ -605,6 +748,17 @@ public interface CamelCatalog {
     PojoBeanModel pojoBeanModel(String name);
 
     /**
+     * The compact API reference of a core Camel class a route author's code touches (Exchange, Message, CamelContext,
+     * Registry, ProducerTemplate, Processor, AggregationStrategy, Predicate, Expression, TypeConverter): the methods
+     * that matter with their signatures, a one-line description, usage examples and the common mistakes.
+     *
+     * @param  name the simple class name (Exchange) to look up
+     * @return      the requested API reference or {@code null} in case it is not available in this {@link CamelCatalog}
+     * @since       4.23
+     */
+    ApiReferenceModel apiReferenceModel(String name);
+
+    /**
      * @return the requested main model or {@code null} in case it is not available in this {@link CamelCatalog}
      */
     MainModel mainModel();
@@ -631,6 +785,7 @@ public interface CamelCatalog {
             case other -> otherModel(name);
             case eip, model -> eipModel(name);
             case bean -> pojoBeanModel(name);
+            case api -> apiReferenceModel(name);
         };
     }
 
@@ -662,5 +817,29 @@ public interface CamelCatalog {
      * Load all Camel Quarkus releases from catalog
      */
     List<ReleaseModel> camelQuarkusReleases();
+
+    /**
+     * Load all published Camel CVE security advisories from catalog (the data behind
+     * <a href="https://camel.apache.org/security/">camel.apache.org/security</a>, synced into the catalog when it was
+     * built).
+     *
+     * @since 4.22
+     */
+    List<SecurityAdvisoryModel> camelSecurityAdvisories();
+
+    /**
+     * Checks whether two endpoint URIs refer to the same logical endpoint.
+     * <p/>
+     * Two URIs match when they share the same scheme, context-path, and &mdash; if the component declares any query
+     * parameters as {@code endpointIdentity} &mdash; the same values for those identity parameters. Non-identity query
+     * parameters (timeouts, buffer sizes, etc.) are ignored.
+     * <p/>
+     * Implemented by default via the shared base class; declared here so the full catalog interface exposes it.
+     *
+     * @param  uri1 the first endpoint uri
+     * @param  uri2 the second endpoint uri
+     * @return      {@code true} if both URIs identify the same destination
+     */
+    boolean matchEndpointIdentity(String uri1, String uri2);
 
 }

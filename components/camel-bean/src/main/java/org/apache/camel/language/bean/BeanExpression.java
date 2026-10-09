@@ -18,6 +18,7 @@ package org.apache.camel.language.bean;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.apache.camel.BeanScope;
 import org.apache.camel.CamelContext;
@@ -384,10 +385,46 @@ public class BeanExpression implements Expression, Predicate {
                 exchange.setException(resultExchange.getException());
             }
         } catch (Exception e) {
-            throw new RuntimeBeanExpressionException(exchange, beanName, methodName, e);
+            throw new RuntimeBeanExpressionException(
+                    exchange, describeBean(beanHolder, beanName, exchange), methodHint(methodName, e), e);
         }
 
         return result;
+    }
+
+    /**
+     * ${body.toUpperCase} without parentheses binds the body as the parameter of the one argument overload, which fails
+     * on the conversion; say that a method call needs parentheses.
+     */
+    private static String methodHint(String methodName, Throwable e) {
+        if (methodName != null && !methodName.contains("(") && !methodName.contains("[")) {
+            for (Throwable t = e; t != null; t = t.getCause()) {
+                String n = t.getClass().getSimpleName();
+                if (n.equals("NoTypeConversionAvailableException") || n.equals("InvalidPayloadException")) {
+                    return methodName + " (a method call needs parentheses: " + methodName + "())";
+                }
+            }
+        }
+        return methodName;
+    }
+
+    /**
+     * The bean name, or for an OGNL on the message body (${body.foo()}) what the body is, so the message does not say
+     * "on null".
+     */
+    private static String describeBean(BeanHolder beanHolder, String beanName, Exchange exchange) {
+        if (beanName != null) {
+            return beanName;
+        }
+        try {
+            Object bean = beanHolder != null ? beanHolder.getBean(exchange) : null;
+            if (bean != null) {
+                return "the message body of type " + ObjectHelper.className(bean);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return "the message body";
     }
 
     /**
@@ -491,9 +528,84 @@ public class BeanExpression implements Expression, Predicate {
         }
         Object newResult = invokeBean(holder, beanName, methodName, resultExchange);
         if (resultExchange.getException() != null) {
-            throw new RuntimeBeanExpressionException(exchange, beanName, methodName, resultExchange.getException());
+            // ${body.sku} on a Map with no method of that name: read the key, the only thing it can mean
+            // (CAMEL-24916)
+            Object value = mapValue(holder, exchange, methodName, resultExchange.getException());
+            if (value != NO_SUCH_KEY) {
+                resultExchange.setException(null);
+                return value;
+            }
+            throw new RuntimeBeanExpressionException(
+                    exchange, describeBean(holder, beanName, exchange),
+                    keyHint(holder, exchange, methodName, methodHint(methodName, resultExchange.getException())),
+                    resultExchange.getException());
         }
         return newResult;
+    }
+
+    /** Says that the bean is not a Map with that key, as null is a value a key can hold. */
+    private static final Object NO_SUCH_KEY = new Object();
+
+    /**
+     * The value of the key on a Map bean when the method of that name does not exist, so that ${body.sku} reads the sku
+     * of a map the way ${body[sku]} does - what a map means in jq, JavaScript and Groovy too (CAMEL-24916).
+     * <p/>
+     * A method still wins: ${body.size} on a Map calls size() as before. A name that is not a key still fails, so a
+     * misspelled field is still reported.
+     *
+     * @param  holder     the bean the OGNL step is called on; null when there is none
+     * @param  exchange   the exchange the bean is resolved against
+     * @param  methodName the name that failed as a method call, and is tried as a key
+     * @param  cause      the failure of that call, so that only a missing method is read as a key
+     * @return            the value of the key, or {@link #NO_SUCH_KEY} when this is not that case
+     */
+    private static Object mapValue(BeanHolder holder, Exchange exchange, String methodName, Exception cause) {
+        if (methodName == null || methodName.contains("(") || methodName.contains("[")) {
+            return NO_SUCH_KEY;
+        }
+        boolean noSuchMethod = false;
+        for (Throwable t = cause; t != null && !noSuchMethod; t = t.getCause()) {
+            noSuchMethod = t instanceof MethodNotFoundException;
+        }
+        if (!noSuchMethod) {
+            return NO_SUCH_KEY; // the method is there and it failed: that is a real error
+        }
+        try {
+            Object bean = holder != null ? holder.getBean(exchange) : null;
+            if (bean instanceof Map<?, ?> map && map.containsKey(methodName)) {
+                return map.get(methodName);
+            }
+        } catch (Exception e) {
+            // ignore and let the original failure stand
+        }
+        return NO_SUCH_KEY;
+    }
+
+    /** At most this many keys are listed when a Map has no key of the name asked for. */
+    private static final int MAX_KEYS_LISTED = 20;
+
+    /**
+     * ${body.type} on a Map body reads the key type (CAMEL-24916), so getting here means the Map has no such key: say
+     * that and list its keys, since the usual cause is a body that is not the Map one thinks (inside a split over an
+     * order's lines the body is a line, not the order) (CAMEL-25322).
+     */
+    private static String keyHint(BeanHolder holder, Exchange exchange, String methodName, String hint) {
+        if (methodName == null || methodName.contains("(") || methodName.contains("[")) {
+            return hint;
+        }
+        try {
+            Object bean = holder != null ? holder.getBean(exchange) : null;
+            if (bean instanceof Map<?, ?> map) {
+                String keys = map.keySet().stream().limit(MAX_KEYS_LISTED).map(String::valueOf)
+                        .collect(Collectors.joining(", "));
+                String more = map.size() > MAX_KEYS_LISTED ? ", ... (" + map.size() + " keys)" : "";
+                return hint + " (the Map has no key " + methodName
+                       + (map.isEmpty() ? "; it is empty)" : "; its keys are: " + keys + more + ")");
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return hint;
     }
 
     private Object lookupByKeyIfPresent(
@@ -552,7 +664,7 @@ public class BeanExpression implements Expression, Predicate {
                         }
                     }
                 }
-                if (num != null && num >= 0 && !list.isEmpty() && list.size() > num - 1) {
+                if (num != null && num >= 0 && !list.isEmpty() && list.size() > num) {
                     return list.get(num);
                 }
                 if (!nullSafe) {

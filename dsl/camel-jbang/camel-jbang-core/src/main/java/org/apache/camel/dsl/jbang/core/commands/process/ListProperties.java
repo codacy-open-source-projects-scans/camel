@@ -37,7 +37,11 @@ import org.apache.camel.util.json.Jsoner;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
-@Command(name = "properties", description = "List configuration properties", sortOptions = false, showDefaultValues = true)
+@Command(name = "properties", description = "List configuration properties", sortOptions = false, showDefaultValues = true,
+         footer = {
+                 "%nExamples:",
+                 "  camel get properties",
+                 "  camel get properties --verbose" })
 public class ListProperties extends ProcessWatchCommand {
 
     public static class PidNameKeyCompletionCandidates implements Iterable<String> {
@@ -227,18 +231,21 @@ public class ListProperties extends ProcessWatchCommand {
         }
     }
 
-    private static String sanitizeLocation(String loc) {
+    /**
+     * A readable name of where a property comes from, such as application.properties or OS Environment Variable.
+     */
+    public static String sanitizeLocation(String loc) {
         if (loc == null) {
             return "";
         }
-        switch (loc) {
-            case "initial", "override" -> loc = "camel-main";
-            case "SYS" -> loc = "JVM System Property";
-            case "ENV", "env" -> loc = "OS Environment Variable";
-            case "arguments", "CLI" -> loc = "Command Line";
-            default -> loc = "";
-        }
-        return loc;
+        return switch (loc) {
+            case "initial", "override" -> "camel-main";
+            case "SYS" -> "JVM System Property";
+            case "ENV", "env" -> "OS Environment Variable";
+            case "arguments", "CLI" -> "Command Line";
+            // a properties file, such as application.properties
+            default -> loc;
+        };
     }
 
 }

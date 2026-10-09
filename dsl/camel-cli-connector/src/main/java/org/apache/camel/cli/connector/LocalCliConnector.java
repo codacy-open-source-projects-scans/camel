@@ -24,6 +24,8 @@ import java.lang.management.ClassLoadingMXBean;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.MemoryType;
 import java.lang.management.RuntimeMXBean;
 import java.lang.management.ThreadMXBean;
 import java.nio.file.Files;
@@ -39,14 +41,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelContextAware;
 import org.apache.camel.ConsumerTemplate;
+import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePattern;
 import org.apache.camel.Expression;
@@ -65,25 +64,31 @@ import org.apache.camel.model.ProcessorDefinitionHelper;
 import org.apache.camel.model.RouteDefinition;
 import org.apache.camel.model.language.ExpressionDefinition;
 import org.apache.camel.spi.BacklogDebugger;
+import org.apache.camel.spi.BacklogTracer;
+import org.apache.camel.spi.BrowsableEndpoint;
 import org.apache.camel.spi.CliConnector;
 import org.apache.camel.spi.CliConnectorFactory;
 import org.apache.camel.spi.ContextReloadStrategy;
 import org.apache.camel.spi.EndpointUriFactory;
 import org.apache.camel.spi.Language;
+import org.apache.camel.spi.PeriodTaskScheduler;
+import org.apache.camel.spi.PropertiesComponent;
 import org.apache.camel.spi.Resource;
 import org.apache.camel.spi.ResourceLoader;
 import org.apache.camel.spi.ResourceReloadStrategy;
 import org.apache.camel.spi.RoutesLoader;
+import org.apache.camel.spi.RuntimeEndpointRegistry;
 import org.apache.camel.spi.ShutdownPrepared;
+import org.apache.camel.spi.annotations.PeriodicTask;
 import org.apache.camel.support.LoadOnDemandReloadStrategy;
 import org.apache.camel.support.MessageHelper;
 import org.apache.camel.support.PatternHelper;
 import org.apache.camel.support.PluginHelper;
 import org.apache.camel.support.PropertyBindingSupport;
+import org.apache.camel.support.component.PropertyConfigurerSupport;
 import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.support.service.ServiceSupport;
 import org.apache.camel.util.FileUtil;
-import org.apache.camel.util.HomeHelper;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.StopWatch;
 import org.apache.camel.util.URISupport;
@@ -95,9 +100,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * CLI Connector for local management of Camel integrations from Camel JBang.
+ * CLI Connector for local management of Camel integrations from Camel CLI.
+ * <p/>
+ * Executes the actions and collects the snapshots; the {@link CliConnectorTransport} (files in <tt>~/.camel</tt> by
+ * default) moves them between the tool and this connector.
  */
-public class LocalCliConnector extends ServiceSupport implements CliConnector, CamelContextAware {
+public class LocalCliConnector extends ServiceSupport
+        implements CliConnector, CamelContextAware, CliActionDispatcher, CliSnapshotProducer {
 
     private static final Logger LOG = LoggerFactory.getLogger(LocalCliConnector.class);
 
@@ -105,27 +114,15 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
 
     private final CliConnectorFactory cliConnectorFactory;
     private CamelContext camelContext;
-    private ScheduledFuture scheduledFuture;
-    private int delay = 1000;
-    private long counter;
+    private CliConnectorTransport transport;
     private String platform;
     private String platformVersion;
     private String mainClass;
-    private final AtomicBoolean terminating = new AtomicBoolean();
-    private ScheduledExecutorService executor;
     private volatile ExecutorService terminateExecutor;
     private ProducerTemplate producer;
     private ConsumerTemplate consumer;
-    private File lockFile;
-    private File statusFile;
-    private File actionFile;
-    private File outputFile;
-    private File traceFile;
-    private long traceFilePos;   // keep track of trace offset
-    private File messageHistoryFile;
-    private File debugFile;
-    private File receiveFile;
-    private long receiveFilePos; // keep track of receive offset
+    // where the running action writes its result (actions run on one thread at a time)
+    private CliActionOutput actionOutput;
     private byte[] lastSource;
     private ExpressionDefinition lastSourceExpression;
 
@@ -145,8 +142,6 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
 
     @Override
     protected void doStart() throws Exception {
-        terminating.set(false);
-
         // what platform are we running
         mainClass = cliConnectorFactory.getRuntimeStartClass();
         if (mainClass == null) {
@@ -176,58 +171,39 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         producer = camelContext.createProducerTemplate();
         consumer = camelContext.createConsumerTemplate();
 
-        // create thread from JDK so it is not managed by Camel because we want the pool to be independent when
-        // camel is being stopped which otherwise can lead to stopping the thread pool while the task is running
-        executor = Executors.newSingleThreadScheduledExecutor(r -> {
-            String threadName = ThreadHelper.resolveThreadName(null, "LocalCliConnector");
-            return new Thread(r, threadName);
-        });
-
-        // make it go faster in debug mode
-        if (camelContext.isDebugging()) {
-            delay = 100;
+        if (transport == null) {
+            transport = createTransport(
+                    camelContext.getPropertiesComponent().resolveProperty("camel.cli.transport").orElse("file"));
+            transport.configure(camelContext, this, this, this::sigterm);
         }
+        ServiceHelper.startService(transport);
+    }
 
-        lockFile = createLockFile(getPid());
-        if (lockFile != null) {
-            statusFile = createLockFile(lockFile.getName() + "-status.json");
-            actionFile = createLockFile(lockFile.getName() + "-action.json");
-            outputFile = createLockFile(lockFile.getName() + "-output.json");
-            traceFile = createLockFile(lockFile.getName() + "-trace.json");
-            messageHistoryFile = createLockFile(lockFile.getName() + "-history.json");
-            debugFile = createLockFile(lockFile.getName() + "-debug.json");
-            receiveFile = createLockFile(lockFile.getName() + "-receive.json");
-            scheduledFuture = executor.scheduleWithFixedDelay(this::task, 0, delay, TimeUnit.MILLISECONDS);
-            LOG.info("Camel JBang CLI enabled");
-        } else {
-            LOG.warn("Cannot create PID file: {}. This integration cannot be managed by Camel JBang CLI.", getPid());
+    /**
+     * Creates the transport for the <tt>camel.cli.transport</tt> property.
+     */
+    protected CliConnectorTransport createTransport(String name) {
+        if ("websocket".equalsIgnoreCase(name)) {
+            return new WebSocketCliConnectorTransport();
         }
+        // never fail: tooling (camel export, transform, kubernetes) runs Camel with properties resolved to placeholders
+        boolean placeholder = PropertyConfigurerSupport.MAGIC_VALUE.equals(name)
+                || name.startsWith(PropertiesComponent.PREFIX_TOKEN) || "camel.cli.transport".equals(name);
+        if (!"file".equalsIgnoreCase(name) && !placeholder) {
+            LOG.warn("Unknown camel.cli.transport: {} (supported: file, websocket). Using file.", name);
+        }
+        return new FileCliConnectorTransport();
     }
 
     @Override
     public void updateDelay(int delay) {
-        if (this.delay == delay) {
-            return;
-        }
-        if (scheduledFuture != null) {
-            try {
-                scheduledFuture.cancel(true);
-            } catch (Exception e) {
-                // ignore
-            }
-        }
-        boolean done = scheduledFuture == null || scheduledFuture.isDone();
-        if (done) {
-            this.delay = delay;
-            scheduledFuture = executor.scheduleWithFixedDelay(this::task, 0, delay, TimeUnit.MILLISECONDS);
+        if (transport != null) {
+            transport.updateDelay(delay);
         }
     }
 
     @Override
     public void sigterm() {
-        // we are terminating
-        terminating.set(true);
-
         // spawn a thread that terminates, so we can keep this thread to update status
         terminateExecutor = Executors.newSingleThreadExecutor(r -> {
             String threadName = ThreadHelper.resolveThreadName(null, "Terminate JVM task");
@@ -236,7 +212,7 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         terminateExecutor.submit(new Runnable() {
             @Override
             public void run() {
-                LOG.info("Camel JBang terminating JVM");
+                LOG.info("Camel CLI connector terminating JVM");
                 try {
                     // if we are debugging then detach before stopping camel
                     BacklogDebugger debugger = camelContext.hasService(BacklogDebugger.class);
@@ -250,40 +226,22 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 }
             }
         });
+        // the thread ends once the task is done: a non-daemon thread left waiting for more tasks keeps the JVM
+        // running (Spring Boot)
+        terminateExecutor.shutdown();
     }
 
-    protected void task() {
-        if (!lockFile.exists() && terminating.compareAndSet(false, true)) {
-            // if the lock file is deleted then trigger termination
-            sigterm();
-            return;
-        }
-        if (!statusFile.exists()) {
-            return;
-        }
-
-        actionTask();
-        statusTask();
-        // only run this every 2nd time as gathering this data has more overhead
-        // and are only needed when doing tracing/debugging/receive
-        if (++counter % 2 == 0) {
-            traceTask();
-        }
-    }
-
-    protected void actionTask() {
-        String action = null;
+    @Override
+    public boolean dispatch(JsonObject root, CliActionOutput output) throws Exception {
+        CliActionOutput prevOutput = this.actionOutput;
         try {
-            JsonObject root = loadAction();
-            if (root == null || root.isEmpty()) {
-                return;
-            }
+            this.actionOutput = output;
 
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Action: {}", root);
             }
 
-            action = root.getString("action");
+            String action = root.getString("action");
             if ("route".equals(action)) {
                 doActionRouteTask(root);
             } else if ("processor".equals(action)) {
@@ -302,16 +260,26 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 doActionDebugTask(root);
             } else if ("reset-stats".equals(action)) {
                 doActionResetStatsTask();
+            } else if ("jvm".equals(action)) {
+                doActionJvmTask();
             } else if ("thread-dump".equals(action)) {
                 doActionThreadDumpTask();
+            } else if ("heap-histogram".equals(action)) {
+                doActionHeapHistogramTask();
             } else if ("top-processors".equals(action)) {
                 doActionTopProcessorsTask();
             } else if ("source".equals(action)) {
                 doActionSourceTask(root);
+            } else if ("rest-spec".equals(action)) {
+                doActionRestSpecTask(root);
             } else if ("route-dump".equals(action)) {
                 doActionRouteDumpTask(root);
             } else if ("route-structure".equals(action)) {
                 doActionRouteStructureTask(root);
+            } else if ("route-topology".equals(action)) {
+                doActionRouteTopologyTask(root);
+            } else if ("processor-detail".equals(action)) {
+                doActionProcessorDetailTask(root);
             } else if ("route-controller".equals(action)) {
                 doActionRouteControllerTask(root);
             } else if ("startup-recorder".equals(action)) {
@@ -330,20 +298,67 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 doActionTraceTask(root);
             } else if ("browse".equals(action)) {
                 doActionBrowseTask(root);
+            } else if ("span".equals(action)) {
+                doActionSpanTask(root);
             } else if ("receive".equals(action)) {
                 doActionReceiveTask(root);
+            } else if ("readme".equals(action)) {
+                doActionReadmeTask(root);
+            } else if ("sql-query".equals(action)) {
+                doActionSqlQueryTask(root);
+            } else if ("sql-update-row".equals(action)) {
+                doActionSqlUpdateRowTask(root);
+            } else if ("heap-dump".equals(action)) {
+                doActionHeapDumpTask(root);
+            } else if ("jfr-memory-leak".equals(action)) {
+                doActionJfrMemoryLeakTask(root);
+            } else if ("jfr".equals(action)) {
+                doActionJfrTask(root);
             } else if ("cli-debug".equals(action)) {
                 doActionCliDebug(root);
+            } else if ("spring-boot-configuration".equals(action)) {
+                doActionSpringBootConfigurationTask(root);
+            } else if ("type-converters".equals(action)) {
+                doActionTypeConvertersTask();
+            } else if ("transformers".equals(action)) {
+                doActionTransformersTask();
+            } else if ("vault-refresh".equals(action)) {
+                doActionVaultRefreshTask();
+            } else {
+                return false;
             }
-        } catch (Exception e) {
-            // ignore
-            LOG.warn("Error executing action: {} due to: {}. This exception is ignored.", action != null ? action : actionFile,
-                    e.getMessage(),
-                    e);
+            return true;
         } finally {
-            // action done so delete file
-            FileUtil.deleteFile(actionFile);
+            this.actionOutput = prevOutput;
         }
+    }
+
+    private void writeOutput(JsonObject result) throws IOException {
+        actionOutput.write(result);
+    }
+
+    private void reportError(String message) {
+        actionOutput.error(message);
+    }
+
+    private void doActionReadmeTask(JsonObject root) throws Exception {
+        String readmeFiles = camelContext.getPropertiesComponent()
+                .resolveProperty("camel.jbang.readmeFiles").orElse(null);
+        JsonObject json = new JsonObject();
+        if (readmeFiles != null) {
+            String filter = root.getString("filter");
+            for (String f : readmeFiles.split(",")) {
+                if (filter == null || f.contains(filter)) {
+                    File file = new File(f);
+                    if (file.isFile() && file.exists()) {
+                        json.put("file", f);
+                        json.put("content", Files.readString(file.toPath()));
+                        break;
+                    }
+                }
+            }
+        }
+        writeOutput(json);
     }
 
     private void doActionCliDebug(JsonObject root) {
@@ -534,7 +549,6 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         } catch (Exception e) {
             out.setException(e);
         }
-        LOG.trace("Updating output file: {}", outputFile);
         if (out.getException() != null) {
             JsonObject jo = new JsonObject();
             if (language != null) {
@@ -550,7 +564,7 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             // avoid double wrap
             jo.put("exception",
                     MessageHelper.dumpExceptionAsJSonObject(out.getException()).getMap("exception"));
-            IOHelper.writeText(jo.toJson(), outputFile);
+            writeOutput(jo);
         } else {
             JsonObject jo = new JsonObject();
             if (language != null) {
@@ -566,7 +580,7 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             // avoid double wrap
             jo.put("message", MessageHelper.dumpAsJSonObject(out.getMessage(), true, true, true, true, true, true,
                     BODY_MAX_CHARS).getMap("message"));
-            IOHelper.writeText(jo.toJson(), outputFile);
+            writeOutput(jo);
         }
         camelContext.getCamelContextExtension().getExchangeFactory().release(out);
     }
@@ -595,6 +609,10 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             if (body != null) {
                 args.put("body", body);
             }
+            String bodyEncoding = root.getString("bodyEncoding");
+            if (bodyEncoding != null) {
+                args.put("bodyEncoding", bodyEncoding);
+            }
             if (exchangePattern != null) {
                 args.put("exchangePattern", exchangePattern);
             }
@@ -611,10 +629,9 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 }
             }
             json = (JsonObject) dc.call(DevConsole.MediaType.JSON, args);
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
@@ -628,10 +645,9 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         if (dc != null) {
             JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON,
                     Map.of("filter", filter, "limit", limit, "browse", browse));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
@@ -640,10 +656,9 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 .resolveById("startup-recorder");
         if (dc != null) {
             JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON);
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
@@ -653,10 +668,9 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         if (dc != null) {
             String stacktrace = root.getString("stacktrace");
             JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, Map.of("stacktrace", stacktrace));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
@@ -667,13 +681,21 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             String filter = root.getString("filter");
             String format = root.getString("format");
             String uriAsParameters = root.getString("uriAsParameters");
+            Map<String, Object> params = new HashMap<>();
+            if (filter != null) {
+                params.put("filter", filter);
+            }
+            if (format != null) {
+                params.put("format", format);
+            }
+            if (uriAsParameters != null) {
+                params.put("uriAsParameters", uriAsParameters);
+            }
             JsonObject json
-                    = (JsonObject) dc.call(DevConsole.MediaType.JSON,
-                            Map.of("filter", filter, "format", format, "uriAsParameters", uriAsParameters));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+                    = (JsonObject) dc.call(DevConsole.MediaType.JSON, params);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
@@ -681,15 +703,49 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
                 .resolveById("route-structure");
         if (dc != null) {
-            String filter = root.getString("filter");
-            String brief = root.getString("brief");
+            String filter = root.getStringOrDefault("filter", "*");
+            String brief = root.getStringOrDefault("brief", "false");
+            String metric = root.getStringOrDefault("metric", "false");
             JsonObject json
                     = (JsonObject) dc.call(DevConsole.MediaType.JSON,
-                            Map.of("filter", filter, "brief", brief));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+                            Map.of("filter", filter, "brief", brief, "metric", metric));
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionRouteTopologyTask(JsonObject root) throws Exception {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("route-topology");
+        if (dc != null) {
+            String metric = root.getStringOrDefault("metric", "false");
+            String external = root.getStringOrDefault("external", "false");
+            String routes = root.getStringOrDefault("routes", "false");
+            String kamelets = root.getStringOrDefault("kamelets", "false");
+            JsonObject json
+                    = (JsonObject) dc.call(DevConsole.MediaType.JSON,
+                            Map.of("metric", metric, "external", external, "routes", routes, "kamelets", kamelets));
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionProcessorDetailTask(JsonObject root) throws Exception {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("processor-detail");
+        if (dc != null) {
+            String routeId = root.getString("routeId");
+            if (routeId == null || routeId.isBlank()) {
+                routeId = root.getString("id");
+            }
+            JsonObject json
+                    = (JsonObject) dc.call(DevConsole.MediaType.JSON,
+                            Map.of("routeId", routeId != null ? routeId : "*"));
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
         }
     }
 
@@ -699,10 +755,22 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         if (dc != null) {
             String filter = root.getString("filter");
             JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, Map.of("filter", filter));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionRestSpecTask(JsonObject root) throws Exception {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("rest-spec");
+        if (dc != null) {
+            String filter = root.getString("filter");
+            Map<String, Object> options = filter != null ? Map.of("filter", filter) : Map.of();
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, options);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
         }
     }
 
@@ -711,10 +779,42 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class).resolveById("top");
         if (dc != null) {
             JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, Map.of(Exchange.HTTP_PATH, "/*"));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionTypeConvertersTask() throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("type-converters");
+        if (dc != null) {
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionTransformersTask() throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("transformers");
+        if (dc != null) {
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionJvmTask() throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("jvm");
+        if (dc != null) {
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
         }
     }
 
@@ -723,10 +823,123 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 .resolveById("thread");
         if (dc != null) {
             JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, Map.of("stackTrace", "true"));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionHeapHistogramTask() throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("heap-histogram");
+        if (dc != null) {
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionSpringBootConfigurationTask(JsonObject root) throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("spring-boot-configuration");
+        if (dc != null) {
+            Map<String, Object> params = new HashMap<>();
+            String filter = root.getString("filter");
+            if (filter != null) {
+                params.put("filter", filter);
+            }
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, params);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionHeapDumpTask(JsonObject root) throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("heap-dump");
+        if (dc != null) {
+            Map<String, Object> params = new HashMap<>();
+            String name = root.getString("name");
+            if (name != null) {
+                params.put("name", name);
+            }
+            String live = root.getString("live");
+            if (live != null) {
+                params.put("live", live);
+            }
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, params);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionJfrMemoryLeakTask(JsonObject root) throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("jfr-memory-leak");
+        if (dc != null) {
+            Map<String, Object> params = new HashMap<>();
+            String command = root.getString("command");
+            if (command != null) {
+                params.put("command", command);
+            }
+            String duration = root.getString("duration");
+            if (duration != null) {
+                params.put("duration", duration);
+            }
+            String limit = root.getString("limit");
+            if (limit != null) {
+                params.put("limit", limit);
+            }
+            String stacktrace = root.getString("stacktrace");
+            if (stacktrace != null) {
+                params.put("stacktrace", stacktrace);
+            }
+            String minSize = root.getString("minSize");
+            if (minSize != null) {
+                params.put("minSize", minSize);
+            }
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, params);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionJfrTask(JsonObject root) throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("jfr");
+        if (dc != null) {
+            Map<String, Object> params = new HashMap<>();
+            String command = root.getString("command");
+            if (command != null) {
+                params.put("command", command);
+            }
+            String event = root.getString("event");
+            if (event != null) {
+                params.put("event", event);
+            }
+            String disable = root.getString("disable");
+            if (disable != null) {
+                params.put("disable", disable);
+            }
+            String routeId = root.getString("routeId");
+            if (routeId != null) {
+                params.put("routeId", routeId);
+            }
+            String limit = root.getString("limit");
+            if (limit != null) {
+                params.put("limit", limit);
+            }
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, params);
+            writeOutput(json);
+        } else {
+            // tell the caller why there is nothing to report, as an empty result is indistinguishable from an error
+            JsonObject json = new JsonObject();
+            json.put("error", "JFR runtime instrumentation is not available (camel-jfr is not on the classpath)");
+            writeOutput(json);
         }
     }
 
@@ -735,10 +948,9 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 .resolveById("kafka");
         if (dc != null) {
             JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, Map.of("committed", "true"));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
@@ -746,17 +958,19 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
                 .resolveById("trace");
         if (dc != null) {
+            Map<String, Object> params = new HashMap<>();
             String enabled = root.getString("enabled");
-            JsonObject json;
             if (enabled != null) {
-                json = (JsonObject) dc.call(DevConsole.MediaType.JSON, Map.of("enabled", enabled));
-            } else {
-                json = (JsonObject) dc.call(DevConsole.MediaType.JSON);
+                params.put("enabled", enabled);
             }
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            String dump = root.getString("dump");
+            if (dump != null) {
+                params.put("dump", dump);
+            }
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, params);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
@@ -777,10 +991,28 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             }
             JsonObject json
                     = (JsonObject) dc.call(DevConsole.MediaType.JSON, map);
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionSpanTask(JsonObject root) throws IOException {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("opentelemetry");
+        if (dc != null) {
+            Map<String, Object> params = new HashMap<>();
+            params.put("dump", "true");
+            String limit = root.getString("limit");
+            if (limit != null) {
+                params.put("limit", limit);
+            }
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, params);
+            writeOutput(json);
+        } else {
+            JsonObject json = new JsonObject();
+            json.put("enabled", false);
+            writeOutput(json);
         }
     }
 
@@ -802,10 +1034,9 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             } else {
                 json = (JsonObject) dc.call(DevConsole.MediaType.JSON, Map.of("enabled", "false"));
             }
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
@@ -830,14 +1061,24 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             JsonObject json = (JsonObject) dc2.call(DevConsole.MediaType.JSON, options);
             answer.put("bean-models", json.getMap("beans"));
         }
-        LOG.trace("Updating output file: {}", outputFile);
-        IOHelper.writeText(answer.toJson(), outputFile);
+        writeOutput(answer);
     }
 
     private void doActionResetStatsTask() throws Exception {
         ManagedCamelContext mcc = camelContext.getCamelContextExtension().getContextPlugin(ManagedCamelContext.class);
         if (mcc != null) {
             mcc.getManagedCamelContext().reset(true);
+        }
+        RuntimeEndpointRegistry reg = camelContext.getRuntimeEndpointRegistry();
+        if (reg != null) {
+            reg.reset();
+        }
+        BacklogTracer tracer = camelContext.getCamelContextExtension().getContextPlugin(BacklogTracer.class);
+        if (tracer != null) {
+            tracer.clear();
+        }
+        if (camelContext.getErrorRegistry() != null) {
+            camelContext.getErrorRegistry().clear();
         }
     }
 
@@ -851,10 +1092,9 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             String position = root.getStringOrDefault("position", "");
             JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON,
                     Map.of("command", cmd, "breakpoint", bp, "history", history, "position", position));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
@@ -866,20 +1106,79 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             boolean predicate = root.getBooleanOrDefault("predicate", false);
             String template = root.getStringOrDefault("template", "");
             String body = root.getStringOrDefault("body", "");
-            Map<String, String> map = new LinkedHashMap<>();
+            Map<String, String> headerMap = new LinkedHashMap<>();
             Collection<JsonObject> headers = root.getCollection("headers");
             if (headers != null) {
-                map = new LinkedHashMap<>();
                 for (JsonObject jo : headers) {
-                    map.put(jo.getString("key"), jo.getString("value"));
+                    headerMap.put(jo.getString("key"), jo.getString("value"));
                 }
             }
-            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON,
-                    Map.of("language", lan, "predicate", predicate, "template", template, "body", body, "headers", map));
-            LOG.trace("Updating output file: {}", outputFile);
-            IOHelper.writeText(json.toJson(), outputFile);
+            Map<String, String> variableMap = new LinkedHashMap<>();
+            Collection<JsonObject> variables = root.getCollection("variables");
+            if (variables != null) {
+                for (JsonObject jo : variables) {
+                    variableMap.put(jo.getString("key"), jo.getString("value"));
+                }
+            }
+            Map<String, Object> params = new HashMap<>();
+            params.put("language", lan);
+            params.put("predicate", predicate);
+            params.put("template", template);
+            params.put("body", body);
+            params.put("headers", headerMap);
+            params.put("variables", variableMap);
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, params);
+            writeOutput(json);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionSqlQueryTask(JsonObject root) throws Exception {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("sql-query");
+        if (dc != null) {
+            String sql = root.getStringOrDefault("sql", "");
+            if (sql.startsWith("file:")) {
+                File f = new File(sql.substring(5));
+                if (f.exists() && f.isFile()) {
+                    sql = Files.readString(f.toPath()).trim();
+                }
+            }
+            String datasource = root.getString("datasource");
+            int maxRows = root.getIntegerOrDefault("maxRows", 100);
+            int queryTimeout = root.getIntegerOrDefault("queryTimeout", 30);
+            Map<String, Object> args = new HashMap<>();
+            args.put("sql", sql);
+            if (datasource != null) {
+                args.put("datasource", datasource);
+            }
+            args.put("maxRows", String.valueOf(maxRows));
+            args.put("queryTimeout", String.valueOf(queryTimeout));
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, args);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
+        }
+    }
+
+    private void doActionSqlUpdateRowTask(JsonObject root) throws Exception {
+        DevConsole dc = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
+                .resolveById("sql-query");
+        if (dc != null) {
+            Map<String, Object> args = new HashMap<>();
+            args.put("actionType", "update-row");
+            args.put("table", root.getString("table"));
+            String datasource = root.getString("datasource");
+            if (datasource != null) {
+                args.put("datasource", datasource);
+            }
+            args.put("primaryKeyValues", root.getString("primaryKeyValues"));
+            args.put("columnValues", root.getString("columnValues"));
+            JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON, args);
+            writeOutput(json);
+        } else {
+            writeOutput(new JsonObject());
         }
     }
 
@@ -893,7 +1192,7 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 cr.setCamelContext(camelContext);
                 camelContext.addService(cr);
             }
-            cr.load("Camel JBang", files, restart);
+            cr.load("Camel CLI", files, restart);
             JsonObject jo = new JsonObject();
             Exception error = cr.getLastError();
             if (error != null) {
@@ -903,20 +1202,20 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             } else {
                 jo.put("status", "success");
             }
-            IOHelper.writeText(jo.toJson(), outputFile);
+            writeOutput(jo);
         } else {
-            IOHelper.writeText("{}", outputFile);
+            writeOutput(new JsonObject());
         }
     }
 
     private void doActionReloadTask() {
         ContextReloadStrategy cr = camelContext.hasService(ContextReloadStrategy.class);
         if (cr != null) {
-            cr.onReload("Camel JBang");
+            cr.onReload("Camel CLI");
         } else {
             ResourceReloadStrategy rr = camelContext.hasService(ResourceReloadStrategy.class);
             if (rr != null) {
-                rr.onReload("Camel JBang");
+                rr.onReload("Camel CLI");
             }
         }
     }
@@ -1002,7 +1301,11 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
                 }
             } catch (Exception e) {
                 LOG.warn("Error {} route: {} due to: {}. This exception is ignored.", command, id, e.getMessage(), e);
+                reportError("Error " + command + " route: " + id + " due to: " + e.getMessage());
             }
+        }
+        if (ids.isEmpty()) {
+            reportError("No route matching: " + root.getString("id"));
         }
     }
 
@@ -1059,352 +1362,339 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
         }
     }
 
-    JsonObject loadAction() {
-        try {
-            if (actionFile != null && actionFile.exists()) {
-                FileInputStream fis = new FileInputStream(actionFile);
-                String text = IOHelper.loadText(fis);
-                IOHelper.close(fis);
-                if (!text.isEmpty()) {
-                    return (JsonObject) Jsoner.deserialize(text);
-                }
-            }
-        } catch (Exception e) {
-            // ignore
-        }
-        return null;
-    }
+    @Override
+    public JsonObject status() throws Exception {
+        JsonObject root = new JsonObject();
+        root.put("runtime", runtime());
 
-    protected void statusTask() {
-        try {
-            // even during termination then collect status as we want to see status changes during stopping
-            JsonObject root = new JsonObject();
-
-            // what runtime are in use
-            JsonObject rc = new JsonObject();
-            String dir = new File(".").getAbsolutePath();
-            dir = FileUtil.onlyPath(dir);
-            rc.put("pid", ProcessHandle.current().pid());
-            rc.put("directory", dir);
-            ProcessHandle.current().info().user().ifPresent(u -> rc.put("user", u));
-            rc.put("platform", platform);
-            if (platformVersion != null) {
-                rc.put("platformVersion", platformVersion);
-            }
-            if (mainClass != null) {
-                rc.put("mainClass", mainClass);
-            }
-            RuntimeMXBean mb = ManagementFactory.getRuntimeMXBean();
-            if (mb != null) {
-                rc.put("javaVersion", mb.getVmVersion());
-            }
-            root.put("runtime", rc);
-
-            DevConsoleRegistry dcr = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class);
-            if (dcr != null) {
-                // collect details via console
-                DevConsole dc = dcr.resolveById("context");
-                DevConsole dc2 = dcr.resolveById("route");
-                if (dc != null && dc2 != null) {
-                    JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON);
-                    JsonObject json2 = (JsonObject) dc2.call(DevConsole.MediaType.JSON, Map.of("processors", "true"));
-                    if (json != null && json2 != null) {
-                        root.put("context", json);
-                        root.put("routes", json2.get("routes"));
-                    }
-                }
-                DevConsole dc2b = dcr.resolveById("route-group");
-                if (dc2b != null) {
-                    JsonObject json = (JsonObject) dc2b.call(DevConsole.MediaType.JSON);
-                    if (json != null) {
-                        root.put("routeGroups", json.get("routeGroups"));
-                    }
-                }
-                DevConsole dc3 = dcr.resolveById("endpoint");
-                if (dc3 != null) {
-                    JsonObject json = (JsonObject) dc3.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("endpoints", json);
-                    }
-                }
-                DevConsole dc4 = dcr.resolveById("health");
-                if (dc4 != null) {
-                    // include full details in health checks
-                    JsonObject json = (JsonObject) dc4.call(DevConsole.MediaType.JSON, Map.of("exposureLevel", "full"));
-                    if (json != null && !json.isEmpty()) {
-                        root.put("healthChecks", json);
-                    }
-                }
-                DevConsole dc5 = dcr.resolveById("event");
-                if (dc5 != null) {
-                    JsonObject json = (JsonObject) dc5.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("events", json);
-                    }
-                }
-                DevConsole dc6 = dcr.resolveById("log");
-                if (dc6 != null) {
-                    JsonObject json = (JsonObject) dc6.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("logger", json);
-                    }
-                }
-                DevConsole dc7 = dcr.resolveById("inflight");
-                if (dc7 != null) {
-                    JsonObject json = (JsonObject) dc7.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("inflight", json);
-                    }
-                }
-                DevConsole dc8 = dcr.resolveById("blocked");
-                if (dc8 != null) {
-                    JsonObject json = (JsonObject) dc8.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("blocked", json);
-                    }
-                }
-                DevConsole dc9 = dcr.resolveById("micrometer");
-                if (dc9 != null) {
-                    JsonObject json = (JsonObject) dc9.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("micrometer", json);
-                    }
-                }
-                DevConsole dc10 = dcr.resolveById("resilience4j");
-                if (dc10 != null) {
-                    JsonObject json = (JsonObject) dc10.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("resilience4j", json);
-                    }
-                }
-                DevConsole dc11 = dcr.resolveById("fault-tolerance");
-                if (dc11 != null) {
-                    JsonObject json = (JsonObject) dc11.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("fault-tolerance", json);
-                    }
-                }
-                DevConsole dc12 = dcr.resolveById("circuit-breaker");
-                if (dc12 != null) {
-                    JsonObject json = (JsonObject) dc12.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("circuit-breaker", json);
-                    }
-                }
-                DevConsole dc13 = dcr.resolveById("trace");
-                if (dc13 != null) {
-                    JsonObject json = (JsonObject) dc13.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("trace", json);
-                    }
-                }
-                DevConsole dc14 = dcr.resolveById("consumer");
-                if (dc14 != null) {
-                    JsonObject json = (JsonObject) dc14.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("consumers", json);
-                    }
-                }
-                DevConsole dc14b = dcr.resolveById("producer");
-                if (dc14b != null) {
-                    JsonObject json = (JsonObject) dc14b.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("producers", json);
-                    }
-                }
-                DevConsole dc15 = dcr.resolveById("variables");
-                if (dc15 != null) {
-                    JsonObject json = (JsonObject) dc15.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("variables", json);
-                    }
-                }
-                DevConsole dc16 = dcr.resolveById("transformers");
-                if (dc16 != null) {
-                    JsonObject json = (JsonObject) dc16.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("transformers", json);
-                    }
-                }
-                DevConsole dc17 = dcr.resolveById("service");
-                if (dc17 != null) {
-                    JsonObject json = (JsonObject) dc17.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("services", json);
-                    }
-                }
-                DevConsole dc18 = dcr.resolveById("platform-http");
-                if (dc18 != null) {
-                    JsonObject json = (JsonObject) dc18.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("platform-http", json);
-                    }
-                }
-                DevConsole dc19 = dcr.resolveById("rest");
-                if (dc19 != null) {
-                    JsonObject json = (JsonObject) dc19.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("rests", json);
-                    }
-                }
-                DevConsole dc20 = dcr.resolveById("kafka");
-                if (dc20 != null) {
-                    JsonObject json = (JsonObject) dc20.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("kafka", json);
-                    }
-                }
-                DevConsole dc21 = dcr.resolveById("properties");
-                if (dc21 != null) {
-                    JsonObject json = (JsonObject) dc21.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("properties", json);
-                    }
-                }
-                DevConsole dc22 = dcr.resolveById("main-configuration");
-                if (dc22 != null) {
-                    JsonObject json = (JsonObject) dc22.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("main-configuration", json);
-                    }
-                }
-                DevConsole dc23 = dcr.resolveById("receive");
-                if (dc23 != null) {
-                    JsonObject json = (JsonObject) dc23.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("receive", json);
-                    }
-                }
-                DevConsole dc24 = dcr.resolveById("internal-tasks");
-                if (dc24 != null) {
-                    JsonObject json = (JsonObject) dc24.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("internal-tasks", json);
-                    }
-                }
-                DevConsole dc25 = dcr.resolveById("groovy");
-                if (dc25 != null) {
-                    JsonObject json = (JsonObject) dc25.call(DevConsole.MediaType.JSON);
-                    if (json != null && !json.isEmpty()) {
-                        root.put("groovy", json);
-                    }
+        DevConsoleRegistry dcr = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class);
+        if (dcr != null) {
+            // collect details via console
+            DevConsole dc = dcr.resolveById("context");
+            DevConsole dc2 = dcr.resolveById("route");
+            if (dc != null && dc2 != null) {
+                JsonObject json = (JsonObject) dc.call(DevConsole.MediaType.JSON);
+                JsonObject json2 = (JsonObject) dc2.call(DevConsole.MediaType.JSON, Map.of("processors", "true"));
+                if (json != null && json2 != null) {
+                    root.put("context", json);
+                    root.put("routes", json2.get("routes"));
                 }
             }
-            // various details
-            JsonObject mem = collectMemory();
-            if (mem != null) {
-                root.put("memory", mem);
+            DevConsole dc2b = dcr.resolveById("route-group");
+            if (dc2b != null) {
+                JsonObject json = (JsonObject) dc2b.call(DevConsole.MediaType.JSON);
+                if (json != null) {
+                    root.put("routeGroups", json.get("routeGroups"));
+                }
             }
-            JsonObject cl = collectClassLoading();
-            if (cl != null) {
-                root.put("classLoading", cl);
+            DevConsole dc3 = dcr.resolveById("endpoint");
+            if (dc3 != null) {
+                JsonObject json = (JsonObject) dc3.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("endpoints", json);
+                }
             }
-            JsonObject threads = collectThreads();
-            if (threads != null) {
-                root.put("threads", threads);
+            DevConsole dc4 = dcr.resolveById("health");
+            if (dc4 != null) {
+                // include full details in health checks
+                JsonObject json = (JsonObject) dc4.call(DevConsole.MediaType.JSON, Map.of("exposureLevel", "full"));
+                if (json != null && !json.isEmpty()) {
+                    root.put("healthChecks", json);
+                }
             }
-            JsonObject gc = collectGC();
-            if (gc != null) {
-                root.put("gc", gc);
+            DevConsole dc5 = dcr.resolveById("event");
+            if (dc5 != null) {
+                JsonObject json = (JsonObject) dc5.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("events", json);
+                }
             }
-            JsonObject vaults = collectVaults();
-            if (!vaults.isEmpty()) {
-                root.put("vaults", vaults);
+            DevConsole dc6 = dcr.resolveById("log");
+            if (dc6 != null) {
+                JsonObject json = (JsonObject) dc6.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("logger", json);
+                }
             }
-            LOG.trace("Updating status file: {}", statusFile);
-            IOHelper.writeText(root.toJson(), statusFile);
-        } catch (Exception e) {
-            // ignore
-            LOG.trace("Error updating status file: {} due to: {}. This exception is ignored.",
-                    statusFile, e.getMessage(), e);
-        }
-    }
-
-    protected void traceTask() {
-        try {
-            DevConsole dc12 = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
-                    .resolveById("trace");
+            DevConsole dc7 = dcr.resolveById("inflight");
+            if (dc7 != null) {
+                JsonObject json = (JsonObject) dc7.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("inflight", json);
+                }
+            }
+            DevConsole dc8 = dcr.resolveById("blocked");
+            if (dc8 != null) {
+                JsonObject json = (JsonObject) dc8.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("blocked", json);
+                }
+            }
+            DevConsole dc9 = dcr.resolveById("micrometer");
+            if (dc9 != null) {
+                JsonObject json = (JsonObject) dc9.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("micrometer", json);
+                }
+            }
+            DevConsole dc10 = dcr.resolveById("resilience4j");
+            if (dc10 != null) {
+                JsonObject json = (JsonObject) dc10.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("resilience4j", json);
+                }
+            }
+            DevConsole dc11 = dcr.resolveById("fault-tolerance");
+            if (dc11 != null) {
+                JsonObject json = (JsonObject) dc11.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("fault-tolerance", json);
+                }
+            }
+            DevConsole dc12 = dcr.resolveById("circuit-breaker");
             if (dc12 != null) {
-                JsonObject json = (JsonObject) dc12.call(DevConsole.MediaType.JSON, Map.of("dump", "true"));
-                JsonArray arr = json.getCollection("traces");
-                // filter based on last uid
-                if (traceFilePos > 0) {
-                    arr.removeIf(r -> {
-                        JsonObject jo = (JsonObject) r;
-                        return jo.getLong("uid") <= traceFilePos;
-                    });
-                }
-                if (arr != null && !arr.isEmpty()) {
-                    // store traces in a special file
-                    LOG.trace("Updating trace file: {}", traceFile);
-                    String data = json.toJson() + System.lineSeparator();
-                    IOHelper.appendText(data, traceFile);
-                    json = arr.getMap(arr.size() - 1);
-                    traceFilePos = json.getLong("uid");
+                JsonObject json = (JsonObject) dc12.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("circuit-breaker", json);
                 }
             }
-        } catch (Exception e) {
-            // ignore
-            LOG.trace("Error updating trace file: {} due to: {}. This exception is ignored.",
-                    traceFile, e.getMessage(), e);
-        }
-        try {
-            DevConsole dc13 = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
-                    .resolveById("debug");
+            DevConsole dc13 = dcr.resolveById("trace");
             if (dc13 != null) {
                 JsonObject json = (JsonObject) dc13.call(DevConsole.MediaType.JSON);
-                // store debugs in a special file
-                LOG.trace("Updating debug file: {}", debugFile);
-                String data = json.toJson() + System.lineSeparator();
-                IOHelper.writeText(data, debugFile);
+                if (json != null && !json.isEmpty()) {
+                    root.put("trace", json);
+                }
             }
-        } catch (Exception e) {
-            // ignore
-            LOG.trace("Error updating debug file: {} due to: {}. This exception is ignored.",
-                    debugFile, e.getMessage(), e);
-        }
-        try {
-            DevConsole dc13b = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
-                    .resolveById("message-history");
-            if (dc13b != null) {
-                JsonObject json = (JsonObject) dc13b.call(DevConsole.MediaType.JSON);
-                // store replays in a special file
-                LOG.trace("Updating message-history file: {}", messageHistoryFile);
-                String data = json.toJson() + System.lineSeparator();
-                IOHelper.writeText(data, messageHistoryFile);
-            }
-        } catch (Exception e) {
-            // ignore
-            LOG.trace("Error updating message-history file: {} due to: {}. This exception is ignored.",
-                    messageHistoryFile, e.getMessage(), e);
-        }
-        try {
-            DevConsole dc14 = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class)
-                    .resolveById("receive");
+            DevConsole dc14 = dcr.resolveById("consumer");
             if (dc14 != null) {
-                JsonObject json = (JsonObject) dc14.call(DevConsole.MediaType.JSON, Map.of("dump", "true"));
-                JsonArray arr = json.getCollection("messages");
-                // filter based on last uid
-                if (receiveFilePos > 0) {
-                    arr.removeIf(r -> {
-                        JsonObject jo = (JsonObject) r;
-                        return jo.getLong("uid") <= receiveFilePos;
-                    });
-                }
-                if (arr != null && !arr.isEmpty()) {
-                    // store messages in a special file
-                    LOG.trace("Updating receive file: {}", receiveFile);
-                    String data = json.toJson() + System.lineSeparator();
-                    IOHelper.appendText(data, receiveFile);
-                    json = arr.getMap(arr.size() - 1);
-                    receiveFilePos = json.getLong("uid");
+                JsonObject json = (JsonObject) dc14.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("consumers", json);
                 }
             }
-        } catch (Exception e) {
-            // ignore
-            LOG.trace("Error updating receive file: {} due to: {}. This exception is ignored.",
-                    receiveFile, e.getMessage(), e);
+            DevConsole dc14b = dcr.resolveById("producer");
+            if (dc14b != null) {
+                JsonObject json = (JsonObject) dc14b.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("producers", json);
+                }
+            }
+            DevConsole dc14c = dcr.resolveById("route-controller");
+            if (dc14c != null) {
+                JsonObject json
+                        = (JsonObject) dc14c.call(DevConsole.MediaType.JSON, Map.of("stacktrace", "false"));
+                if (json != null && !json.isEmpty()) {
+                    root.put("routeController", json);
+                }
+            }
+            DevConsole dc15 = dcr.resolveById("variables");
+            if (dc15 != null) {
+                JsonObject json = (JsonObject) dc15.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("variables", json);
+                }
+            }
+            DevConsole dc16 = dcr.resolveById("transformers");
+            if (dc16 != null) {
+                JsonObject json = (JsonObject) dc16.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("transformers", json);
+                }
+            }
+            DevConsole dc17 = dcr.resolveById("service");
+            if (dc17 != null) {
+                JsonObject json = (JsonObject) dc17.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("services", json);
+                }
+            }
+            DevConsole dc18 = dcr.resolveById("platform-http");
+            if (dc18 != null) {
+                JsonObject json = (JsonObject) dc18.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("platform-http", json);
+                }
+            }
+            DevConsole dc19 = dcr.resolveById("rest");
+            if (dc19 != null) {
+                JsonObject json = (JsonObject) dc19.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("rests", json);
+                }
+            }
+            DevConsole dc20 = dcr.resolveById("kafka");
+            if (dc20 != null) {
+                JsonObject json = (JsonObject) dc20.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("kafka", json);
+                }
+            }
+            DevConsole dc21 = dcr.resolveById("properties");
+            if (dc21 != null) {
+                JsonObject json = (JsonObject) dc21.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("properties", json);
+                }
+            }
+            DevConsole dc22 = dcr.resolveById("main-configuration");
+            if (dc22 != null) {
+                JsonObject json = (JsonObject) dc22.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("main-configuration", json);
+                }
+            }
+            DevConsole dc23 = dcr.resolveById("receive");
+            if (dc23 != null) {
+                JsonObject json = (JsonObject) dc23.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("receive", json);
+                }
+            }
+            DevConsole dc24 = dcr.resolveById("internal-tasks");
+            if (dc24 != null) {
+                JsonObject json = (JsonObject) dc24.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("internal-tasks", json);
+                }
+            }
+            DevConsole dc25 = dcr.resolveById("groovy");
+            if (dc25 != null) {
+                JsonObject json = (JsonObject) dc25.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("groovy", json);
+                }
+            }
+            DevConsole dc26 = dcr.resolveById("errors");
+            if (dc26 != null) {
+                JsonObject json = (JsonObject) dc26.call(DevConsole.MediaType.JSON,
+                        Map.of("stackTrace", "true"));
+                if (json != null && !json.isEmpty()) {
+                    // only include metadata in status file (full error data is in the error file)
+                    JsonObject summary = new JsonObject();
+                    summary.put("enabled", json.get("enabled"));
+                    summary.put("size", json.get("size"));
+                    summary.put("maximumEntries", json.get("maximumEntries"));
+                    summary.put("timeToLive", json.get("timeToLive"));
+                    root.put("errors", summary);
+                }
+            }
+            DevConsole dc27 = dcr.resolveById("datasource");
+            if (dc27 != null) {
+                JsonObject json = (JsonObject) dc27.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("dataSources", json);
+                }
+            }
+            DevConsole dc28 = dcr.resolveById("sql-trace");
+            if (dc28 != null) {
+                JsonObject json = (JsonObject) dc28.call(DevConsole.MediaType.JSON);
+                if (json != null && !json.isEmpty()) {
+                    root.put("sqlTrace", json);
+                }
+            }
+            JsonArray consoleIds = new JsonArray();
+            consoleIds.addAll(dcr.getConsoleIDs());
+            root.put("devConsoles", consoleIds);
         }
+        boolean hasBrowseable = false;
+        for (Endpoint ep : getCamelContext().getEndpoints()) {
+            if (ep instanceof BrowsableEndpoint) {
+                hasBrowseable = true;
+                break;
+            }
+        }
+        root.put("hasBrowseableEndpoints", hasBrowseable);
+        // various details
+        JsonObject mem = collectMemory();
+        if (mem != null) {
+            root.put("memory", mem);
+        }
+        JsonObject cl = collectClassLoading();
+        if (cl != null) {
+            root.put("classLoading", cl);
+        }
+        JsonObject threads = collectThreads();
+        if (threads != null) {
+            root.put("threads", threads);
+        }
+        JsonObject gc = collectGC();
+        if (gc != null) {
+            root.put("gc", gc);
+        }
+        JsonObject vaults = collectVaults();
+        if (!vaults.isEmpty()) {
+            root.put("vaults", vaults);
+        }
+        return root;
+    }
+
+    @Override
+    public JsonObject runtime() throws Exception {
+        JsonObject rc = new JsonObject();
+        String dir = new File(".").getAbsolutePath();
+        dir = FileUtil.onlyPath(dir);
+        rc.put("pid", ProcessHandle.current().pid());
+        rc.put("directory", dir);
+        ProcessHandle.current().info().user().ifPresent(u -> rc.put("user", u));
+        rc.put("platform", platform);
+        if (platformVersion != null) {
+            rc.put("platformVersion", platformVersion);
+        }
+        if (mainClass != null) {
+            rc.put("mainClass", mainClass);
+        }
+        RuntimeMXBean mb = ManagementFactory.getRuntimeMXBean();
+        if (mb != null) {
+            rc.put("javaVersion", mb.getVmVersion());
+            rc.put("javaVendor", mb.getVmVendor());
+            rc.put("javaVmName", mb.getVmName());
+        }
+        String readmeFiles = camelContext.getPropertiesComponent()
+                .resolveProperty("camel.jbang.readmeFiles").orElse(null);
+        if (readmeFiles != null) {
+            rc.put("readmeFiles", readmeFiles);
+        }
+        return rc;
+    }
+
+    @Override
+    public JsonObject trace() throws Exception {
+        return callConsole("trace", Map.of("dump", "true"));
+    }
+
+    @Override
+    public JsonObject debug() throws Exception {
+        return callConsole("debug", Map.of());
+    }
+
+    @Override
+    public JsonObject messageHistory() throws Exception {
+        return callConsole("message-history", Map.of());
+    }
+
+    @Override
+    public JsonObject errors() throws Exception {
+        return callConsole("errors", Map.of("stackTrace", "true"));
+    }
+
+    @Override
+    public JsonObject receive() throws Exception {
+        return callConsole("receive", Map.of("dump", "true"));
+    }
+
+    @Override
+    public JsonObject activity() throws Exception {
+        return callConsole("activity", Map.of());
+    }
+
+    private JsonObject callConsole(String id, Map<String, Object> options) {
+        DevConsoleRegistry dcr = camelContext.getCamelContextExtension().getContextPlugin(DevConsoleRegistry.class);
+        DevConsole dc = dcr != null ? dcr.resolveById(id) : null;
+        if (dc == null) {
+            return null;
+        }
+        return options.isEmpty()
+                ? (JsonObject) dc.call(DevConsole.MediaType.JSON) : (JsonObject) dc.call(DevConsole.MediaType.JSON, options);
     }
 
     private JsonObject collectMemory() {
@@ -1416,9 +1706,25 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             root.put("heapMemoryMax", mb.getHeapMemoryUsage().getMax());
             root.put("nonHeapMemoryUsed", mb.getNonHeapMemoryUsage().getUsed());
             root.put("nonHeapMemoryCommitted", mb.getNonHeapMemoryUsage().getCommitted());
+            collectMemoryPools(root);
             return root;
         }
         return null;
+    }
+
+    private void collectMemoryPools(JsonObject root) {
+        for (MemoryPoolMXBean pool : ManagementFactory.getMemoryPoolMXBeans()) {
+            String name = pool.getName().toLowerCase(Locale.ROOT);
+            if (pool.getType() == MemoryType.HEAP && (name.contains("old") || name.contains("tenured"))) {
+                root.put("oldGenUsed", pool.getUsage().getUsed());
+                root.put("oldGenCommitted", pool.getUsage().getCommitted());
+                root.put("oldGenMax", pool.getUsage().getMax());
+            } else if (name.contains("metaspace")) {
+                root.put("metaspaceUsed", pool.getUsage().getUsed());
+                root.put("metaspaceCommitted", pool.getUsage().getCommitted());
+                root.put("metaspaceMax", pool.getUsage().getMax());
+            }
+        }
     }
 
     private JsonObject collectClassLoading() {
@@ -1459,6 +1765,19 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
             return root;
         }
         return null;
+    }
+
+    private void doActionVaultRefreshTask() {
+        PeriodTaskScheduler scheduler = PluginHelper.getPeriodTaskScheduler(camelContext);
+        if (scheduler == null) {
+            return;
+        }
+        for (Runnable task : scheduler.getTasks()) {
+            PeriodicTask pt = task.getClass().getAnnotation(PeriodicTask.class);
+            if (pt != null && pt.value().endsWith("-refresh")) {
+                task.run();
+            }
+        }
     }
 
     private JsonObject collectVaults() {
@@ -1521,58 +1840,8 @@ public class LocalCliConnector extends ServiceSupport implements CliConnector, C
 
     @Override
     protected void doStop() throws Exception {
-        // cleanup
-        if (lockFile != null) {
-            FileUtil.deleteFile(lockFile);
-        }
-        if (statusFile != null) {
-            FileUtil.deleteFile(statusFile);
-        }
-        if (actionFile != null) {
-            FileUtil.deleteFile(actionFile);
-        }
-        if (outputFile != null) {
-            FileUtil.deleteFile(outputFile);
-        }
-        if (traceFile != null) {
-            FileUtil.deleteFile(traceFile);
-        }
-        if (messageHistoryFile != null) {
-            FileUtil.deleteFile(messageHistoryFile);
-        }
-        if (debugFile != null) {
-            FileUtil.deleteFile(debugFile);
-        }
-        if (receiveFile != null) {
-            FileUtil.deleteFile(receiveFile);
-        }
-        if (executor != null) {
-            camelContext.getExecutorServiceManager().shutdown(executor);
-            executor = null;
-        }
+        ServiceHelper.stopService(transport);
         ServiceHelper.stopService(producer, consumer);
-    }
-
-    private static String getPid() {
-        return String.valueOf(ProcessHandle.current().pid());
-    }
-
-    private static File createLockFile(String name) {
-        File answer = null;
-        if (name != null) {
-            File dir = new File(HomeHelper.resolveHomeDir(), ".camel");
-            try {
-                dir.mkdirs();
-                answer = new File(dir, name);
-                if (!answer.exists()) {
-                    answer.createNewFile();
-                }
-                answer.deleteOnExit();
-            } catch (Exception e) {
-                answer = null;
-            }
-        }
-        return answer;
     }
 
 }

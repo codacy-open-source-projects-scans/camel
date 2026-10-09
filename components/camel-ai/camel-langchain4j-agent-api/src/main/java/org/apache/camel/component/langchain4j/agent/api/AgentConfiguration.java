@@ -20,13 +20,24 @@ package org.apache.camel.component.langchain4j.agent.api;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.Executor;
 import java.util.function.BiPredicate;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.moderation.ModerationModel;
 import dev.langchain4j.rag.RetrievalAugmentor;
+import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.tool.ToolArgumentsErrorHandler;
+import dev.langchain4j.service.tool.ToolExecutionErrorHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +59,7 @@ import org.slf4j.LoggerFactory;
  * <li><strong>Retrieval Augmentor:</strong> For RAG (Retrieval-Augmented Generation) capabilities</li>
  * <li><strong>Input Guardrails:</strong> Security filters applied to incoming messages</li>
  * <li><strong>Output Guardrails:</strong> Security filters applied to agent responses</li>
+ * <li><strong>Moderation Model:</strong> Pre-moderation of user message text before the chat model is invoked</li>
  * <li><strong>Custom Tools:</strong> Custom LangChain4j tools with @Tool annotations</li>
  * <li><strong>MCP Clients:</strong> Model Context Protocol clients for external tool integration</li>
  * <li><strong>MCP Tool Filters:</strong> Filters for controlling which MCP tools are available</li>
@@ -59,6 +71,7 @@ public class AgentConfiguration {
     private static final Logger LOG = LoggerFactory.getLogger(AgentConfiguration.class);
 
     private ChatModel chatModel;
+    private ModerationModel moderationModel;
     private ChatMemoryProvider chatMemoryProvider;
     private RetrievalAugmentor retrievalAugmentor;
     private List<Class<?>> inputGuardrailClasses;
@@ -66,6 +79,14 @@ public class AgentConfiguration {
     private List<Object> customTools; // Custom LangChain4j tools
     private List<McpClient> mcpClients; // MCP clients for external tool integration
     private BiPredicate<McpClient, ToolSpecification> mcpToolProviderFilter; // Filter for MCP tools
+    private int maxToolCallingRoundTrips; // Max number of tool-calling round trips (0 = not set)
+    private Function<ToolExecutionRequest, ToolExecutionResultMessage> hallucinatedToolNameStrategy;
+    private ToolExecutionErrorHandler toolExecutionErrorHandler;
+    private ToolArgumentsErrorHandler toolArgumentsErrorHandler;
+    private Boolean compensateOnToolErrors;
+    private Boolean executeToolsConcurrently;
+    private Executor executeToolsExecutor;
+    private Consumer<AiServices<?>> aiServicesCustomizer;
 
     /**
      * Gets the configured chat model.
@@ -84,6 +105,30 @@ public class AgentConfiguration {
      */
     public AgentConfiguration withChatModel(ChatModel chatModel) {
         this.chatModel = chatModel;
+        return this;
+    }
+
+    /**
+     * Gets the configured moderation model.
+     *
+     * @return the moderation model instance, or {@code null} if not configured
+     * @since  4.23
+     */
+    public ModerationModel getModerationModel() {
+        return moderationModel;
+    }
+
+    /**
+     * Sets the LangChain4j moderation model for content policy checks on agent user messages. When configured, flagged
+     * user input raises {@code ModerationException} before the chat model is invoked, so tools and memory are not
+     * updated for rejected input.
+     *
+     * @param  moderationModel the moderation model (for example OpenAI or Mistral moderation APIs)
+     * @return                 this configuration instance for method chaining
+     * @since                  4.23
+     */
+    public AgentConfiguration withModerationModel(ModerationModel moderationModel) {
+        this.moderationModel = moderationModel;
         return this;
     }
 
@@ -271,7 +316,7 @@ public class AgentConfiguration {
                 .filter(name -> !name.isEmpty())
                 .map(AgentConfiguration::loadGuardrailClass)
                 .filter(clazz -> clazz != null)
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
     }
 
     /**
@@ -342,6 +387,223 @@ public class AgentConfiguration {
      */
     public AgentConfiguration withMcpToolProviderFilter(BiPredicate<McpClient, ToolSpecification> mcpToolProviderFilter) {
         this.mcpToolProviderFilter = mcpToolProviderFilter;
+        return this;
+    }
+
+    /**
+     * Gets the maximum number of tool-calling round trips allowed.
+     *
+     * @return the maximum round trips, or 0 if not configured
+     */
+    public int getMaxToolCallingRoundTrips() {
+        return maxToolCallingRoundTrips;
+    }
+
+    /**
+     * Sets the maximum number of tool-calling round trips the LLM can make per request. This limits how many times the
+     * model can invoke tools before a final response must be produced.
+     *
+     * @param  maxToolCallingRoundTrips the maximum number of round trips (must be positive)
+     * @return                          this configuration instance for method chaining
+     */
+    public AgentConfiguration withMaxToolCallingRoundTrips(int maxToolCallingRoundTrips) {
+        this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
+        return this;
+    }
+
+    /**
+     * Gets the strategy for handling hallucinated (non-existent) tool names.
+     *
+     * @return the hallucinated tool name strategy, or {@code null} if not configured
+     */
+    public Function<ToolExecutionRequest, ToolExecutionResultMessage> getHallucinatedToolNameStrategy() {
+        return hallucinatedToolNameStrategy;
+    }
+
+    /**
+     * Sets the strategy for handling cases where the LLM hallucinates a tool name that does not exist. The function
+     * receives the invalid tool execution request and returns a result message to send back to the LLM.
+     *
+     * @param  hallucinatedToolNameStrategy the strategy function for handling hallucinated tool names
+     * @return                              this configuration instance for method chaining
+     */
+    public AgentConfiguration withHallucinatedToolNameStrategy(
+            Function<ToolExecutionRequest, ToolExecutionResultMessage> hallucinatedToolNameStrategy) {
+        this.hallucinatedToolNameStrategy = hallucinatedToolNameStrategy;
+        return this;
+    }
+
+    /**
+     * Gets the error handler for tool execution failures.
+     *
+     * @return the tool execution error handler, or {@code null} if not configured
+     */
+    public ToolExecutionErrorHandler getToolExecutionErrorHandler() {
+        return toolExecutionErrorHandler;
+    }
+
+    /**
+     * Sets the error handler invoked when a tool execution throws an exception.
+     *
+     * @param  toolExecutionErrorHandler the handler for tool execution errors
+     * @return                           this configuration instance for method chaining
+     */
+    public AgentConfiguration withToolExecutionErrorHandler(ToolExecutionErrorHandler toolExecutionErrorHandler) {
+        this.toolExecutionErrorHandler = toolExecutionErrorHandler;
+        return this;
+    }
+
+    /**
+     * Gets the error handler for tool argument parsing failures.
+     *
+     * @return the tool arguments error handler, or {@code null} if not configured
+     */
+    public ToolArgumentsErrorHandler getToolArgumentsErrorHandler() {
+        return toolArgumentsErrorHandler;
+    }
+
+    /**
+     * Sets the error handler invoked when tool arguments cannot be parsed or validated.
+     *
+     * @param  toolArgumentsErrorHandler the handler for tool argument errors
+     * @return                           this configuration instance for method chaining
+     */
+    public AgentConfiguration withToolArgumentsErrorHandler(ToolArgumentsErrorHandler toolArgumentsErrorHandler) {
+        this.toolArgumentsErrorHandler = toolArgumentsErrorHandler;
+        return this;
+    }
+
+    /**
+     * Gets whether tool error compensation is enabled.
+     *
+     * @return {@code true} if enabled, {@code false} if disabled, or {@code null} if not configured
+     */
+    public Boolean getCompensateOnToolErrors() {
+        return compensateOnToolErrors;
+    }
+
+    /**
+     * Sets whether the agent should attempt to compensate when tool execution errors occur by sending the error back to
+     * the LLM for recovery.
+     *
+     * @param  compensateOnToolErrors {@code true} to enable compensation, {@code false} to disable
+     * @return                        this configuration instance for method chaining
+     */
+    public AgentConfiguration withCompensateOnToolErrors(Boolean compensateOnToolErrors) {
+        this.compensateOnToolErrors = compensateOnToolErrors;
+        return this;
+    }
+
+    /**
+     * Gets whether concurrent tool execution is enabled for this agent.
+     *
+     * @return {@code true} if enabled, {@code false} if explicitly disabled, or {@code null} if not configured
+     */
+    public Boolean getExecuteToolsConcurrently() {
+        return executeToolsConcurrently;
+    }
+
+    /**
+     * Gets the executor used for concurrent tool execution, if configured.
+     *
+     * @return the executor, or {@code null} if not configured
+     */
+    public Executor getExecuteToolsExecutor() {
+        return executeToolsExecutor;
+    }
+
+    /**
+     * Enables parallel execution of all tool calls within a single LLM round trip via LangChain4j's
+     * {@code executeToolsConcurrently()} mode. Requires Camel route tools to run on isolated exchange copies (see
+     * {@code LangChain4jAgentProducer}).
+     * <p>
+     * When no explicit executor is supplied, the langchain4j-agent component resolves a managed thread pool from the
+     * Camel {@code ExecutorServiceManager} at startup.
+     *
+     * @return this configuration instance for method chaining
+     */
+    public AgentConfiguration withExecuteToolsConcurrently() {
+        this.executeToolsConcurrently = true;
+        return this;
+    }
+
+    /**
+     * Enables parallel tool execution using the given executor.
+     *
+     * @param  executeToolsExecutor the executor for concurrent tool invocations (must not be {@code null}; use
+     *                              {@link #withExecuteToolsConcurrently()} for the managed executor)
+     * @return                      this configuration instance for method chaining
+     * @throws NullPointerException if {@code executeToolsExecutor} is {@code null}
+     */
+    public AgentConfiguration withExecuteToolsConcurrently(Executor executeToolsExecutor) {
+        this.executeToolsConcurrently = true;
+        this.executeToolsExecutor = Objects.requireNonNull(executeToolsExecutor, "executeToolsExecutor");
+        return this;
+    }
+
+    /**
+     * Sets whether concurrent tool execution is enabled.
+     *
+     * @param  executeToolsConcurrently {@code true} to enable, {@code false} to disable, or {@code null} to leave unset
+     * @return                          this configuration instance for method chaining
+     * @since                           4.23
+     */
+    public AgentConfiguration withExecuteToolsConcurrentlyEnabled(Boolean executeToolsConcurrently) {
+        this.executeToolsConcurrently = executeToolsConcurrently;
+        if (!Boolean.TRUE.equals(executeToolsConcurrently)) {
+            this.executeToolsExecutor = null;
+        }
+        return this;
+    }
+
+    /**
+     * Creates a shallow copy of this configuration. Used by the langchain4j-agent producer to attach a managed tool
+     * executor without mutating registry-held configuration beans.
+     *
+     * @return a new configuration instance with the same settings
+     * @since  4.23
+     */
+    public AgentConfiguration duplicate() {
+        AgentConfiguration copy = new AgentConfiguration();
+        copy.chatModel = chatModel;
+        copy.moderationModel = moderationModel;
+        copy.chatMemoryProvider = chatMemoryProvider;
+        copy.retrievalAugmentor = retrievalAugmentor;
+        copy.inputGuardrailClasses = inputGuardrailClasses;
+        copy.outputGuardrailClasses = outputGuardrailClasses;
+        copy.customTools = customTools;
+        copy.mcpClients = mcpClients;
+        copy.mcpToolProviderFilter = mcpToolProviderFilter;
+        copy.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
+        copy.hallucinatedToolNameStrategy = hallucinatedToolNameStrategy;
+        copy.toolExecutionErrorHandler = toolExecutionErrorHandler;
+        copy.toolArgumentsErrorHandler = toolArgumentsErrorHandler;
+        copy.compensateOnToolErrors = compensateOnToolErrors;
+        copy.executeToolsConcurrently = executeToolsConcurrently;
+        copy.executeToolsExecutor = executeToolsExecutor;
+        copy.aiServicesCustomizer = aiServicesCustomizer;
+        return copy;
+    }
+
+    /**
+     * Gets the custom AiServices builder customizer.
+     *
+     * @return the customizer, or {@code null} if not configured
+     */
+    public Consumer<AiServices<?>> getAiServicesCustomizer() {
+        return aiServicesCustomizer;
+    }
+
+    /**
+     * Sets a customizer callback that is invoked on the LangChain4j {@link AiServices} builder after all standard
+     * configuration has been applied but before {@code build()} is called. This provides an escape hatch for
+     * configuring any AiServices builder option that is not directly exposed on this configuration class.
+     *
+     * @param  aiServicesCustomizer the customizer to apply to the AiServices builder
+     * @return                      this configuration instance for method chaining
+     */
+    public AgentConfiguration withAiServicesCustomizer(Consumer<AiServices<?>> aiServicesCustomizer) {
+        this.aiServicesCustomizer = aiServicesCustomizer;
         return this;
     }
 

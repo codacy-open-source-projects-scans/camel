@@ -21,9 +21,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.component.nats.NatsConstants;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Flaky on GitHub Actions")
 public class NatsConsumerReplyToIT extends NatsITSupport {
 
     @EndpointInject("mock:result")
@@ -35,13 +33,17 @@ public class NatsConsumerReplyToIT extends NatsITSupport {
     @Test
     public void testReplyTo() throws Exception {
         mockResultEndpoint.expectedBodiesReceived("World");
-        mockResultEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "test");
+        mockResultEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "consumer-replyto");
         mockReplyEndpoint.expectedBodiesReceived("Bye World");
-        mockReplyEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "myReplyQueue");
+        mockReplyEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "consumer-replyto-reply");
+
+        waitForNatsConsumers(2);
 
         template.sendBody("direct:send", "World");
 
+        mockResultEndpoint.setAssertPeriod(5000);
         mockResultEndpoint.assertIsSatisfied();
+        mockReplyEndpoint.setAssertPeriod(5000);
         mockReplyEndpoint.assertIsSatisfied();
     }
 
@@ -51,14 +53,14 @@ public class NatsConsumerReplyToIT extends NatsITSupport {
             @Override
             public void configure() {
                 from("direct:send")
-                        .to("nats:test?replySubject=myReplyQueue&flushConnection=true");
+                        .to("nats:consumer-replyto?replySubject=consumer-replyto-reply&flushConnection=true");
 
-                from("nats:test?flushConnection=true")
+                from("nats:consumer-replyto?flushConnection=true&exchangePattern=InOut")
                         .to(mockResultEndpoint)
                         .convertBodyTo(String.class)
                         .setBody().simple("Bye ${body}");
 
-                from("nats:myReplyQueue")
+                from("nats:consumer-replyto-reply")
                         .to("mock:reply");
             }
         };

@@ -19,7 +19,11 @@ package org.apache.camel.impl.console;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -28,14 +32,26 @@ public class ConsoleHelperTest {
 
     @Test
     public void testExtractSourceLocationLineNumber() {
-        Integer lineNumber = ConsoleHelper.extractSourceLocationLineNumber("file.java:42");
+        Integer lineNumber = ConsoleHelper.extractSourceLocationLineNumber("cheese.java:42");
+        Assertions.assertEquals(42, lineNumber);
+
+        lineNumber = ConsoleHelper.extractSourceLocationLineNumber("file:cheese.java:42");
         Assertions.assertEquals(42, lineNumber);
     }
 
     @Test
     public void testExtractSourceLocationLineNumberNoNumber() {
-        Integer lineNumber = ConsoleHelper.extractSourceLocationLineNumber("file.java");
+        Integer lineNumber = ConsoleHelper.extractSourceLocationLineNumber("cheese.java");
         Assertions.assertNull(lineNumber);
+    }
+
+    @Test
+    public void testExtractSourceLocationNoLineNumber() {
+        String source = ConsoleHelper.extractSourceLocationNoLineNumber("cheese.java:42");
+        Assertions.assertEquals("cheese.java", source);
+
+        source = ConsoleHelper.extractSourceLocationNoLineNumber("file:cheese.java:42");
+        Assertions.assertEquals("file:cheese.java", source);
     }
 
     @Test
@@ -55,21 +71,21 @@ public class ConsoleHelperTest {
         String source = "line one\nline two\nline three";
         StringReader reader = new StringReader(source);
 
-        List<JsonObject> result = ConsoleHelper.loadSourceAsJson(reader, 2);
+        JsonArray result = ConsoleHelper.loadSourceAsJson(reader, 2);
         Assertions.assertNotNull(result);
         Assertions.assertEquals(3, result.size());
 
-        JsonObject line1 = result.get(0);
+        JsonObject line1 = (JsonObject) result.get(0);
         Assertions.assertEquals(1, line1.getInteger("line"));
         Assertions.assertEquals("line one", line1.getString("code"));
         Assertions.assertNull(line1.get("match"));
 
-        JsonObject line2 = result.get(1);
+        JsonObject line2 = (JsonObject) result.get(1);
         Assertions.assertEquals(2, line2.getInteger("line"));
         Assertions.assertEquals("line two", line2.getString("code"));
         Assertions.assertTrue(line2.getBoolean("match"));
 
-        JsonObject line3 = result.get(2);
+        JsonObject line3 = (JsonObject) result.get(2);
         Assertions.assertEquals(3, line3.getInteger("line"));
         Assertions.assertEquals("line three", line3.getString("code"));
         Assertions.assertNull(line3.get("match"));
@@ -80,12 +96,13 @@ public class ConsoleHelperTest {
         String source = "line one\nline two";
         StringReader reader = new StringReader(source);
 
-        List<JsonObject> result = ConsoleHelper.loadSourceAsJson(reader, null);
+        JsonArray result = ConsoleHelper.loadSourceAsJson(reader, null);
         Assertions.assertNotNull(result);
         Assertions.assertEquals(2, result.size());
 
         // No match should be set when lineNumber is null
-        for (JsonObject jo : result) {
+        for (Object obj : result) {
+            JsonObject jo = (JsonObject) obj;
             Assertions.assertNull(jo.get("match"));
         }
     }
@@ -94,14 +111,47 @@ public class ConsoleHelperTest {
     public void testLoadSourceAsJsonFromReaderEmpty() {
         StringReader reader = new StringReader("");
 
-        List<JsonObject> result = ConsoleHelper.loadSourceAsJson(reader, 1);
+        JsonArray result = ConsoleHelper.loadSourceAsJson(reader, 1);
         Assertions.assertNull(result);
     }
 
     @Test
     public void testLoadSourceAsJsonNullReader() {
         Reader nullReader = null;
-        List<JsonObject> result = ConsoleHelper.loadSourceAsJson(nullReader, 1);
+        JsonArray result = ConsoleHelper.loadSourceAsJson(nullReader, 1);
         Assertions.assertNull(result);
+    }
+
+    @Test
+    public void testResizeRingKeepsNewestEntries() {
+        // 5 slots, written 7 times: next slot is 2, oldest to newest is 3..7
+        String[] ring = { "6", "7", "3", "4", "5" };
+
+        String[] larger = ConsoleHelper.resize(ring, 2, 8);
+        Assertions.assertArrayEquals(new String[] { null, null, null, "3", "4", "5", "6", "7" }, larger);
+
+        String[] smaller = ConsoleHelper.resize(ring, 2, 3);
+        Assertions.assertArrayEquals(new String[] { "5", "6", "7" }, smaller);
+    }
+
+    @Test
+    public void testNextSlotAfterResize() {
+        AtomicInteger pos = new AtomicInteger(7);
+        // a position from a larger ring buffer stays within the smaller one
+        Assertions.assertEquals(1, ConsoleHelper.nextSlot(pos, 3));
+        Assertions.assertEquals(2, ConsoleHelper.nextSlot(pos, 3));
+        Assertions.assertEquals(0, ConsoleHelper.nextSlot(pos, 3));
+    }
+
+    @Test
+    public void testResizeQueueKeepsNewestElements() {
+        Queue<Integer> queue = new LinkedBlockingQueue<>(5);
+        for (int i = 1; i <= 7; i++) {
+            ConsoleHelper.offerLast(queue, i);
+        }
+        Assertions.assertEquals(List.of(3, 4, 5, 6, 7), List.copyOf(queue));
+
+        Assertions.assertEquals(List.of(5, 6, 7), List.copyOf(ConsoleHelper.resize(queue, 3)));
+        Assertions.assertEquals(List.of(3, 4, 5, 6, 7), List.copyOf(ConsoleHelper.resize(queue, 10)));
     }
 }

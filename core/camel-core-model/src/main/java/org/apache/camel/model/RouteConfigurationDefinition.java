@@ -36,7 +36,8 @@ import org.apache.camel.spi.ResourceAware;
 /**
  * Reusable configuration for Camel route(s).
  */
-@Metadata(label = "configuration")
+@Metadata(label = "configuration",
+          description = "Defines reusable configuration that is automatically applied to matching routes, such as shared error handling or interceptors")
 @XmlRootElement(name = "routeConfiguration")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class RouteConfigurationDefinition extends OptionalIdentifiedDefinition<RouteConfigurationDefinition>
@@ -45,19 +46,26 @@ public class RouteConfigurationDefinition extends OptionalIdentifiedDefinition<R
     @XmlTransient
     private Resource resource;
     @XmlElement
+    @Metadata(description = "Error handler to use for routes that have not already been configured with an error handler.")
     private ErrorHandlerDefinition errorHandler;
     @XmlElement(name = "intercept")
+    @Metadata(description = "Interceptors that intercept every processing step.")
     private List<InterceptDefinition> intercepts = new ArrayList<>();
     @XmlElement(name = "interceptFrom")
+    @Metadata(description = "Interceptors that intercept incoming messages on route inputs.")
     private List<InterceptFromDefinition> interceptFroms = new ArrayList<>();
     @XmlElement(name = "interceptSendToEndpoint")
+    @Metadata(description = "Interceptors that intercept messages being sent to an endpoint.")
     private List<InterceptSendToEndpointDefinition> interceptSendTos = new ArrayList<>();
     @XmlElement(name = "onException")
+    @Metadata(description = "Exception clauses for catching and handling certain exceptions.")
     private List<OnExceptionDefinition> onExceptions = new ArrayList<>();
     @XmlElement(name = "onCompletion")
+    @Metadata(description = "On completion callbacks for custom routing when the exchange is complete.")
     private List<OnCompletionDefinition> onCompletions = new ArrayList<>();
     @XmlAttribute
-    @Metadata(label = "advanced")
+    @Metadata(label = "advanced",
+              description = "Predicate in simple language to evaluate whether this route configuration should be included or not.")
     private String precondition;
 
     public RouteConfigurationDefinition() {
@@ -136,19 +144,11 @@ public class RouteConfigurationDefinition extends OptionalIdentifiedDefinition<R
         this.interceptSendTos = interceptSendTos;
     }
 
-    /**
-     * The predicate of the precondition in simple language to evaluate in order to determine if this route
-     * configuration should be included or not.
-     */
     @Override
     public String getPrecondition() {
         return precondition;
     }
 
-    /**
-     * The predicate of the precondition in simple language to evaluate in order to determine if this route
-     * configuration should be included or not.
-     */
     @Override
     public void setPrecondition(String precondition) {
         this.precondition = precondition;
@@ -233,8 +233,18 @@ public class RouteConfigurationDefinition extends OptionalIdentifiedDefinition<R
     public OnCompletionDefinition onCompletion() {
         OnCompletionDefinition answer = new OnCompletionDefinition();
         answer.setRouteConfiguration(this);
-        // is global scoped by default
-        answer.setRouteScoped(false);
+        if (getId() == null || "*".equals(getId())) {
+            // route configuration with no id (or wildcard id "*") applies globally to all routes,
+            // so the onCompletion must not be route-scoped: the de-duplication
+            // in OnCompletionProcessor.shouldSkip() relies on routeScoped=false
+            // to fire only once per exchange (for the consumer route).
+            answer.setRouteScoped(false);
+        }
+        // named route configurations keep routeScoped=true (the model default) so that
+        // OnCompletionProcessor uses the route-visit tracking mechanism and fires correctly
+        // even when the opted-in route is called indirectly from a consumer route
+        // (e.g. REST DSL → direct:). A per-configuration dedup key prevents double-firing
+        // when multiple routes share the same named configuration.
         onCompletions.add(answer);
         return answer;
     }

@@ -17,6 +17,7 @@
 package org.apache.camel.test.infra.openai.mock;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,6 +35,9 @@ import com.sun.net.httpserver.HttpExchange;
  * Builder class for creating different types of OpenAI API mock responses.
  */
 public class ResponseBuilder {
+    static final int DEFAULT_PROMPT_TOKENS = 10;
+    static final int DEFAULT_COMPLETION_TOKENS = 5;
+
     private final ObjectMapper objectMapper;
 
     public ResponseBuilder(ObjectMapper objectMapper) {
@@ -41,27 +45,122 @@ public class ResponseBuilder {
     }
 
     public String createSimpleTextResponse(String content) throws Exception {
+        return createSimpleTextResponse(content, null);
+    }
+
+    public String createSimpleTextResponse(String content, String reasoningContent) throws Exception {
+        return createSimpleTextResponse(content, reasoningContent, DEFAULT_PROMPT_TOKENS, DEFAULT_COMPLETION_TOKENS);
+    }
+
+    public String createSimpleTextResponse(
+            String content, String reasoningContent, int promptTokens, int completionTokens)
+            throws Exception {
         Map<String, Object> responseMessage = createBaseMessage();
         responseMessage.put("content", content);
+        if (reasoningContent != null) {
+            responseMessage.put("reasoning_content", reasoningContent);
+        }
 
         Map<String, Object> choice = createBaseChoice("stop", responseMessage);
-        Map<String, Object> chatCompletion = createBaseChatCompletion(choice);
+        Map<String, Object> chatCompletion = createBaseChatCompletion(choice, promptTokens, completionTokens);
 
         return objectMapper.writeValueAsString(chatCompletion);
     }
 
+    public String createResponsesTextResponse(String content, int inputTokens, int outputTokens) throws Exception {
+        Map<String, Object> outputText = new HashMap<>();
+        outputText.put("type", "output_text");
+        outputText.put("text", content);
+
+        Map<String, Object> message = new HashMap<>();
+        message.put("type", "message");
+        message.put("id", "msg_" + UUID.randomUUID());
+        message.put("role", "assistant");
+        message.put("status", "completed");
+        message.put("content", List.of(outputText));
+
+        return createResponsesResponse(objectMapper.valueToTree(List.of(message)), inputTokens, outputTokens);
+    }
+
+    /**
+     * Creates a Responses API response holding the given output items.
+     *
+     * @param outputItemsJson a JSON array of Responses API output items
+     */
+    public String createResponsesOutputResponse(String outputItemsJson, int inputTokens, int outputTokens)
+            throws Exception {
+        return createResponsesResponse(objectMapper.readTree(outputItemsJson), inputTokens, outputTokens);
+    }
+
+    /**
+     * Creates a Responses API response whose output holds one {@code function_call} item per tool call.
+     */
+    public String createResponsesFunctionCallResponse(
+            List<ToolCallDefinition> toolCalls, int inputTokens, int outputTokens)
+            throws Exception {
+        List<Map<String, Object>> output = new ArrayList<>();
+        for (ToolCallDefinition toolCall : toolCalls) {
+            Map<String, Object> functionCall = new HashMap<>();
+            functionCall.put("type", "function_call");
+            functionCall.put("id", "fc_" + UUID.randomUUID());
+            functionCall.put("call_id", "call_" + UUID.randomUUID());
+            functionCall.put("name", toolCall.getName());
+            functionCall.put("arguments", objectMapper.writeValueAsString(toolCall.getArguments()));
+            functionCall.put("status", "completed");
+            output.add(functionCall);
+        }
+        return createResponsesResponse(objectMapper.valueToTree(output), inputTokens, outputTokens);
+    }
+
+    private String createResponsesResponse(JsonNode output, int inputTokens, int outputTokens) throws Exception {
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", "resp_" + UUID.randomUUID());
+        response.put("object", "response");
+        response.put("created_at", System.currentTimeMillis() / 1000.0);
+        response.put("model", "openai-mock");
+        response.put("status", "completed");
+        response.put("output", output);
+        response.put("parallel_tool_calls", true);
+        response.put("tool_choice", "auto");
+        response.put("tools", List.of());
+
+        Map<String, Object> usage = new HashMap<>();
+        usage.put("input_tokens", inputTokens);
+        usage.put("output_tokens", outputTokens);
+        usage.put("total_tokens", inputTokens + outputTokens);
+        response.put("usage", usage);
+
+        return objectMapper.writeValueAsString(response);
+    }
+
     public String createToolCallResponse(String content, List<ToolCallDefinition> toolCalls) throws Exception {
+        return createToolCallResponse(content, toolCalls, DEFAULT_PROMPT_TOKENS, DEFAULT_COMPLETION_TOKENS);
+    }
+
+    public String createToolCallResponse(
+            String content, List<ToolCallDefinition> toolCalls, int promptTokens, int completionTokens)
+            throws Exception {
         Map<String, Object> responseMessage = createBaseMessage();
         responseMessage.put("content", content);
         responseMessage.put("tool_calls", buildToolCallsList(toolCalls));
 
         Map<String, Object> choice = createBaseChoice("tool_calls", responseMessage);
-        Map<String, Object> chatCompletion = createBaseChatCompletion(choice);
+        Map<String, Object> chatCompletion = createBaseChatCompletion(choice, promptTokens, completionTokens);
 
         return objectMapper.writeValueAsString(chatCompletion);
     }
 
-    public String createFinalToolResponse(JsonNode messagesNode, String fallbackContent, String toolContentResponse)
+    public String createFinalToolResponse(
+            JsonNode messagesNode, String fallbackContent, String toolContentResponse,
+            String reasoningContent)
+            throws Exception {
+        return createFinalToolResponse(messagesNode, fallbackContent, toolContentResponse, reasoningContent,
+                DEFAULT_PROMPT_TOKENS, DEFAULT_COMPLETION_TOKENS);
+    }
+
+    public String createFinalToolResponse(
+            JsonNode messagesNode, String fallbackContent, String toolContentResponse,
+            String reasoningContent, int promptTokens, int completionTokens)
             throws Exception {
         Map<String, Object> responseMessage = createBaseMessage();
 
@@ -75,16 +174,38 @@ public class ResponseBuilder {
             content = extractLastToolContent(messagesNode).orElse("All tools processed");
         }
         responseMessage.put("content", content);
+        if (reasoningContent != null) {
+            responseMessage.put("reasoning_content", reasoningContent);
+        }
 
         Map<String, Object> choice = createBaseChoice("stop", responseMessage);
-        Map<String, Object> chatCompletion = createBaseChatCompletion(choice);
+        Map<String, Object> chatCompletion = createBaseChatCompletion(choice, promptTokens, completionTokens);
         chatCompletion.put("history", messagesNode);
 
         return objectMapper.writeValueAsString(chatCompletion);
     }
 
     public String createFinalToolResponse(JsonNode messagesNode, String fallbackContent) throws Exception {
-        return createFinalToolResponse(messagesNode, fallbackContent, null);
+        return createFinalToolResponse(messagesNode, fallbackContent, null, null);
+    }
+
+    /**
+     * Sends the OpenAI API error configured on the expectation: its status code, an optional {@code Retry-After} header
+     * and an error body shaped like the one returned by OpenAI.
+     */
+    public String createApiErrorResponse(MockExpectation expectation, HttpExchange exchange) throws IOException {
+        Map<String, Object> error = new HashMap<>();
+        error.put("message", expectation.getErrorMessage());
+        error.put("type", expectation.getErrorType());
+        error.put("code", expectation.getErrorType());
+        String body = objectMapper.writeValueAsString(Map.of("error", error));
+
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        if (expectation.getRetryAfterSeconds() != null) {
+            exchange.getResponseHeaders().set("Retry-After", String.valueOf(expectation.getRetryAfterSeconds()));
+        }
+        exchange.sendResponseHeaders(expectation.getErrorStatusCode(), body.getBytes(StandardCharsets.UTF_8).length);
+        return body;
     }
 
     public String createErrorResponse(int statusCode, String errorMessage, HttpExchange exchange) {
@@ -115,12 +236,22 @@ public class ResponseBuilder {
     }
 
     private Map<String, Object> createBaseChatCompletion(Map<String, Object> choice) {
+        return createBaseChatCompletion(choice, DEFAULT_PROMPT_TOKENS, DEFAULT_COMPLETION_TOKENS);
+    }
+
+    private Map<String, Object> createBaseChatCompletion(
+            Map<String, Object> choice, int promptTokens, int completionTokens) {
         Map<String, Object> chatCompletion = new HashMap<>();
         chatCompletion.put("id", UUID.randomUUID().toString());
         chatCompletion.put("choices", Collections.singletonList(choice));
         chatCompletion.put("created", System.currentTimeMillis() / 1000L);
         chatCompletion.put("model", "openai-mock");
         chatCompletion.put("object", "chat.completion");
+        Map<String, Object> usage = new HashMap<>();
+        usage.put("prompt_tokens", promptTokens);
+        usage.put("completion_tokens", completionTokens);
+        usage.put("total_tokens", promptTokens + completionTokens);
+        chatCompletion.put("usage", usage);
         return chatCompletion;
     }
 

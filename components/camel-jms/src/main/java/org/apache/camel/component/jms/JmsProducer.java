@@ -202,10 +202,21 @@ public class JmsProducer extends DefaultAsyncProducer {
         // this is done with the help of the MessageSentCallback
         final boolean msgIdAsCorrId = configuration.isUseMessageIDAsCorrelationID();
         final String provisionalCorrelationId = msgIdAsCorrId ? getUuidGenerator().generateUuid() : null;
+        // the correlation id the reply handler is currently registered under, which is cancelled if the send fails
+        final String[] registeredCorrelationId = new String[1];
         MessageSentCallback messageSentCallback = null;
         if (msgIdAsCorrId) {
-            messageSentCallback
+            MessageSentCallback updateCorrelationId
                     = new UseMessageIdAsCorrelationIdMessageSentCallback(replyManager, provisionalCorrelationId, timeout);
+            messageSentCallback = (session, message, dest) -> {
+                updateCorrelationId.sent(session, message, dest);
+                // the reply handler has been moved to the JMSMessageID, which is what must be cancelled if the send
+                // fails afterwards (such as the commit of a transacted session)
+                String messageId = JmsMessageHelper.getJMSMessageID(message);
+                if (messageId != null) {
+                    registeredCorrelationId[0] = messageId;
+                }
+            };
         }
 
         final String correlationProperty = configuration.getCorrelationProperty();
@@ -241,6 +252,7 @@ public class JmsProducer extends DefaultAsyncProducer {
 
                 String correlationId = determineCorrelationId(answer, provisionalCorrelationId);
                 replyManager.registerReply(replyManager, exchange, callback, originalCorrelationId, correlationId, timeout);
+                registeredCorrelationId[0] = correlationId;
 
                 if (correlationProperty != null) {
                     replyManager.setCorrelationProperty(correlationProperty);
@@ -256,7 +268,21 @@ public class JmsProducer extends DefaultAsyncProducer {
             }
         };
 
-        doSend(exchange, true, destinationName, destination, messageCreator, messageSentCallback);
+        try {
+            doSend(exchange, true, destinationName, destination, messageCreator, messageSentCallback);
+        } catch (Exception e) {
+            // send failed after the reply was registered: cancel it to prevent a second callback from the timeout
+            String registered = registeredCorrelationId[0];
+            if (registered != null && !replyManager.cancelCorrelationId(registered)) {
+                // the request timeout (or the reply) removed the correlation while the send was still running,
+                // and it completes the exchange, so the exchange must not be completed here a second time
+                LOG.warn("Sending JMS request with correlation id: {} failed after the request timeout or the reply"
+                         + " has already completed the exchange. The send failure is only logged: {}",
+                        registered, e.getMessage(), e);
+                return false;
+            }
+            throw e;
+        }
 
         // continue routing asynchronously (reply will be processed async when its received)
         return false;

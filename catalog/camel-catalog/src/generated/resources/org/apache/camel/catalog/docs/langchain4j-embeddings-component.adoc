@@ -1,0 +1,465 @@
+= LangChain4j Embeddings Component
+:doctitle: LangChain4j Embeddings
+:shortname: langchain4j-embeddings
+:artifactid: camel-langchain4j-embeddings
+:description: LangChain4j Embeddings
+:since: 4.5
+:supportlevel: Stable
+:tabs-sync-option:
+:component-header: Only producer is supported
+//Manually maintained attributes
+:group: AI
+
+*Since Camel {since}*
+
+*{component-header}*
+
+The LangChain4j embeddings component provides support for compute embeddings using https://docs.langchain4j.dev/[LangChain4j] embeddings.
+
+== URI format
+
+----
+langchain4j-embeddings:embeddingId[?options]
+----
+
+Where *embeddingId* can be any string to uniquely identify the endpoint
+
+
+// component options: START
+include::partial$component-configure-options.adoc[]
+include::partial$component-endpoint-options.adoc[]
+include::partial$component-endpoint-headers.adoc[]
+// component options: END
+
+
+== Usage
+
+=== Configuring the model by provider
+
+The embedding model can be declared by its provider and the options every provider has, without a bean of the
+provider's model class (since Camel 4.23). In `application.properties`, for every endpoint of the component:
+
+[source,properties]
+----
+camel.component.langchain4j-embeddings.provider = ollama
+camel.component.langchain4j-embeddings.model-name = nomic-embed-text
+camel.component.langchain4j-embeddings.base-url = http://localhost:11434
+----
+
+Or on the endpoint, where `model.` prefixes a provider-specific option of the model's builder:
+
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:start
+      steps:
+        - to:
+            uri: langchain4j-embeddings:documents
+            parameters:
+              provider: openai
+              apiKey: "{{openai.api.key}}"
+              modelName: text-embedding-3-small
+              timeout: 30s
+----
+
+The provider is one of `ollama`, `openai`, `anthropic`, `azure-openai`, `mistral`, `gemini`, `vertex-ai`, `github`,
+`hugging-face`, `bedrock`; a provider not in the list is set as `customProvider`, the fully qualified class name of
+its LangChain4j model class (any class with a `builder()`, such as `dev.langchain4j.model.jlama.JlamaChatModel`).
+The LangChain4j module of the provider (`dev.langchain4j:langchain4j-ollama`, `dev.langchain4j:langchain4j-open-ai`,
+...) must be on the classpath; Camel JBang downloads it for the listed providers. Ollama, LocalAI, vLLM, LM Studio and
+the other servers that speak the OpenAI API can also be used through `provider: openai` with their `baseUrl`, which
+needs no module of their own. The common options are `modelName`, `baseUrl`, `apiKey`, `temperature`
+and `timeout`, set under the name the provider's builder uses for them (`apiKey` is the access token of Hugging Face,
+`modelName` the deployment name of Azure OpenAI); an option the provider does not have (an `apiKey` for Ollama), or a
+`model.` property its builder does not have, is an error naming what the builder accepts.
+
+Endpoints with the same provider options share one model instance. The provider is ignored when a model bean is
+configured (`embeddingModel`).
+
+=== Using Embedding Models
+
+The Camel LangChain4j embeddings component provides support for generating embeddings using various embedding models supported by https://docs.langchain4j.dev/[LangChain4j].
+
+==== Integrating with specific Embedding Model
+
+===== Using LangChain4j Spring Boot Starters (Recommended for Spring Boot)
+
+When using Camel with Spring Boot, you can leverage LangChain4j's Spring Boot starters for automatic configuration of embedding models.
+
+Add the dependency for LangChain4j OpenAI Spring Boot starter:
+
+.pom.xml
+[source,xml]
+----
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
+    <version>1.10.0</version>
+    <!-- use the same version as your LangChain4j version -->
+</dependency>
+----
+
+Configure the OpenAI Embedding Model in `application.properties` or `application.yml`:
+
+.application.properties
+[source,properties]
+----
+langchain4j.open-ai.embedding-model.api-key=${OPENAI_API_KEY}
+langchain4j.open-ai.embedding-model.model-name=text-embedding-ada-002
+----
+
+.application.yml
+[source,yaml]
+----
+langchain4j:
+  open-ai:
+    embedding-model:
+      api-key: ${OPENAI_API_KEY}
+      model-name: text-embedding-ada-002
+----
+
+The `EmbeddingModel` bean will be automatically configured and available in the Spring context. Use it in your Camel routes:
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:embeddings")
+    .to("langchain4j-embeddings:test?embeddingModel=#embeddingModel");
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:embeddings
+      steps:
+        - to:
+            uri: langchain4j-embeddings:test
+            parameters:
+              embeddingModel: "#embeddingModel"
+----
+
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="direct:embeddings"/>
+  <to uri="langchain4j-embeddings:test?embeddingModel=#embeddingModel"/>
+</route>
+----
+====
+
+[NOTE]
+====
+LangChain4j Spring Boot starters provide auto-configuration for various embedding model providers including:
+
+* `langchain4j-open-ai-spring-boot-starter` - OpenAI embeddings
+* `langchain4j-azure-open-ai-spring-boot-starter` - Azure OpenAI embeddings
+* `langchain4j-ollama-spring-boot-starter` - Ollama embeddings
+* `langchain4j-hugging-face-spring-boot-starter` - Hugging Face embeddings
+* `langchain4j-vertex-ai-spring-boot-starter` - Google Vertex AI embeddings
+
+For a complete list of available starters and their configuration options, refer to the https://docs.langchain4j.dev/tutorials/spring-boot-integration[LangChain4j Spring Boot Integration documentation].
+====
+
+===== Manual Configuration (Alternative)
+
+Alternatively, you can manually initialize the Embedding Model and add it to the Camel Registry:
+
+Add the dependency for LangChain4j OpenAI support:
+
+.pom.xml
+[source,xml]
+----
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-open-ai</artifactId>
+    <version>1.10.0</version>
+    <!-- use the same version as your LangChain4j version -->
+</dependency>
+----
+
+Initialize the OpenAI Embedding Model:
+
+._Java-only: programmatic EmbeddingModel initialization and registry binding_
+[source,java]
+----
+EmbeddingModel embeddingModel = OpenAiEmbeddingModel.builder()
+    .apiKey(openApiKey)
+    .modelName("text-embedding-ada-002")
+    .build();
+context.getRegistry().bind("myEmbeddingModel", embeddingModel);
+----
+
+Use the model in the Camel LangChain4j Embeddings Producer:
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:embeddings")
+    .to("langchain4j-embeddings:test?embeddingModel=#myEmbeddingModel");
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:embeddings
+      steps:
+        - to:
+            uri: langchain4j-embeddings:test
+            parameters:
+              embeddingModel: "#myEmbeddingModel"
+----
+====
+
+=== Integration with Vector Stores
+
+The LangChain4j Embeddings component works seamlessly with vector databases for RAG (Retrieval-Augmented Generation) workflows.
+
+==== Using with Qdrant
+
+This example shows how to embed text and store it in Qdrant vector database:
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:store")
+    .to("langchain4j-embeddings:embed")
+    .setHeader(QdrantHeaders.ACTION).constant(QdrantAction.UPSERT)
+    .setHeader(QdrantHeaders.POINT_ID).constant(1)
+    .transformDataType(new DataType("qdrant:embeddings"))
+    .to("qdrant:myCollection");
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:store
+      steps:
+        - to:
+            uri: langchain4j-embeddings:embed
+        - setHeader:
+            name: CamelQdrantAction
+            expression:
+              constant:
+                expression: UPSERT
+        - setHeader:
+            name: CamelQdrantPointId
+            expression:
+              constant:
+                expression: 1
+        - transformDataType:
+            toType: "qdrant:embeddings"
+        - to:
+            uri: qdrant:myCollection
+----
+====
+
+==== Similarity Search for RAG
+
+Retrieve relevant content using similarity search:
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:search")
+    .to("langchain4j-embeddings:embed")
+    .transformDataType(new DataType("qdrant:embeddings"))
+    .setHeader(QdrantHeaders.ACTION, constant(QdrantAction.SIMILARITY_SEARCH))
+    .setHeader(QdrantHeaders.INCLUDE_PAYLOAD, constant(true))
+    .to("qdrant:myCollection")
+    .transformDataType(new DataType("qdrant:rag"));
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:search
+      steps:
+        - to:
+            uri: langchain4j-embeddings:embed
+        - transformDataType:
+            toType: "qdrant:embeddings"
+        - setHeader:
+            name: CamelQdrantAction
+            expression:
+              constant:
+                expression: SIMILARITY_SEARCH
+        - setHeader:
+            name: CamelQdrantWithPayload
+            expression:
+              constant:
+                expression: true
+        - to:
+            uri: qdrant:myCollection
+        - transformDataType:
+            toType: "qdrant:rag"
+----
+====
+
+==== Using with PGVector
+
+This example shows how to embed text and store it in PostgreSQL with pgvector:
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:store")
+    .to("langchain4j-embeddings:embed")
+    .setHeader(PgVectorHeaders.ACTION).constant(PgVectorAction.UPSERT)
+    .transformDataType(new DataType("pgvector:embeddings"))
+    .to("pgvector:myCollection");
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:store
+      steps:
+        - to:
+            uri: langchain4j-embeddings:embed
+        - setHeader:
+            name: CamelPgVectorAction
+            expression:
+              constant:
+                expression: UPSERT
+        - transformDataType:
+            toType: "pgvector:embeddings"
+        - to:
+            uri: pgvector:myCollection
+----
+====
+
+Similarity search with PGVector and RAG:
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:search")
+    .to("langchain4j-embeddings:embed")
+    .transformDataType(new DataType("pgvector:embeddings"))
+    .setHeader(PgVectorHeaders.ACTION, constant(PgVectorAction.SIMILARITY_SEARCH))
+    .to("pgvector:myCollection")
+    .transformDataType(new DataType("pgvector:rag"));
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:search
+      steps:
+        - to:
+            uri: langchain4j-embeddings:embed
+        - transformDataType:
+            toType: "pgvector:embeddings"
+        - setHeader:
+            name: CamelPgVectorAction
+            expression:
+              constant:
+                expression: SIMILARITY_SEARCH
+        - to:
+            uri: pgvector:myCollection
+        - transformDataType:
+            toType: "pgvector:rag"
+----
+====
+
+==== Using with LangChain4j Embedding Store Component
+
+For a simpler integration, use the `langchain4j-embeddingstore` component which provides a unified interface:
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:store")
+    .to("langchain4j-embeddings:embed")
+    .to("langchain4j-embeddingstore:myStore?action=ADD");
+
+from("direct:search")
+    .to("langchain4j-embeddings:embed")
+    .to("langchain4j-embeddingstore:myStore?action=SEARCH&maxResults=5&returnTextContent=true");
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:store
+      steps:
+        - to:
+            uri: langchain4j-embeddings:embed
+        - to:
+            uri: langchain4j-embeddingstore:myStore
+            parameters:
+              action: ADD
+
+- route:
+    from:
+      uri: direct:search
+      steps:
+        - to:
+            uri: langchain4j-embeddings:embed
+        - to:
+            uri: langchain4j-embeddingstore:myStore
+            parameters:
+              action: SEARCH
+              maxResults: 5
+              returnTextContent: true
+----
+====
+
+=== Structured error exchange properties
+
+When a LangChain4j embeddings call fails, Camel sets structured metadata on the exchange **before** the model exception propagates. This works even when GenAI observability is disabled.
+
+[cols="2,3"]
+|===
+| Exchange property | Meaning
+
+| `CamelAiErrorCategory` | Coarse category derived from the LangChain4j exception: `RATE_LIMIT`, `SERVER_ERROR`, `VALIDATION`, `AUTH`, or `UNKNOWN`
+| `CamelAiRetryAfterMillis` | Not populated for LangChain4j providers (OpenAI-only today)
+|===
+
+Use categories when a route should branch on failure type without matching every LangChain4j exception class. See xref:langchain4j-chat-component.adoc#_structured_error_exchange_properties[LangChain4j Chat structured error properties] and xref:ai-llm-integration-guide.adoc#_structured_error_exchange_properties[AI LLM integration guide] for related detail.

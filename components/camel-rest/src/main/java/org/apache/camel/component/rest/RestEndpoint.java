@@ -59,8 +59,9 @@ public class RestEndpoint extends DefaultEndpoint {
 
     public static final String[] DEFAULT_REST_CONSUMER_COMPONENTS
             = new String[] { "platform-http", "servlet", "jetty", "undertow", "netty-http", "coap" };
+    // camel-http first: the reference HTTP client, and the one most runtimes carry (CAMEL-24849)
     public static final String[] DEFAULT_REST_PRODUCER_COMPONENTS
-            = new String[] { "vertx-http", "http", "undertow", "netty-http" };
+            = new String[] { "http", "vertx-http", "undertow", "netty-http" };
     public static final String DEFAULT_API_COMPONENT_NAME = "openapi";
     public static final String RESOURCE_PATH = "META-INF/services/org/apache/camel/rest/";
 
@@ -489,7 +490,8 @@ public class RestEndpoint extends DefaultEndpoint {
         // add to rest registry, so we can keep track of them
         RestRegistry registry = PluginHelper.getRestRegistry(getCamelContext());
         registry.addRestService(consumer, false, url, baseUrl, getPath(), getUriTemplate(),
-                getMethod(), getConsumes(), getProduces(), getInType(), getOutType(), getRouteId(), getDescription());
+                getMethod(), getConsumes(), getProduces(), getInType(), getOutType(), getRouteId(), null, null,
+                getDescription());
         return consumer;
     }
 

@@ -21,23 +21,38 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.camel.spi.InflightRepository;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.console.AbstractDevConsole;
 import org.apache.camel.util.TimeUtils;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 
 @DevConsole(name = "inflight", displayName = "Inflight Exchanges", description = "Display inflight exchanges")
 public class InflightConsole extends AbstractDevConsole {
 
-    /**
-     * Filters the routes matching by route id, route uri
-     */
+    @Metadata(label = "query", description = "Filters the routes matching by route id, route uri",
+              javaType = "java.lang.String")
     public static final String FILTER = "filter";
 
-    /**
-     * Limits the number of entries displayed
-     */
+    @Metadata(label = "query", description = "Limits the number of entries displayed", javaType = "java.lang.Integer")
     public static final String LIMIT = "limit";
+
+    public record Exchange(
+            @Metadata(description = "The exchange ID") String exchangeId,
+            @Metadata(description = "The route ID where the exchange originated from") String fromRouteId,
+            @Metadata(description = "Whether the exchange originated from a remote endpoint") boolean fromRemoteEndpoint,
+            @Metadata(description = "The route ID where the exchange currently is") String atRouteId,
+            @Metadata(description = "The node ID where the exchange currently is") String nodeId,
+            @Metadata(description = "Where the node is in the source, such as orders.camel.yaml:18") String nodeSource,
+            @Metadata(description = "Elapsed time in milliseconds since the exchange started") long elapsed,
+            @Metadata(description = "Duration in milliseconds the exchange has been at the current node") long duration) {
+    }
+
+    public record Response(
+            @Metadata(description = "Number of inflight exchanges") int inflight,
+            @Metadata(description = "Whether browsing inflight exchanges is enabled") boolean inflightBrowseEnabled,
+            @Metadata(description = "The inflight exchanges (only present when browsing is enabled)") List<Exchange> exchanges) {
+    }
 
     public InflightConsole() {
         super("camel", "inflight", "Inflight Exchanges", "Display inflight exchanges");
@@ -45,9 +60,8 @@ public class InflightConsole extends AbstractDevConsole {
 
     @Override
     protected String doCallText(Map<String, Object> options) {
-        String filter = (String) options.get(FILTER);
-        String limit = (String) options.get(LIMIT);
-        int max = limit == null ? Integer.MAX_VALUE : Integer.parseInt(limit);
+        String filter = optionString(options, FILTER);
+        int max = optionInt(options, LIMIT, Integer.MAX_VALUE);
 
         StringBuilder sb = new StringBuilder();
 
@@ -57,9 +71,10 @@ public class InflightConsole extends AbstractDevConsole {
         if (repo.isInflightBrowseEnabled()) {
             for (InflightRepository.InflightExchange ie : repo.browse(filter, max, false)) {
                 String age = TimeUtils.printDuration(ie.getDuration(), true);
-                sb.append(String.format("%n    %s (from: %s at: %s/%s remote: %b age: %s)",
+                String source = ie.getNodeSource() != null ? " source: " + ie.getNodeSource() : "";
+                sb.append(String.format("%n    %s (from: %s at: %s/%s%s remote: %b age: %s)",
                         ie.getExchange().getExchangeId(), ie.getFromRouteId(), ie.getAtRouteId(), ie.getNodeId(),
-                        ie.isFromRemoteEndpoint(), age));
+                        source, ie.isFromRemoteEndpoint(), age));
             }
         }
 
@@ -67,32 +82,24 @@ public class InflightConsole extends AbstractDevConsole {
     }
 
     @Override
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        String filter = (String) options.get(FILTER);
-        String limit = (String) options.get(LIMIT);
-        int max = limit == null ? Integer.MAX_VALUE : Integer.parseInt(limit);
-
-        JsonObject root = new JsonObject();
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        String filter = optionString(options, FILTER);
+        int max = optionInt(options, LIMIT, Integer.MAX_VALUE);
 
         InflightRepository repo = getCamelContext().getInflightRepository();
-        root.put("inflight", repo.size());
-        root.put("inflightBrowseEnabled", repo.isInflightBrowseEnabled());
-        if (repo.isInflightBrowseEnabled()) {
-            final List<JsonObject> list = new ArrayList<>();
+        boolean browseEnabled = repo.isInflightBrowseEnabled();
+
+        List<Exchange> exchanges = null;
+        if (browseEnabled) {
+            exchanges = new ArrayList<>();
             for (InflightRepository.InflightExchange ie : repo.browse(filter, max, false)) {
-                JsonObject props = new JsonObject();
-                props.put("exchangeId", ie.getExchange().getExchangeId());
-                props.put("fromRouteId", ie.getFromRouteId());
-                props.put("fromRemoteEndpoint", ie.isFromRemoteEndpoint());
-                props.put("atRouteId", ie.getAtRouteId());
-                props.put("nodeId", ie.getNodeId());
-                props.put("elapsed", ie.getElapsed());
-                props.put("duration", ie.getDuration());
-                list.add(props);
+                exchanges.add(new Exchange(
+                        ie.getExchange().getExchangeId(), ie.getFromRouteId(), ie.isFromRemoteEndpoint(),
+                        ie.getAtRouteId(), ie.getNodeId(), ie.getNodeSource(), ie.getElapsed(), ie.getDuration()));
             }
-            root.put("exchanges", list);
         }
 
-        return root;
+        Response response = new Response(repo.size(), browseEnabled, exchanges);
+        return JsonRecordSupport.toJsonObject(response);
     }
 }

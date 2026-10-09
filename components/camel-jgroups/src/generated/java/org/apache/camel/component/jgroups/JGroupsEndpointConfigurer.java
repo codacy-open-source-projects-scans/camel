@@ -23,10 +23,14 @@ public class JGroupsEndpointConfigurer extends PropertyConfigurerSupport impleme
     public boolean configure(CamelContext camelContext, Object obj, String name, Object value, boolean ignoreCase) {
         JGroupsEndpoint target = (JGroupsEndpoint) obj;
         switch (ignoreCase ? name.toLowerCase() : name) {
+        case "acceptallobjects":
+        case "acceptAllObjects": target.setAcceptAllObjects(property(camelContext, boolean.class, value)); return true;
         case "bridgeerrorhandler":
         case "bridgeErrorHandler": target.setBridgeErrorHandler(property(camelContext, boolean.class, value)); return true;
         case "channelproperties":
         case "channelProperties": target.setChannelProperties(property(camelContext, java.lang.String.class, value)); return true;
+        case "deserializationfilter":
+        case "deserializationFilter": target.setDeserializationFilter(property(camelContext, java.lang.String.class, value)); return true;
         case "enableviewmessages":
         case "enableViewMessages": target.setEnableViewMessages(property(camelContext, boolean.class, value)); return true;
         case "exceptionhandler":
@@ -42,10 +46,14 @@ public class JGroupsEndpointConfigurer extends PropertyConfigurerSupport impleme
     @Override
     public Class<?> getOptionType(String name, boolean ignoreCase) {
         switch (ignoreCase ? name.toLowerCase() : name) {
+        case "acceptallobjects":
+        case "acceptAllObjects": return boolean.class;
         case "bridgeerrorhandler":
         case "bridgeErrorHandler": return boolean.class;
         case "channelproperties":
         case "channelProperties": return java.lang.String.class;
+        case "deserializationfilter":
+        case "deserializationFilter": return java.lang.String.class;
         case "enableviewmessages":
         case "enableViewMessages": return boolean.class;
         case "exceptionhandler":
@@ -62,10 +70,14 @@ public class JGroupsEndpointConfigurer extends PropertyConfigurerSupport impleme
     public Object getOptionValue(Object obj, String name, boolean ignoreCase) {
         JGroupsEndpoint target = (JGroupsEndpoint) obj;
         switch (ignoreCase ? name.toLowerCase() : name) {
+        case "acceptallobjects":
+        case "acceptAllObjects": return target.isAcceptAllObjects();
         case "bridgeerrorhandler":
         case "bridgeErrorHandler": return target.isBridgeErrorHandler();
         case "channelproperties":
         case "channelProperties": return target.getChannelProperties();
+        case "deserializationfilter":
+        case "deserializationFilter": return target.getDeserializationFilter();
         case "enableviewmessages":
         case "enableViewMessages": return target.isEnableViewMessages();
         case "exceptionhandler":

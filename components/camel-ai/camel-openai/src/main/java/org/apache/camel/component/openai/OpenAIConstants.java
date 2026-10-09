@@ -23,6 +23,20 @@ import org.apache.camel.spi.Metadata;
  */
 public final class OpenAIConstants {
 
+    // Webhook consumer headers
+    @Metadata(label = "consumer", description = "The type of the webhook event, such as response.completed or batch.completed",
+              javaType = "String")
+    public static final String WEBHOOK_EVENT_TYPE = "CamelOpenAIWebhookEventType";
+    @Metadata(label = "consumer", description = "The id of the webhook event", javaType = "String")
+    public static final String WEBHOOK_EVENT_ID = "CamelOpenAIWebhookEventId";
+    @Metadata(label = "consumer",
+              description = "The id of the object the event is about, such as the response id of response.completed, "
+                            + "which the responses-retrieve operation takes",
+              javaType = "String")
+    public static final String WEBHOOK_OBJECT_ID = "CamelOpenAIWebhookObjectId";
+    @Metadata(label = "consumer", description = "When the event was created, in seconds since the epoch", javaType = "Long")
+    public static final String WEBHOOK_CREATED_AT = "CamelOpenAIWebhookCreatedAt";
+
     // Input Headers
     @Metadata(description = "The user message to send to the OpenAI chat completion API", javaType = "String")
     public static final String USER_MESSAGE = "CamelOpenAIUserMessage";
@@ -40,26 +54,58 @@ public final class OpenAIConstants {
     public static final String TOP_P = "CamelOpenAITopP";
     @Metadata(description = "The maximum number of tokens to generate in the completion", javaType = "Integer")
     public static final String MAX_TOKENS = "CamelOpenAIMaxTokens";
+    @Metadata(description = "Previous response id for server-side conversation state on the Responses API", javaType = "String")
+    public static final String PREVIOUS_RESPONSE_ID = "CamelOpenAIPreviousResponseId";
+    @Metadata(description = "The id of a conversation created with the Conversations API to run the Responses API "
+                            + "request in",
+              javaType = "String")
+    public static final String CONVERSATION_ID = "CamelOpenAIConversationId";
     @Metadata(description = "Whether to stream the response back incrementally", javaType = "Boolean")
     public static final String STREAMING = "CamelOpenAIStreaming";
-    @Metadata(description = "The Java class to use for structured output parsing", javaType = "Class")
+    @Metadata(description = "The Java class name (FQCN) to use for structured output parsing", javaType = "String")
     public static final String OUTPUT_CLASS = "CamelOpenAIOutputClass";
     @Metadata(description = "The JSON schema to use for structured output validation", javaType = "String")
     public static final String JSON_SCHEMA = "CamelOpenAIJsonSchema";
+    @Metadata(description = "Whether to strip <think>...</think> blocks from the response body", javaType = "Boolean")
+    public static final String STRIP_THINKING = "CamelOpenAIStripThinking";
+    @Metadata(description = "The MIME type of the message body when sending a file or binary content (File, WrappedFile, "
+                            + "byte[] or InputStream) to the model. Takes precedence over component content-type headers "
+                            + "and automatic MIME type detection",
+              javaType = "String")
+    public static final String MEDIA_TYPE = "CamelOpenAIMediaType";
 
     // Output Headers
+    @Metadata(description = "The thinking content extracted from <think>...</think> blocks in the model response",
+              javaType = "String")
+    public static final String THINKING_CONTENT = "CamelOpenAIThinkingContent";
+    @Metadata(description = "The reasoning content from the model response reasoning_content field, "
+                            + "used by thinking models like Qwen3 and DeepSeek-R1",
+              javaType = "String")
+    public static final String REASONING_CONTENT = "CamelOpenAIReasoningContent";
     @Metadata(description = "The model used for the completion response", javaType = "String")
     public static final String RESPONSE_MODEL = "CamelOpenAIResponseModel";
-    @Metadata(description = "The unique identifier for the completion response", javaType = "String")
+    @Metadata(description = "The unique identifier for the completion response. The responses-retrieve and "
+                            + "responses-cancel operations read the id of the response to act on from this header",
+              javaType = "String")
     public static final String RESPONSE_ID = "CamelOpenAIResponseId";
     @Metadata(description = "The reason the completion finished (e.g., stop, length, content_filter)", javaType = "String")
     public static final String FINISH_REASON = "CamelOpenAIFinishReason";
-    @Metadata(description = "The number of tokens used in the prompt", javaType = "Integer")
+    @Metadata(description = "The number of tokens used in the prompt for the latest API call", javaType = "Long")
     public static final String PROMPT_TOKENS = "CamelOpenAIPromptTokens";
-    @Metadata(description = "The number of tokens used in the completion", javaType = "Integer")
+    @Metadata(description = "The number of tokens used in the completion for the latest API call", javaType = "Long")
     public static final String COMPLETION_TOKENS = "CamelOpenAICompletionTokens";
-    @Metadata(description = "The total number of tokens used (prompt + completion)", javaType = "Integer")
+    @Metadata(description = "The total number of tokens used (prompt + completion) for the latest API call",
+              javaType = "Long")
     public static final String TOTAL_TOKENS = "CamelOpenAITotalTokens";
+    @Metadata(description = "The annotations attached to the output text of a Responses API answer, such as the "
+                            + "url_citation and file_citation citations of web_search and file_search. Each entry is a "
+                            + "map of the API fields",
+              javaType = "java.util.List<java.util.Map<String, Object>>")
+    public static final String RESPONSE_ANNOTATIONS = "CamelOpenAIResponseAnnotations";
+    @Metadata(description = "The status of a Responses API response: completed, failed, in_progress, cancelled, queued "
+                            + "or incomplete",
+              javaType = "String")
+    public static final String RESPONSE_STATUS = "CamelOpenAIResponseStatus";
 
     // MCP Tool Call Headers
     @Metadata(description = "Number of tool call iterations performed in the agentic loop", javaType = "Integer")
@@ -70,10 +116,83 @@ public final class OpenAIConstants {
                             + "rather than from the LLM",
               javaType = "Boolean")
     public static final String MCP_RETURN_DIRECT = "CamelOpenAIMcpReturnDirect";
+    @Metadata(description = "Cumulative prompt tokens consumed across all agentic loop iterations", javaType = "Long")
+    public static final String AGENTIC_PROMPT_TOKENS = "CamelOpenAIAgenticPromptTokens";
+    @Metadata(description = "Cumulative completion tokens consumed across all agentic loop iterations", javaType = "Long")
+    public static final String AGENTIC_COMPLETION_TOKENS = "CamelOpenAIAgenticCompletionTokens";
+    @Metadata(description = "Cumulative total tokens consumed across all agentic loop iterations", javaType = "Long")
+    public static final String AGENTIC_TOTAL_TOKENS = "CamelOpenAIAgenticTotalTokens";
 
-    // Output Exchange Properties
-    @Metadata(description = "The complete OpenAI response object", javaType = "com.openai.models.ChatCompletion")
+    // Output Exchange Properties (documented in openai-mcp.adoc; omitted from catalog headers)
+    @Metadata(skip = true)
+    public static final String AGENTIC_TRACE = "CamelOpenAIAgenticTrace";
+    @Metadata(description = "The complete OpenAI chat completion response object",
+              javaType = "com.openai.models.chat.completions.ChatCompletion")
     public static final String RESPONSE = "CamelOpenAIResponse";
+    @Metadata(description = "The complete OpenAI Responses API response object",
+              javaType = "com.openai.models.responses.Response")
+    public static final String RESPONSES_RESPONSE = "CamelOpenAIResponsesResponse";
+    @Metadata(description = "The complete OpenAI moderation response object",
+              javaType = "com.openai.models.moderations.ModerationCreateResponse")
+    public static final String MODERATION_RESPONSE = "CamelOpenAIModerationResponse";
+    @Metadata(description = "The complete OpenAI image generation or edit response object",
+              javaType = "com.openai.models.images.ImagesResponse")
+    public static final String IMAGE_RESPONSE = "CamelOpenAIImageResponse";
+    @Metadata(description = "The complete OpenAI embeddings response object",
+              javaType = "com.openai.models.embeddings.CreateEmbeddingResponse")
+    public static final String EMBEDDINGS_RESPONSE = "CamelOpenAIEmbeddingsResponse";
+    @Metadata(description = "The complete OpenAI audio transcription response object",
+              javaType = "com.openai.models.audio.transcriptions.TranscriptionCreateResponse")
+    public static final String AUDIO_TRANSCRIPTION_RESPONSE = "CamelOpenAIAudioTranscriptionResponse";
+    @Metadata(description = "The complete OpenAI audio translation response object",
+              javaType = "com.openai.models.audio.translations.TranslationCreateResponse")
+    public static final String AUDIO_TRANSLATION_RESPONSE = "CamelOpenAIAudioTranslationResponse";
+
+    // Batch Input Headers
+    @Metadata(description = "The id of the batch to act on. Set by the batch operation, and read by "
+                            + "batch-retrieve, batch-cancel and batch-results",
+              javaType = "String")
+    public static final String BATCH_ID = "CamelOpenAIBatchId";
+    @Metadata(description = "The endpoint every request in the batch calls, such as /v1/chat/completions. Overrides "
+                            + "the batchEndpoint option",
+              javaType = "String")
+    public static final String BATCH_ENDPOINT = "CamelOpenAIBatchEndpoint";
+    @Metadata(description = "Metadata to attach to the batch. Overrides the batchMetadata option",
+              javaType = "java.util.Map<String, String>")
+    public static final String BATCH_METADATA = "CamelOpenAIBatchMetadata";
+    @Metadata(description = "The custom_id of the request that OpenAIBatchAggregationStrategy builds from this "
+                            + "message. Defaults to the message id",
+              javaType = "String")
+    public static final String BATCH_CUSTOM_ID = "CamelOpenAIBatchCustomId";
+    @Metadata(description = "Which result file the batch-results operation downloads: 'output' or 'error'. "
+                            + "Overrides the batchResultsFile option",
+              javaType = "String")
+    public static final String BATCH_RESULTS_FILE = "CamelOpenAIBatchResultsFile";
+
+    // Batch Output Headers
+    @Metadata(description = "The status of the batch: validating, failed, in_progress, finalizing, completed, "
+                            + "expired, cancelling or cancelled",
+              javaType = "String")
+    public static final String BATCH_STATUS = "CamelOpenAIBatchStatus";
+    @Metadata(description = "The id of the uploaded input file of the batch", javaType = "String")
+    public static final String BATCH_INPUT_FILE_ID = "CamelOpenAIBatchInputFileId";
+    @Metadata(description = "The id of the file holding the results of the successful requests", javaType = "String")
+    public static final String BATCH_OUTPUT_FILE_ID = "CamelOpenAIBatchOutputFileId";
+    @Metadata(description = "The id of the file holding the results of the failed requests", javaType = "String")
+    public static final String BATCH_ERROR_FILE_ID = "CamelOpenAIBatchErrorFileId";
+    @Metadata(description = "Total number of requests in the batch", javaType = "Long")
+    public static final String BATCH_REQUEST_COUNT_TOTAL = "CamelOpenAIBatchRequestCountTotal";
+    @Metadata(description = "Number of requests in the batch that completed successfully", javaType = "Long")
+    public static final String BATCH_REQUEST_COUNT_COMPLETED = "CamelOpenAIBatchRequestCountCompleted";
+    @Metadata(description = "Number of requests in the batch that failed", javaType = "Long")
+    public static final String BATCH_REQUEST_COUNT_FAILED = "CamelOpenAIBatchRequestCountFailed";
+    @Metadata(description = "The errors that made the batch fail validation, each a map of the code, message, param "
+                            + "and line fields of the API",
+              javaType = "java.util.List<java.util.Map<String, Object>>")
+    public static final String BATCH_ERRORS = "CamelOpenAIBatchErrors";
+
+    @Metadata(description = "The complete OpenAI batch object", javaType = "com.openai.models.batches.Batch")
+    public static final String BATCH_RESPONSE = "CamelOpenAIBatchResponse";
 
     // Embeddings Input Headers
     @Metadata(description = "The model to use for embeddings", javaType = "String")
@@ -96,6 +215,169 @@ public final class OpenAIConstants {
     public static final String SIMILARITY_SCORE = "CamelOpenAISimilarityScore";
     @Metadata(description = "Original text content when embeddings operation is used", javaType = "String or List<String>")
     public static final String ORIGINAL_TEXT = "CamelOpenAIOriginalText";
+
+    // Moderation Input Headers
+    @Metadata(description = "The model to use for moderation (e.g., omni-moderation-latest)", javaType = "String")
+    public static final String MODERATION_MODEL = "CamelOpenAIModerationModel";
+    @Metadata(description = "Text to moderate together with an image body, such as the caption the image was posted "
+                            + "with. The text and the image are scored as one input and share a single verdict. "
+                            + "Ignored when the body is not an image",
+              javaType = "String")
+    public static final String MODERATION_TEXT = "CamelOpenAIModerationText";
+
+    // Moderation Output Headers
+    @Metadata(description = "Whether the moderation API flagged the input as violating the usage policies. "
+                            + "For a batch of inputs this is true when at least one input was flagged",
+              javaType = "Boolean")
+    public static final String MODERATION_FLAGGED = "CamelOpenAIModerationFlagged";
+    @Metadata(description = "One verdict per moderated input, in the order of the inputs. Each entry holds the keys "
+                            + "'input', 'flagged', 'categories', 'categoryScores' and, when the provider reports it, "
+                            + "'categoryAppliedInputTypes', so a batch can be split and routed per item",
+              javaType = "java.util.List<java.util.Map<String, Object>>")
+    public static final String MODERATION_RESULTS = "CamelOpenAIModerationResults";
+    @Metadata(description = "The moderation categories and whether each one was violated, for a single input. "
+                            + "Not set for a list body, where 'CamelOpenAIModerationResults' carries the verdicts",
+              javaType = "java.util.Map<String, Boolean>")
+    public static final String MODERATION_CATEGORIES = "CamelOpenAIModerationCategories";
+    @Metadata(description = "The moderation confidence score per category, for a single input. Not set for a list "
+                            + "body, where 'CamelOpenAIModerationResults' carries the verdicts",
+              javaType = "java.util.Map<String, Double>")
+    public static final String MODERATION_CATEGORY_SCORES = "CamelOpenAIModerationCategoryScores";
+
+    // Keys of a single entry of the CamelOpenAIModerationResults header
+    public static final String MODERATION_RESULT_INPUT = "input";
+    public static final String MODERATION_RESULT_FLAGGED = "flagged";
+    public static final String MODERATION_RESULT_CATEGORIES = "categories";
+    public static final String MODERATION_RESULT_CATEGORY_SCORES = "categoryScores";
+    public static final String MODERATION_RESULT_CATEGORY_APPLIED_INPUT_TYPES = "categoryAppliedInputTypes";
+    @Metadata(description = "The moderation model used in the response", javaType = "String")
+    public static final String MODERATION_RESPONSE_MODEL = "CamelOpenAIModerationResponseModel";
+
+    // Audio Transcription Input Headers
+    @Metadata(description = "The model to use for audio transcription", javaType = "String")
+    public static final String AUDIO_MODEL = "CamelOpenAIAudioModel";
+    @Metadata(description = "The language of the input audio (ISO-639-1)", javaType = "String")
+    public static final String AUDIO_LANGUAGE = "CamelOpenAIAudioLanguage";
+    @Metadata(description = "The response format for audio transcription (json, text, srt, verbose_json, vtt, diarized_json)",
+              javaType = "String")
+    public static final String AUDIO_RESPONSE_FORMAT = "CamelOpenAIAudioResponseFormat";
+    @Metadata(description = "Sampling temperature for audio transcription (0.0 to 1.0)", javaType = "Double")
+    public static final String AUDIO_TEMPERATURE = "CamelOpenAIAudioTemperature";
+    @Metadata(description = "Optional text to guide the model's style or continue a previous audio segment",
+              javaType = "String")
+    public static final String AUDIO_PROMPT = "CamelOpenAIAudioPrompt";
+    @Metadata(description = "Comma-separated timestamp granularities: word, segment, or word,segment (verbose_json only)",
+              javaType = "String")
+    public static final String AUDIO_TIMESTAMP_GRANULARITIES = "CamelOpenAIAudioTimestampGranularities";
+    @Metadata(description = "Chunking strategy for diarized transcription models: auto or vad", javaType = "String")
+    public static final String AUDIO_CHUNKING_STRATEGY = "CamelOpenAIAudioChunkingStrategy";
+    @Metadata(description = "Comma-separated known speaker names for diarized transcription", javaType = "String")
+    public static final String AUDIO_KNOWN_SPEAKER_NAMES = "CamelOpenAIAudioKnownSpeakerNames";
+    @Metadata(description = "Comma-separated known speaker reference audio file ids for diarized transcription",
+              javaType = "String")
+    public static final String AUDIO_KNOWN_SPEAKER_REFERENCES = "CamelOpenAIAudioKnownSpeakerReferences";
+    @Metadata(description = "Comma-separated keywords to improve transcription accuracy", javaType = "String")
+    public static final String AUDIO_KEYWORDS = "CamelOpenAIAudioKeywords";
+    @Metadata(description = "Comma-separated input audio languages (ISO-639-1 or ISO-639-3)", javaType = "String")
+    public static final String AUDIO_LANGUAGES = "CamelOpenAIAudioLanguages";
+    @Metadata(description = "Comma-separated extra response fields to include (e.g. logprobs)", javaType = "String")
+    public static final String AUDIO_INCLUDE = "CamelOpenAIAudioInclude";
+
+    // Audio Transcription/Translation Output Headers
+    @Metadata(description = "Duration of the audio in seconds (verbose_json or diarized_json)", javaType = "Double")
+    public static final String AUDIO_DURATION = "CamelOpenAIAudioDuration";
+    @Metadata(description = "Speaker-labelled segments from diarized_json transcription", javaType = "java.util.List")
+    public static final String AUDIO_DIARIZED_SEGMENTS = "CamelOpenAIAudioDiarizedSegments";
+    @Metadata(description = "Language detected in the audio (verbose_json only)", javaType = "String")
+    public static final String AUDIO_DETECTED_LANGUAGE = "CamelOpenAIAudioDetectedLanguage";
+
+    // Audio Speech (Text-to-Speech) Input Headers
+    @Metadata(description = "The model to use for text-to-speech (e.g., gpt-4o-mini-tts, tts-1, tts-1-hd)",
+              javaType = "String")
+    public static final String SPEECH_MODEL = "CamelOpenAISpeechModel";
+    @Metadata(description = "The voice to use for the generated audio (e.g., alloy, echo, fable, onyx, nova, shimmer)",
+              javaType = "String")
+    public static final String SPEECH_VOICE = "CamelOpenAISpeechVoice";
+    @Metadata(description = "The audio format for text-to-speech output (mp3, opus, aac, flac, wav, pcm)",
+              javaType = "String")
+    public static final String SPEECH_RESPONSE_FORMAT = "CamelOpenAISpeechResponseFormat";
+    @Metadata(description = "The speed of the generated audio (0.25 to 4.0, where 1.0 is normal speed)",
+              javaType = "Double")
+    public static final String SPEECH_SPEED = "CamelOpenAISpeechSpeed";
+    @Metadata(description = "Optional instructions to control the voice of the generated audio "
+                            + "(does not work with tts-1 or tts-1-hd)",
+              javaType = "String")
+    public static final String SPEECH_INSTRUCTIONS = "CamelOpenAISpeechInstructions";
+
+    // Image Generation/Edit Input Headers
+    @Metadata(description = "The model to use for image generation or editing (e.g., gpt-image-1, dall-e-3, dall-e-2)",
+              javaType = "String")
+    public static final String IMAGE_MODEL = "CamelOpenAIImageModel";
+    @Metadata(description = "The prompt describing the image to generate, or the edit to apply. Takes precedence over "
+                            + "the imagePrompt endpoint option and, for image-generation, over the message body",
+              javaType = "String")
+    public static final String IMAGE_PROMPT = "CamelOpenAIImagePrompt";
+    @Metadata(description = "The size of the generated image (e.g., 1024x1024, 1536x1024, auto)", javaType = "String")
+    public static final String IMAGE_SIZE = "CamelOpenAIImageSize";
+    @Metadata(description = "The quality of the generated image (auto, high, medium, low for GPT image models; "
+                            + "hd, standard for dall-e-3; standard for dall-e-2)",
+              javaType = "String")
+    public static final String IMAGE_QUALITY = "CamelOpenAIImageQuality";
+    @Metadata(description = "The response format of the generated image (url or b64_json). Only supported by "
+                            + "dall-e-2 and dall-e-3; GPT image models always return base64",
+              javaType = "String")
+    public static final String IMAGE_RESPONSE_FORMAT = "CamelOpenAIImageResponseFormat";
+    @Metadata(description = "The number of images to generate", javaType = "Integer")
+    public static final String IMAGE_COUNT = "CamelOpenAIImageCount";
+    @Metadata(description = "The background of the generated image (transparent, opaque, auto). "
+                            + "Only supported by GPT image models",
+              javaType = "String")
+    public static final String IMAGE_BACKGROUND = "CamelOpenAIImageBackground";
+    @Metadata(description = "The output format of the generated image (png, jpeg, webp). "
+                            + "Only supported by GPT image models",
+              javaType = "String")
+    public static final String IMAGE_OUTPUT_FORMAT = "CamelOpenAIImageOutputFormat";
+    @Metadata(description = "The compression level (0-100) for the webp or jpeg output formats. "
+                            + "Only supported by GPT image models",
+              javaType = "Integer")
+    public static final String IMAGE_OUTPUT_COMPRESSION = "CamelOpenAIImageOutputCompression";
+    @Metadata(description = "The style of the generated image (vivid or natural). Only supported by dall-e-3",
+              javaType = "String")
+    public static final String IMAGE_STYLE = "CamelOpenAIImageStyle";
+    @Metadata(description = "The content moderation level for image generation (low or auto). "
+                            + "Only supported by GPT image models",
+              javaType = "String")
+    public static final String IMAGE_MODERATION = "CamelOpenAIImageModeration";
+    @Metadata(description = "How closely the edit must match the style and features of the input image (high or low). "
+                            + "Only supported by the image-edit operation on gpt-image-1 and gpt-image-1.5",
+              javaType = "String")
+    public static final String IMAGE_INPUT_FIDELITY = "CamelOpenAIImageInputFidelity";
+    @Metadata(description = "An optional PNG mask for the image-edit operation, where the fully transparent areas "
+                            + "indicate where the image should be edited",
+              javaType = "byte[], java.io.File, java.nio.file.Path or java.io.InputStream")
+    public static final String IMAGE_MASK = "CamelOpenAIImageMask";
+
+    // Image Generation/Edit Output Headers
+    @Metadata(description = "The number of images returned in the response", javaType = "Integer")
+    public static final String IMAGE_RESULT_COUNT = "CamelOpenAIImageResultCount";
+    @Metadata(description = "The prompt as revised by the model, when a single image is returned (dall-e-3)",
+              javaType = "String")
+    public static final String IMAGE_REVISED_PROMPT = "CamelOpenAIImageRevisedPrompt";
+    @Metadata(description = "The prompts as revised by the model, one entry per returned image (dall-e-3)",
+              javaType = "java.util.List<String>")
+    public static final String IMAGE_REVISED_PROMPTS = "CamelOpenAIImageRevisedPrompts";
+    @Metadata(description = "The number of input tokens billed for the image request. "
+                            + "Only reported by GPT image models",
+              javaType = "Long")
+    public static final String IMAGE_INPUT_TOKENS = "CamelOpenAIImageInputTokens";
+    @Metadata(description = "The number of output tokens billed for the image request. "
+                            + "Only reported by GPT image models",
+              javaType = "Long")
+    public static final String IMAGE_OUTPUT_TOKENS = "CamelOpenAIImageOutputTokens";
+    @Metadata(description = "The total number of tokens billed for the image request. "
+                            + "Only reported by GPT image models",
+              javaType = "Long")
+    public static final String IMAGE_TOTAL_TOKENS = "CamelOpenAIImageTotalTokens";
 
     private OpenAIConstants() {
         // Utility class

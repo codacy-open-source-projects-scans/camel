@@ -21,9 +21,10 @@ public class IggyEndpointUriFactory extends org.apache.camel.support.component.E
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(31);
+        Set<String> props = new HashSet<>(32);
         props.add("autoCommit");
         props.add("autoCreateStream");
         props.add("autoCreateTopic");
@@ -34,7 +35,9 @@ public class IggyEndpointUriFactory extends org.apache.camel.support.component.E
         props.add("consumersCount");
         props.add("exceptionHandler");
         props.add("exchangePattern");
+        props.add("headerFilterStrategy");
         props.add("host");
+        props.add("iggyHeaderOptions");
         props.add("lazyStartProducer");
         props.add("maxTopicSize");
         props.add("messageExpiry");
@@ -45,7 +48,6 @@ public class IggyEndpointUriFactory extends org.apache.camel.support.component.E
         props.add("pollBatchSize");
         props.add("pollingStrategy");
         props.add("port");
-        props.add("replicationFactor");
         props.add("shutdownTimeout");
         props.add("sslContextParameters");
         props.add("startingOffset");
@@ -60,6 +62,9 @@ public class IggyEndpointUriFactory extends org.apache.camel.support.component.E
         secretProps.add("password");
         secretProps.add("username");
         SECRET_PROPERTY_NAMES = Collections.unmodifiableSet(secretProps);
+        Set<String> identityProps = new HashSet<>(1);
+        identityProps.add("streamName");
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.unmodifiableSet(identityProps);
         MULTI_VALUE_PREFIXES = Collections.emptyMap();
     }
 
@@ -73,7 +78,7 @@ public class IggyEndpointUriFactory extends org.apache.camel.support.component.E
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "topicName", null, true, copy);
         uri = buildQueryParameters(uri, copy, encode);
@@ -88,6 +93,11 @@ public class IggyEndpointUriFactory extends org.apache.camel.support.component.E
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

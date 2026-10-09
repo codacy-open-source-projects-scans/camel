@@ -41,6 +41,8 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.Expression;
 import org.apache.camel.NamedNode;
 import org.apache.camel.TypeConversionException;
+import org.apache.camel.builder.EndpointConsumerBuilder;
+import org.apache.camel.builder.EndpointProducerBuilder;
 import org.apache.camel.converter.jaxp.XmlConverter;
 import org.apache.camel.model.BasicExpressionNode;
 import org.apache.camel.model.ExpressionNode;
@@ -54,6 +56,9 @@ import org.apache.camel.model.RouteTemplateDefinition;
 import org.apache.camel.model.RouteTemplatesDefinition;
 import org.apache.camel.model.RoutesDefinition;
 import org.apache.camel.model.SendDefinition;
+import org.apache.camel.model.SwitchCaseDefinition;
+import org.apache.camel.model.SwitchDefinition;
+import org.apache.camel.model.SwitchOtherwiseDefinition;
 import org.apache.camel.model.TemplatedRouteDefinition;
 import org.apache.camel.model.TemplatedRoutesDefinition;
 import org.apache.camel.model.ToDynamicDefinition;
@@ -85,6 +90,13 @@ public final class JaxbHelper {
      * @param namespaces the map of namespaces to add discovered XML namespaces into
      */
     public static void extractNamespaces(RouteDefinition route, Map<String, String> namespaces) {
+        for (SwitchDefinition sw : filterTypeInOutputs(route.getOutputs(), SwitchDefinition.class)) {
+            sw.preCreateProcessor();
+            NamespaceAware aware = getNamespaceAwareFromExpression(sw);
+            if (aware != null && aware.getNamespaces() != null) {
+                namespaces.putAll(aware.getNamespaces());
+            }
+        }
         for (ExpressionNode en : filterTypeInOutputs(route.getOutputs(), ExpressionNode.class)) {
             NamespaceAware na = getNamespaceAwareFromExpression(en);
             if (na != null) {
@@ -132,28 +144,61 @@ public final class JaxbHelper {
 
     /**
      * If the route has been built with endpoint-dsl, then the model will not have uri set which then cannot be included
-     * in the JAXB model dump
+     * in the JAXB model dump. Returns a {@link Runnable} that restores the original endpoint DSL builders after
+     * serialization, so that the live {@link RouteDefinition} is not permanently mutated.
      */
-    public static void resolveEndpointDslUris(RouteDefinition route) {
+    @SuppressWarnings("rawtypes")
+    public static Runnable resolveEndpointDslUris(RouteDefinition route) {
+        List<Runnable> restorers = new ArrayList<>();
         FromDefinition from = route.getInput();
         if (from != null && from.getEndpointConsumerBuilder() != null) {
-            String uri = from.getEndpointConsumerBuilder().getRawUri();
-            from.setUri(uri);
+            EndpointConsumerBuilder builder = from.getEndpointConsumerBuilder();
+            from.setUri(builder.getRawUri());
+            restorers.add(() -> from.setEndpointConsumerBuilder(builder));
         }
         Collection<SendDefinition> col = filterTypeInOutputs(route.getOutputs(), SendDefinition.class);
         for (SendDefinition<?> to : col) {
             if (to.getEndpointProducerBuilder() != null) {
-                String uri = to.getEndpointProducerBuilder().getRawUri();
-                to.setUri(uri);
+                EndpointProducerBuilder builder = to.getEndpointProducerBuilder();
+                to.setUri(builder.getRawUri());
+                restorers.add(() -> to.setEndpointProducerBuilder(builder));
             }
         }
         Collection<ToDynamicDefinition> col2 = filterTypeInOutputs(route.getOutputs(), ToDynamicDefinition.class);
         for (ToDynamicDefinition to : col2) {
             if (to.getEndpointProducerBuilder() != null) {
-                String uri = to.getEndpointProducerBuilder().getRawUri();
-                to.setUri(uri);
+                EndpointProducerBuilder builder = to.getEndpointProducerBuilder();
+                to.setUri(builder.getRawUri());
+                restorers.add(() -> to.setUri(null));
             }
         }
+        for (SwitchDefinition sw : filterTypeInOutputs(route.getOutputs(), SwitchDefinition.class)) {
+            for (SwitchCaseDefinition c : sw.getCases()) {
+                EndpointProducerBuilder builder = c.getEndpointProducerBuilder();
+                if (builder != null) {
+                    c.setUri(builder.getRawUri());
+                    restorers.add(() -> c.setEndpointProducerBuilder(builder));
+                }
+            }
+            SwitchOtherwiseDefinition fallback = sw.getOtherwise();
+            if (fallback != null && fallback.getEndpointProducerBuilder() != null) {
+                EndpointProducerBuilder builder = fallback.getEndpointProducerBuilder();
+                fallback.setUri(builder.getRawUri());
+                restorers.add(() -> fallback.setEndpointProducerBuilder(builder));
+            }
+        }
+        return () -> restorers.forEach(Runnable::run);
+    }
+
+    private static NamespaceAware getNamespaceAwareFromExpression(SwitchDefinition definition) {
+        if (definition.getSelector() == null || definition.getSelector().getExpressionType() == null) {
+            return null;
+        }
+        ExpressionDefinition expression = definition.getSelector().getExpressionType();
+        if (expression.getExpressionValue() instanceof NamespaceAware aware) {
+            return aware;
+        }
+        return expression instanceof NamespaceAware aware ? aware : null;
     }
 
     private static NamespaceAware getNamespaceAwareFromExpression(ExpressionNode expressionNode) {
@@ -256,6 +301,12 @@ public final class JaxbHelper {
     }
 
     public static void applyNamespaces(RouteDefinition route, Map<String, String> namespaces) {
+        for (SwitchDefinition sw : filterTypeInOutputs(route.getOutputs(), SwitchDefinition.class)) {
+            NamespaceAware aware = getNamespaceAwareFromExpression(sw);
+            if (aware != null) {
+                aware.setNamespaces(namespaces);
+            }
+        }
         Collection<ExpressionNode> col = filterTypeInOutputs(route.getOutputs(), ExpressionNode.class);
         for (ExpressionNode en : col) {
             NamespaceAware na = getNamespaceAwareFromExpression(en);
@@ -280,6 +331,12 @@ public final class JaxbHelper {
         defs.addAll(config.getOnCompletions());
         defs.addAll(config.getOnExceptions());
         for (OutputDefinition<?> def : defs) {
+            for (SwitchDefinition sw : filterTypeInOutputs(def.getOutputs(), SwitchDefinition.class)) {
+                NamespaceAware aware = getNamespaceAwareFromExpression(sw);
+                if (aware != null) {
+                    aware.setNamespaces(namespaces);
+                }
+            }
             Collection<ExpressionNode> col = filterTypeInOutputs(def.getOutputs(), ExpressionNode.class);
             for (ExpressionNode en : col) {
                 NamespaceAware na = getNamespaceAwareFromExpression(en);
@@ -316,6 +373,11 @@ public final class JaxbHelper {
     }
 
     public static <T extends NamedNode> T modelToXml(CamelContext context, String xml, Class<T> type) throws Exception {
+        return modelToXml(context, xml, type, false);
+    }
+
+    public static <T extends NamedNode> T modelToXml(CamelContext context, String xml, Class<T> type, boolean sourceLocation)
+            throws Exception {
         JAXBContext jaxbContext = getJAXBContext(context);
 
         XmlConverter xmlConverter = newXmlConverter(context);
@@ -330,7 +392,7 @@ public final class JaxbHelper {
         }
 
         Map<String, KeyValueHolder<Integer, String>> locations = new HashMap<>();
-        if (context.isDebugging()) {
+        if (sourceLocation || context.isDebugging()) {
             extractSourceLocations(dom.getDocumentElement(), locations);
         }
         Map<String, String> namespaces = new LinkedHashMap<>();

@@ -19,6 +19,7 @@ package org.apache.camel.coap;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.PrivateKey;
@@ -44,6 +45,7 @@ import org.apache.camel.spi.UriEndpoint;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriPath;
 import org.apache.camel.support.DefaultEndpoint;
+import org.apache.camel.support.DefaultHeaderFilterStrategy;
 import org.apache.camel.support.jsse.ClientAuthentication;
 import org.apache.camel.support.jsse.KeyManagersParameters;
 import org.apache.camel.support.jsse.SSLContextParameters;
@@ -107,6 +109,8 @@ public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLoca
     private boolean observe;
     @UriParam(label = "consumer", defaultValue = "false")
     private boolean observable;
+    @UriParam(label = "consumer", defaultValue = "true")
+    private boolean muteException = true;
     @UriParam(label = "producer", defaultValue = "false")
     private boolean notify;
     @UriParam(label = "producer,advanced")
@@ -121,7 +125,7 @@ public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLoca
         super(uri, component);
         try {
             this.uri = new URI(uri);
-        } catch (java.net.URISyntaxException use) {
+        } catch (URISyntaxException use) {
             this.uri = null;
         }
         this.component = component;
@@ -254,6 +258,18 @@ public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLoca
         this.observable = observable;
     }
 
+    public boolean isMuteException() {
+        return muteException;
+    }
+
+    /**
+     * If enabled and an Exchange failed processing on the consumer side, the 5.00 (Internal Server Error) response sent
+     * to the client won't contain the exception's message.
+     */
+    public void setMuteException(boolean muteException) {
+        this.muteException = muteException;
+    }
+
     public boolean isNotify() {
         return notify;
     }
@@ -280,7 +296,7 @@ public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLoca
     @Override
     public HeaderFilterStrategy getHeaderFilterStrategy() {
         if (headerFilterStrategy == null) {
-            headerFilterStrategy = new CoAPHeaderFilterStrategy();
+            headerFilterStrategy = new DefaultHeaderFilterStrategy();
         }
         return headerFilterStrategy;
     }

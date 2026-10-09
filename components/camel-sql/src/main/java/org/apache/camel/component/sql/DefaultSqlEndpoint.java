@@ -93,6 +93,11 @@ public abstract class DefaultSqlEndpoint extends DefaultPollingEndpoint implemen
     private boolean breakBatchOnConsumeFail;
     @UriParam(defaultValue = "true", description = "Whether to allow using named parameters in the queries.")
     private boolean allowNamedParameters = true;
+    @UriParam(defaultValue = "false", label = "producer,security", security = "insecure:dev", insecureValue = "true",
+              description = "Whether to allow overriding the endpoint-configured SQL query with the CamelSqlQuery header."
+                            + " Disabled by default; enable it only when the header source is trusted, since it lets a"
+                            + " message choose the executed SQL.")
+    private boolean allowQueryFromHeader;
     @UriParam(label = "advanced",
               description = "If enabled then the populateStatement method from org.apache.camel.component.sql.SqlPrepareStatementStrategy is always invoked, "
                             + "also if there is no expected parameters to be prepared. When this is false then the populateStatement is only invoked if there is 1"
@@ -109,7 +114,9 @@ public abstract class DefaultSqlEndpoint extends DefaultPollingEndpoint implemen
                             + " c) If the outputClass is set, then it will convert the query result into an Java bean object by calling all the setters that match the column names."
                             + " It will assume your class has a default constructor to create instance with."
                             + " d) If the query resulted in more than one rows, it throws an non-unique result exception."
-                            + " StreamList streams the result of the query using an Iterator. This can be used with the Splitter EIP in streaming mode to process the ResultSet in streaming fashion.")
+                            + " StreamList streams the result of the query using an Iterator. This can be used with the Splitter EIP in streaming mode to process the ResultSet in streaming fashion."
+                            + " The body is then a ResultSetIterator and not a List: it has no size, and it can only be read once, so split it to work on the rows"
+                            + " instead of calling size() or indexing it. Use SelectList when the whole result is wanted as a List of Map.")
     private SqlOutputType outputType = SqlOutputType.SelectList;
     @UriParam(description = "Specify the full package and class name to use as conversion when outputType=SelectOne.")
     private String outputClass;
@@ -289,6 +296,18 @@ public abstract class DefaultSqlEndpoint extends DefaultPollingEndpoint implemen
      */
     public void setAllowNamedParameters(boolean allowNamedParameters) {
         this.allowNamedParameters = allowNamedParameters;
+    }
+
+    public boolean isAllowQueryFromHeader() {
+        return allowQueryFromHeader;
+    }
+
+    /**
+     * Whether to allow overriding the endpoint-configured SQL query with the {@code CamelSqlQuery} header. Disabled by
+     * default.
+     */
+    public void setAllowQueryFromHeader(boolean allowQueryFromHeader) {
+        this.allowQueryFromHeader = allowQueryFromHeader;
     }
 
     public boolean isAlwaysPopulateStatement() {

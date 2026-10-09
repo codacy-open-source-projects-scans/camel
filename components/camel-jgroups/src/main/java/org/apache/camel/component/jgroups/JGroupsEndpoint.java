@@ -16,6 +16,7 @@
  */
 package org.apache.camel.component.jgroups;
 
+import java.io.ObjectInputFilter;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.camel.Category;
@@ -29,9 +30,14 @@ import org.apache.camel.spi.UriEndpoint;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriPath;
 import org.apache.camel.support.DefaultEndpoint;
+import org.apache.camel.support.DeserializationFilterHelper;
 import org.jgroups.JChannel;
 import org.jgroups.Message;
 import org.jgroups.View;
+import org.jgroups.protocols.ASYM_ENCRYPT;
+import org.jgroups.protocols.AUTH;
+import org.jgroups.protocols.SYM_ENCRYPT;
+import org.jgroups.stack.ProtocolStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +61,28 @@ public class JGroupsEndpoint extends DefaultEndpoint {
     private String channelProperties;
     @UriParam(label = "consumer")
     private boolean enableViewMessages;
+    @UriParam(label = "consumer,security",
+              description = "Sets an ObjectInputFilter pattern (jdk.serialFilter syntax) applied as a defense-in-depth"
+                            + " check on the class of the message body deserialized by org.jgroups.Message.getObject()."
+                            + " The pattern is evaluated after JGroups has deserialized the payload, so this option alone"
+                            + " does not prevent gadget-chain execution that happens inside the JGroups receive path;"
+                            + " to block such attacks, also configure the JVM-wide -Djdk.serialFilter and secure the"
+                            + " channel with AUTH and encryption. When this option is not set and no JVM-wide filter is"
+                            + " configured, a conservative default filter denying java.net.** and otherwise allowing"
+                            + " java.**, javax.** and org.apache.camel.** is applied. Use * to accept any type.")
+    private String deserializationFilter;
+
+    @UriParam(label = "consumer,security", defaultValue = "false", security = "insecure:serialization",
+              description = "Whether to start the consumer and accept any object deserialized from the cluster even"
+                            + " when no pre-read deserialization control is configured. When false (the default) the"
+                            + " consumer fails to start on an unauthenticated default channel unless a JVM-wide"
+                            + " -Djdk.serialFilter, the JGroups jgroups.deserialization.filter system property, or an"
+                            + " authenticated/encrypted channel is configured. Set to true to accept any serialized type"
+                            + " and bypass the start-up guard; this also disables the post-read class check, so it is an"
+                            + " insecure setting.")
+    private boolean acceptAllObjects;
+
+    private volatile ObjectInputFilter resolvedDeserializationFilter;
 
     public JGroupsEndpoint(String endpointUri, Component component, JChannel channel, String clusterName,
                            String channelProperties, boolean enableViewMessages) {
@@ -82,8 +110,27 @@ public class JGroupsEndpoint extends DefaultEndpoint {
         exchange.getIn().setHeader(JGroupsConstants.HEADER_JGROUPS_ORIGINAL_MESSAGE, message);
         exchange.getIn().setHeader(JGroupsConstants.HEADER_JGROUPS_SRC, message.getSrc());
         exchange.getIn().setHeader(JGroupsConstants.HEADER_JGROUPS_DEST, message.getDest());
-        exchange.getIn().setBody(message.getObject());
+        Object body = message.getObject();
+        if (body != null && !acceptAllObjects) {
+            checkDeserializedType(body.getClass());
+        }
+        exchange.getIn().setBody(body);
         return exchange;
+    }
+
+    private void checkDeserializedType(Class<?> type) {
+        ObjectInputFilter filter = resolvedDeserializationFilter;
+        if (filter == null) {
+            // the endpoint was not started, so resolve the filter on the fly rather than skipping the check
+            filter = resolveDeserializationFilter();
+            resolvedDeserializationFilter = filter;
+        }
+        if (DeserializationFilterHelper.checkClass(filter, type) == ObjectInputFilter.Status.REJECTED) {
+            throw new JGroupsException(
+                    "JGroups message deserialization blocked for class: " + type.getName()
+                                       + ". Configure the 'deserializationFilter' endpoint option or -Djdk.serialFilter"
+                                       + " to allow it.");
+        }
     }
 
     public Exchange createExchange(View view) {
@@ -103,6 +150,7 @@ public class JGroupsEndpoint extends DefaultEndpoint {
     protected void doStart() throws Exception {
         super.doStart();
         resolvedChannel = resolveChannel();
+        resolvedDeserializationFilter = resolveDeserializationFilter();
     }
 
     @Override
@@ -112,6 +160,57 @@ public class JGroupsEndpoint extends DefaultEndpoint {
             resolvedChannel.close();
         }
         super.doStop();
+    }
+
+    private ObjectInputFilter resolveDeserializationFilter() {
+        return DeserializationFilterHelper.resolveDeserializationFilter(
+                deserializationFilter, DeserializationFilterHelper.DEFAULT_CLASS_DESERIALIZATION_FILTER);
+    }
+
+    /**
+     * Verifies, at consumer start, that inbound cluster messages will not be Java-deserialized without a pre-read
+     * protection in place. JGroups materializes the message body with {@code ObjectInputStream.readObject()} inside its
+     * own receive path, before Camel can inspect the result, so the post-read {@link #deserializationFilter} check is
+     * defense-in-depth only. A pre-read control is considered present when any of the following holds: a JVM-wide
+     * serialization filter ({@code -Djdk.serialFilter}) is configured, the JGroups
+     * {@code jgroups.deserialization.filter} system property is set, or the channel protocol stack includes
+     * authentication/encryption. Set {@link #acceptAllObjects} to {@code true} to start anyway and accept any type,
+     * restoring the previous behaviour.
+     *
+     * @throws JGroupsException if none of the above is configured on the (unauthenticated) default channel
+     */
+    void verifyConsumerDeserializationGuard() {
+        if (acceptAllObjects) {
+            return;
+        }
+        // Only a pre-read control counts here. The deserializationFilter option is a post-read class check (it runs
+        // after Message.getObject() has already deserialized the payload) and so does not satisfy this guard.
+        if (ObjectInputFilter.Config.getSerialFilter() != null) {
+            return;
+        }
+        String jgroupsFilter = System.getProperty("jgroups.deserialization.filter");
+        if (jgroupsFilter != null && !jgroupsFilter.isBlank()) {
+            return;
+        }
+        if (isSecuredChannel(resolvedChannel)) {
+            return;
+        }
+        throw new JGroupsException(
+                "Refusing to start the JGroups consumer for cluster '" + clusterName
+                                   + "': inbound cluster messages are Java-deserialized and no pre-read protection is"
+                                   + " in place. Configure one of -Djdk.serialFilter, the"
+                                   + " 'jgroups.deserialization.filter' system property, or a channel secured with"
+                                   + " AUTH/encryption (via channelProperties); or set 'acceptAllObjects=true' to accept"
+                                   + " any type and keep the previous behaviour. See the camel-jgroups component"
+                                   + " documentation (Security).");
+    }
+
+    static boolean isSecuredChannel(JChannel channel) {
+        if (channel == null) {
+            return false;
+        }
+        ProtocolStack stack = channel.getProtocolStack();
+        return stack != null && stack.findProtocol(AUTH.class, SYM_ENCRYPT.class, ASYM_ENCRYPT.class) != null;
     }
 
     private JChannel resolveChannel() throws Exception {
@@ -190,6 +289,40 @@ public class JGroupsEndpoint extends DefaultEndpoint {
      */
     public void setEnableViewMessages(boolean enableViewMessages) {
         this.enableViewMessages = enableViewMessages;
+    }
+
+    public String getDeserializationFilter() {
+        return deserializationFilter;
+    }
+
+    /**
+     * Sets an {@link ObjectInputFilter} pattern (same syntax as {@code jdk.serialFilter}) applied as a defense-in-depth
+     * check on the class of the message body deserialized by {@code org.jgroups.Message#getObject()}. The pattern is
+     * evaluated after JGroups has deserialized the payload, so this option alone does not prevent gadget-chain
+     * execution that happens inside the JGroups receive path; to block such attacks, also configure the JVM-wide
+     * {@code -Djdk.serialFilter} and secure the channel with {@code AUTH} and encryption. When this option is not set
+     * and no JVM-wide filter is configured, a conservative default filter denying {@code java.net.**} and otherwise
+     * allowing {@code java.**}, {@code javax.**} and {@code org.apache.camel.**} is applied. Use {@code *} to accept
+     * any type.
+     */
+    public void setDeserializationFilter(String deserializationFilter) {
+        this.deserializationFilter = deserializationFilter;
+    }
+
+    public boolean isAcceptAllObjects() {
+        return acceptAllObjects;
+    }
+
+    /**
+     * Whether to start the consumer and accept any object deserialized from the cluster even when no pre-read
+     * deserialization control is configured. When {@code false} (the default) the consumer fails to start on an
+     * unauthenticated default channel unless a JVM-wide {@code -Djdk.serialFilter}, the JGroups
+     * {@code jgroups.deserialization.filter} system property, or an authenticated/encrypted channel is configured. Set
+     * to {@code true} to accept any serialized type and bypass the start-up guard; this also disables the post-read
+     * class check, so it is an insecure setting.
+     */
+    public void setAcceptAllObjects(boolean acceptAllObjects) {
+        this.acceptAllObjects = acceptAllObjects;
     }
 
 }

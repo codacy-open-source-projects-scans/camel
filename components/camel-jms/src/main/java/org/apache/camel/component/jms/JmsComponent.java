@@ -736,6 +736,14 @@ public class JmsComponent extends HeaderFilterStrategyComponent {
         configuration.setDeserializationFilter(deserializationFilter);
     }
 
+    public boolean isObjectMessageEnabled() {
+        return configuration.isObjectMessageEnabled();
+    }
+
+    public void setObjectMessageEnabled(boolean objectMessageEnabled) {
+        configuration.setObjectMessageEnabled(objectMessageEnabled);
+    }
+
     public void setPreserveMessageQos(boolean preserveMessageQos) {
         configuration.setPreserveMessageQos(preserveMessageQos);
     }
@@ -990,6 +998,7 @@ public class JmsComponent extends HeaderFilterStrategyComponent {
 
     public void setMessageListenerContainerFactory(MessageListenerContainerFactory messageListenerContainerFactory) {
         configuration.setMessageListenerContainerFactory(messageListenerContainerFactory);
+        configuration.setConsumerType(ConsumerType.Custom);
     }
 
     public boolean isIncludeSentJMSMessageID() {
@@ -1118,7 +1127,7 @@ public class JmsComponent extends HeaderFilterStrategyComponent {
     @Override
     protected void doInit() throws Exception {
         // only attempt to set connection factory if there is no transaction manager
-        if (configuration.getConnectionFactory() == null && configuration.getOrCreateTransactionManager() == null
+        if (configuration.getConnectionFactory() == null && configuration.getTransactionManager() == null
                 && isAllowAutoWiredConnectionFactory()) {
             Set<ConnectionFactory> beans = getCamelContext().getRegistry().findByType(ConnectionFactory.class);
             if (beans.size() == 1) {

@@ -21,12 +21,21 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
+import java.net.JarURLConnection;
+import java.net.URI;
+import java.net.URL;
+import java.net.URLConnection;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,6 +43,7 @@ import java.util.StringJoiner;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import io.vertx.core.Handler;
 import io.vertx.core.http.HttpMethod;
@@ -41,7 +51,6 @@ import io.vertx.ext.web.RequestBody;
 import io.vertx.ext.web.Route;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
-import io.vertx.ext.web.impl.BlockingHandlerDecorator;
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelContextAware;
 import org.apache.camel.ConsumerTemplate;
@@ -68,7 +77,6 @@ import org.apache.camel.health.HealthCheckHelper;
 import org.apache.camel.health.HealthCheckRegistry;
 import org.apache.camel.http.base.HttpProtocolHeaderFilterStrategy;
 import org.apache.camel.spi.HeaderFilterStrategy;
-import org.apache.camel.spi.PackageScanResourceResolver;
 import org.apache.camel.spi.ReloadStrategy;
 import org.apache.camel.spi.Resource;
 import org.apache.camel.spi.ResourceLoader;
@@ -100,6 +108,8 @@ import org.slf4j.LoggerFactory;
 public class ManagementHttpServer extends ServiceSupport implements CamelContextAware, StaticService {
 
     private static final Logger LOG = LoggerFactory.getLogger(ManagementHttpServer.class);
+    // the files camel run adds to the classpath
+    private static final String CLASSPATH_FILES = "camel.jbang.classpathFiles";
 
     private static final int BODY_MAX_CHARS = 128 * 1024;
     private static final int DEFAULT_POLL_TIMEOUT = 20000;
@@ -130,6 +140,8 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
     private String uploadSourceDir;
     private boolean downloadEnabled;
     private boolean sendEnabled;
+    private boolean openapiUiEnabled;
+    private String openapiUiSpecPath = OpenApiUiSupport.DEFAULT_SPEC_PATH;
 
     @Override
     public CamelContext getCamelContext() {
@@ -359,6 +371,30 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
         this.sendEnabled = sendEnabled;
     }
 
+    @ManagedAttribute(description = "Whether OpenAPI Swagger UI is enabled (q/openapi)")
+    public boolean isOpenapiUiEnabled() {
+        return openapiUiEnabled;
+    }
+
+    /**
+     * Whether Swagger UI is enabled at {@link OpenApiUiSupport#OPENAPI_UI_PATH}.
+     */
+    public void setOpenapiUiEnabled(boolean openapiUiEnabled) {
+        this.openapiUiEnabled = openapiUiEnabled;
+    }
+
+    @ManagedAttribute(description = "OpenAPI document URL used by Swagger UI")
+    public String getOpenapiUiSpecPath() {
+        return openapiUiSpecPath;
+    }
+
+    /**
+     * Path or URL of the OpenAPI document loaded by Swagger UI (default {@value OpenApiUiSupport#DEFAULT_SPEC_PATH}).
+     */
+    public void setOpenapiUiSpecPath(String openapiUiSpecPath) {
+        this.openapiUiSpecPath = openapiUiSpecPath;
+    }
+
     public VertxPlatformHttpServerConfiguration.Cors getCors() {
         return configuration.getCors();
     }
@@ -457,6 +493,9 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
         }
         if (sendEnabled) {
             setupSendConsole();
+        }
+        if (openapiUiEnabled) {
+            OpenApiUiSupport.setup(router, platformHttpComponent, openapiUiSpecPath);
         }
         // metrics will be setup in camel-micrometer-prometheus
     }
@@ -576,7 +615,7 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
         };
 
         // use blocking handler as the task can take longer time to complete
-        info.handler(new BlockingHandlerDecorator(handler, true));
+        info.blockingHandler(handler);
 
         platformHttpComponent.addHttpManagementEndpoint(this.infoPath, "GET", null,
                 "application/json", null);
@@ -653,9 +692,9 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
             }
         };
         // use blocking handler as the task can take longer time to complete
-        health.handler(new BlockingHandlerDecorator(handler, true));
-        live.handler(new BlockingHandlerDecorator(handler, true));
-        ready.handler(new BlockingHandlerDecorator(handler, true));
+        health.blockingHandler(handler);
+        live.blockingHandler(handler);
+        ready.blockingHandler(handler);
 
         platformHttpComponent.addHttpManagementEndpoint(this.healthPath, "GET", null,
                 "application/json", null);
@@ -674,7 +713,7 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
                 .handler(BodyHandler.create(false));
 
         Handler<RoutingContext> handler = (Handler<RoutingContext>) jolokiaPlugin.getHandler();
-        jolokia.handler(new BlockingHandlerDecorator(handler, true));
+        jolokia.blockingHandler(handler);
 
         platformHttpComponent.addHttpManagementEndpoint(jolokiaPath, "GET,POST", null,
                 "text/plain,application/json", null);
@@ -755,8 +794,8 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
             }
         };
         // use blocking handler as the task can take longer time to complete
-        upload.handler(new BlockingHandlerDecorator(handler, true));
-        uploadDelete.handler(new BlockingHandlerDecorator(handler, true));
+        upload.blockingHandler(handler);
+        uploadDelete.blockingHandler(handler);
 
         platformHttpComponent.addHttpManagementEndpoint("/q/upload", "PUT,DELETE",
                 "multipart/form-data", null, null);
@@ -777,30 +816,27 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
                 if (name == null || name.isBlank() || matcher.isPattern(name)) {
                     Set<String> names = new TreeSet<>();
                     if (cp) {
-                        // also look inside classpath
-                        PackageScanResourceResolver resolver = PluginHelper.getPackageScanResourceResolver(camelContext);
-                        resolver.addClassLoader(camelContext.getApplicationContextClassLoader());
-                        try {
-                            String pattern = "**/*";
-                            if (name != null && !name.isBlank()) {
-                                pattern = "**/" + name;
+                        // also include the resources of the application itself
+                        String pattern = "**/*";
+                        if (name != null && !name.isBlank()) {
+                            pattern = "**/" + name;
+                        }
+                        for (String n : findApplicationResources()) {
+                            if (matcher.match(pattern, n)) {
+                                names.add(n);
                             }
-                            for (Resource res : resolver.findResources(pattern)) {
-                                String loc = res.getLocation();
-                                loc = LoggerHelper.sourceNameOnly(loc);
-                                names.add(loc);
-                            }
-                        } catch (Exception e) {
-                            // ignore
                         }
                     }
                     // always include routes
                     for (org.apache.camel.Route route : camelContext.getRoutes()) {
                         String loc = route.getSourceLocation();
                         if (loc != null) {
-                            loc = LoggerHelper.sourceNameOnly(loc);
-                            if (name == null || name.isBlank() || matcher.match(name, loc)) {
-                                names.add(loc);
+                            final String n = sourceName(loc);
+                            // skip routes from a classpath directory that are already listed as a resource
+                            boolean listed = cp && FileUtil.isAbsolute(new File(n))
+                                    && names.stream().anyMatch(r -> n.endsWith("/" + r));
+                            if (!listed && (name == null || name.isBlank() || matcher.match(name, n))) {
+                                names.add(n);
                             }
                         }
                     }
@@ -839,11 +875,20 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
                         for (org.apache.camel.Route route : camelContext.getRoutes()) {
                             String loc = route.getSourceLocation();
                             if (loc != null) {
-                                loc = LoggerHelper.sourceNameOnly(loc);
+                                loc = sourceName(loc);
                                 if (matcher.match(name, loc)) {
                                     res = route.getSourceResource();
                                     break;
                                 }
+                            }
+                        }
+                    }
+                    if (res == null || !res.exists()) {
+                        // files from the project directory (such as application.properties) when using camel run
+                        for (String f : findProjectFiles()) {
+                            if (name.equals(f)) {
+                                res = loader.resolveResource("file:" + f);
+                                break;
                             }
                         }
                     }
@@ -867,10 +912,151 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
             }
         };
         // use blocking handler as the task can take longer time to complete
-        download.handler(new BlockingHandlerDecorator(handler, true));
+        download.blockingHandler(handler);
 
         platformHttpComponent.addHttpManagementEndpoint("/q/download", "GET",
                 null, "text/plain,application/octet-stream", null);
+    }
+
+    /**
+     * The name of the source such as a route file, which for a packaged application is the path inside the JAR.
+     */
+    private static String sourceName(String location) {
+        String answer = LoggerHelper.sourceNameOnly(location);
+        int pos = answer.lastIndexOf("!/");
+        if (pos != -1) {
+            answer = answer.substring(pos + 2);
+        }
+        return answer;
+    }
+
+    /**
+     * Finds the resources of the application itself, that is the classpath directories and the classes folder of a
+     * packaged JAR, and the files from the project directory when using camel run. The content of dependency JARs is
+     * not included.
+     */
+    protected Set<String> findApplicationResources() {
+        Set<String> answer = new TreeSet<>();
+        // the application context classloader may not be the classloader of a packaged application
+        Set<ClassLoader> loaders = new LinkedHashSet<>();
+        if (camelContext.getApplicationContextClassLoader() != null) {
+            loaders.add(camelContext.getApplicationContextClassLoader());
+        }
+        if (Thread.currentThread().getContextClassLoader() != null) {
+            loaders.add(Thread.currentThread().getContextClassLoader());
+        }
+        loaders.add(ManagementHttpServer.class.getClassLoader());
+        // the base package of the application (such as the package of the main class) is used to find the JAR of
+        // a packaged application, as a JAR is not returned as a classpath root
+        String base = camelContext.getCamelContextExtension().getBasePackageScan();
+        String basePath = base != null && !base.isBlank() ? base.replace('.', '/') + "/" : null;
+        Map<String, Boolean> roots = new LinkedHashMap<>();
+        for (ClassLoader cl : loaders) {
+            try {
+                for (URL url : Collections.list(cl.getResources(""))) {
+                    roots.putIfAbsent(url.toExternalForm(), false);
+                }
+                if (basePath != null) {
+                    for (URL url : Collections.list(cl.getResources(basePath))) {
+                        String s = url.toExternalForm();
+                        int pos = s.lastIndexOf("!/");
+                        if (pos != -1) {
+                            roots.put(s.substring(0, pos + 2), true);
+                        } else if (s.endsWith(basePath)) {
+                            roots.putIfAbsent(s.substring(0, s.length() - basePath.length()), false);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("Error finding application resources due to: {}. This exception is ignored.", e.getMessage(),
+                        e);
+            }
+        }
+        for (Map.Entry<String, Boolean> root : roots.entrySet()) {
+            try {
+                for (String n : listResourceRoot(URI.create(root.getKey()).toURL(), root.getValue())) {
+                    if (isApplicationResource(n)) {
+                        answer.add(n);
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("Error listing resources in: {} due to: {}. This exception is ignored.", root.getKey(),
+                        e.getMessage(), e);
+            }
+        }
+        answer.addAll(findProjectFiles());
+        return answer;
+    }
+
+    private static List<String> listResourceRoot(URL url, boolean applicationJar) throws Exception {
+        List<String> answer = new ArrayList<>();
+        if ("file".equals(url.getProtocol())) {
+            Path root = Path.of(url.toURI());
+            if (Files.isDirectory(root)) {
+                try (Stream<Path> files = Files.walk(root)) {
+                    files.filter(Files::isRegularFile)
+                            .map(p -> FileUtil.normalizePath(root.relativize(p).toString()).replace('\\', '/'))
+                            .forEach(answer::add);
+                }
+            }
+        } else if ("jar".equals(url.getProtocol())) {
+            // the root of a dependency JAR is not part of the application, but the classes folder of a packaged
+            // application (such as jar:nested:/app.jar/!BOOT-INF/classes/!/) and the application JAR are
+            String s = url.toExternalForm();
+            if (s.endsWith("!/")) {
+                s = s.substring(0, s.length() - 2);
+            }
+            if (s.endsWith(".jar") && !applicationJar) {
+                return answer;
+            }
+            URLConnection con = url.openConnection();
+            if (con instanceof JarURLConnection jar) {
+                String prefix = jar.getEntryName() != null ? jar.getEntryName() : "";
+                // the JAR file is cached by the JDK so it must not be closed
+                jar.getJarFile().stream()
+                        .filter(e -> !e.isDirectory() && e.getName().startsWith(prefix))
+                        .map(e -> e.getName().substring(prefix.length()))
+                        .forEach(answer::add);
+            }
+        }
+        return answer;
+    }
+
+    /**
+     * The files from the project directory that camel run has added to the classpath or loaded as properties.
+     */
+    private List<String> findProjectFiles() {
+        List<String> answer = new ArrayList<>();
+        List<String> files = new ArrayList<>();
+        camelContext.getPropertiesComponent().resolveProperty(CLASSPATH_FILES)
+                .ifPresent(s -> files.addAll(Arrays.asList(s.split(","))));
+        for (String loc : camelContext.getPropertiesComponent().getLocations()) {
+            loc = StringHelper.before(loc, ";", loc);
+            if (loc.startsWith("file:")) {
+                files.add(loc.substring(5));
+            }
+        }
+        // only files inside the project directory
+        Path dir = Path.of("").toAbsolutePath().normalize();
+        for (String f : files) {
+            f = f.trim();
+            Path p = dir.resolve(f).normalize();
+            if (!f.isEmpty() && p.startsWith(dir) && Files.isRegularFile(p)) {
+                String n = FileUtil.normalizePath(dir.relativize(p).toString()).replace('\\', '/');
+                if (isApplicationResource(n)) {
+                    answer.add(n);
+                }
+            }
+        }
+        return answer;
+    }
+
+    /**
+     * Whether the file is a resource that can be listed and downloaded, which excludes classes and JARs (camel run can
+     * add both to the classpath) and META-INF files.
+     */
+    private static boolean isApplicationResource(String name) {
+        return !name.endsWith(".class") && !name.endsWith(".jar") && !name.startsWith("META-INF/");
     }
 
     protected void setupSendConsole() {
@@ -895,7 +1081,7 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
             }
         };
         // use blocking handler as the task can take longer time to complete
-        send.handler(new BlockingHandlerDecorator(handler, true));
+        send.blockingHandler(handler);
 
         platformHttpComponent.addHttpManagementEndpoint("/q/send", "GET,POST",
                 null, "application/json", null);
@@ -996,13 +1182,15 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
 
     protected void setupDevConsole() {
         Route dev = router.route("/q/dev");
-        dev.method(HttpMethod.GET);
+        dev.method(HttpMethod.GET).method(HttpMethod.POST);
         dev.produces("text/plain");
         dev.produces("application/json");
+        dev.handler(BodyHandler.create(false));
         Route devSub = router.route("/q/dev/*");
-        devSub.method(HttpMethod.GET);
+        devSub.method(HttpMethod.GET).method(HttpMethod.POST);
         devSub.produces("text/plain");
         devSub.produces("application/json");
+        devSub.handler(BodyHandler.create(false));
 
         Handler<RoutingContext> handler = new Handler<RoutingContext>() {
             @Override
@@ -1020,7 +1208,7 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
                 final boolean json = pos2 < pos1;
                 final DevConsole.MediaType mediaType = json ? DevConsole.MediaType.JSON : DevConsole.MediaType.TEXT;
 
-                ctx.response().putHeader("content-type", "text/plain");
+                ctx.response().putHeader("content-type", "text/plain;charset=utf-8");
 
                 if (!camelContext.isDevConsole()) {
                     ctx.end("Developer Console is not enabled on CamelContext. Set camel.context.dev-console=true in application.properties");
@@ -1084,6 +1272,19 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
                 } else {
                     Map<String, Object> params = new HashMap<>();
                     ctx.queryParams().forEach(params::put);
+                    if (ctx.request().method() == HttpMethod.POST) {
+                        String jsonBody = ctx.body() != null ? ctx.body().asString() : null;
+                        if (jsonBody != null && !jsonBody.isBlank()) {
+                            try {
+                                Object parsed = Jsoner.deserialize(jsonBody);
+                                if (parsed instanceof JsonObject jo) {
+                                    params.putAll(jo);
+                                }
+                            } catch (Exception e) {
+                                // ignore invalid JSON
+                            }
+                        }
+                    }
                     params.put(Exchange.HTTP_PATH, path);
                     StringBuilder sb = new StringBuilder();
                     JsonObject root = new JsonObject();
@@ -1097,7 +1298,11 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
                         boolean include = "all".equals(id) || c.getId().equalsIgnoreCase(id);
                         if (include && c.supportMediaType(mediaType)) {
                             Object out = c.call(mediaType, params);
-                            if (out != null && mediaType == DevConsole.MediaType.TEXT) {
+                            // special if returning html
+                            if (out instanceof String text && text.startsWith("<html>")) {
+                                ctx.response().putHeader("content-type", "text/html");
+                                sb.append(out);
+                            } else if (out != null && mediaType == DevConsole.MediaType.TEXT) {
                                 sb.append(c.getDisplayName()).append(":");
                                 sb.append("\n\n");
                                 sb.append(out);
@@ -1121,10 +1326,10 @@ public class ManagementHttpServer extends ServiceSupport implements CamelContext
             }
         };
         // use blocking handler as the task can take longer time to complete
-        dev.handler(new BlockingHandlerDecorator(handler, true));
-        devSub.handler(new BlockingHandlerDecorator(handler, true));
+        dev.blockingHandler(handler);
+        devSub.blockingHandler(handler);
 
-        platformHttpComponent.addHttpManagementEndpoint("/q/dev", "GET", null,
+        platformHttpComponent.addHttpManagementEndpoint("/q/dev", "GET,POST", null,
                 "text/plain,application/json", null);
     }
 

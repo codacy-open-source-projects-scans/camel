@@ -71,6 +71,8 @@ import static org.hamcrest.Matchers.is;
 
 public class KnativeHttpTest {
 
+    private static final String FAILING_CONSUMER_DETAIL = "the-internal-detail-a-caller-must-not-see";
+
     private CamelContext context;
     private ProducerTemplate template;
     @RegisterExtension
@@ -366,6 +368,61 @@ public class KnativeHttpTest {
                                     "time", DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(ZonedDateTime.now()),
                                     "source", "/somewhere",
                                     "datacontenttype", "text/plain",
+                                    "data", "test"),
+                            ObjectMapperType.JACKSON_2)
+                    .when()
+                    .post()
+                    .then()
+                    .statusCode(200);
+        } else {
+            throw new IllegalArgumentException("Unknown CloudEvent spec: " + ce.version());
+        }
+
+        mock.assertIsSatisfied();
+    }
+
+    @ParameterizedTest
+    @EnumSource(CloudEvents.class)
+    void testConsumeStructuredContentFiltersInternalHeaders(CloudEvent ce) throws Exception {
+        configureKnativeComponent(
+                context,
+                ce,
+                sourceEndpoint(
+                        "myEndpoint",
+                        Map.of(
+                                Knative.KNATIVE_CLOUD_EVENT_TYPE, "org.apache.camel.event",
+                                Knative.CONTENT_TYPE, "text/plain")));
+
+        RouteBuilder.addRoutes(context, b -> {
+            b.from("knative:endpoint/myEndpoint")
+                    .to("mock:ce");
+        });
+
+        context.start();
+
+        MockEndpoint mock = context.getEndpoint("mock:ce", MockEndpoint.class);
+        mock.expectedBodiesReceived("test");
+        mock.expectedMessageCount(1);
+        // a regular CloudEvent extension must still be propagated as a message header
+        mock.expectedHeaderReceived("myextension", "myvalue");
+        // an extension that resolves to an internal Camel header must be filtered out and must not
+        // be able to inject a framework control header (headers are matched case-insensitively)
+        mock.expectedMessagesMatches(e -> e.getMessage().getHeader(Exchange.FILE_NAME) == null);
+
+        if (Objects.equals(CloudEvents.v1_0.version(), ce.version())
+                || Objects.equals(CloudEvents.v1_0_1.version(), ce.version())
+                || Objects.equals(CloudEvents.v1_0_2.version(), ce.version())) {
+            given()
+                    .contentType(Knative.MIME_STRUCTURED_CONTENT_MODE)
+                    .body(
+                            Map.of(
+                                    "specversion", ce.version(),
+                                    "type", "org.apache.camel.event",
+                                    "id", "myEventID",
+                                    "source", "/somewhere",
+                                    "datacontenttype", "text/plain",
+                                    "myextension", "myvalue",
+                                    "camelfilename", "injected.txt",
                                     "data", "test"),
                             ObjectMapperType.JACKSON_2)
                     .when()
@@ -931,6 +988,64 @@ public class KnativeHttpTest {
         assertThat(exchange.getException()).hasMessageContaining("with statusCode: 500, statusMessage: Internal Server Error");
     }
 
+    /**
+     * The consumer used to return {@code ExceptionHelper.stackTraceToString(exception)} as the response body, so a
+     * route failure handed the caller the stack trace. {@code muteException} defaults to true, matching the http
+     * consumers aligned by CAMEL-23651. The status must still be the 500 the failure produced, not a 204.
+     */
+    @ParameterizedTest
+    @EnumSource(CloudEvents.class)
+    void aFailedExchangeDoesNotReturnTheStackTraceByDefault(CloudEvent ce) throws Exception {
+        Exchange exchange = invokeFailingConsumer(ce, "knative:endpoint/from");
+
+        assertThat(exchange.isFailed()).isTrue();
+        assertThat(exchange.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE)).isEqualTo(500);
+        assertThat(exchange.getMessage().getBody(String.class))
+                .as("the response body must not carry the route's exception")
+                .isNullOrEmpty();
+    }
+
+    @ParameterizedTest
+    @EnumSource(CloudEvents.class)
+    void muteExceptionFalseRestoresTheStackTraceInTheResponse(CloudEvent ce) throws Exception {
+        Exchange exchange = invokeFailingConsumer(ce, "knative:endpoint/from?muteException=false");
+
+        assertThat(exchange.isFailed()).isTrue();
+        assertThat(exchange.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE)).isEqualTo(500);
+        assertThat(exchange.getMessage().getBody(String.class)).contains(FAILING_CONSUMER_DETAIL);
+    }
+
+    private Exchange invokeFailingConsumer(CloudEvent ce, String consumerUri) throws Exception {
+        configureKnativeComponent(
+                context,
+                ce,
+                sourceEndpoint(
+                        "from",
+                        Map.of(
+                                Knative.KNATIVE_CLOUD_EVENT_TYPE, "org.apache.camel.event.from",
+                                Knative.CONTENT_TYPE, "text/plain")),
+                endpoint(
+                        Knative.EndpointKind.sink,
+                        "to",
+                        String.format("http://%s:%d", platformHttpHost, platformHttpPort),
+                        Map.of(
+                                Knative.KNATIVE_CLOUD_EVENT_TYPE, "org.apache.camel.event.to",
+                                Knative.CONTENT_TYPE, "text/plain")));
+
+        RouteBuilder.addRoutes(context, b -> {
+            b.from(consumerUri)
+                    .process(e -> {
+                        throw new RuntimeException(FAILING_CONSUMER_DETAIL);
+                    });
+            b.from("direct:source")
+                    .to("knative://endpoint/to");
+        });
+
+        context.start();
+
+        return template.request("direct:source", e -> e.getMessage().setBody(""));
+    }
+
     @ParameterizedTest
     @EnumSource(CloudEvents.class)
     void testEvents(CloudEvent ce) throws Exception {
@@ -1281,6 +1396,45 @@ public class KnativeHttpTest {
                 .post()
                 .then()
                 .statusCode(204)
+                .body(is(emptyOrNullString()));
+    }
+
+    /**
+     * Without a reply the consumer answers 204 No Content, which tells Knative that the event has been delivered: a
+     * failed exchange must keep its error status, or the event is lost.
+     */
+    @ParameterizedTest
+    @EnumSource(CloudEvents.class)
+    void testNoReplyFailure(CloudEvent ce) throws Exception {
+        configureKnativeComponent(
+                context,
+                ce,
+                sourceChannel(
+                        "channel",
+                        Map.of(
+                                Knative.KNATIVE_CLOUD_EVENT_TYPE, "org.apache.camel.event",
+                                Knative.CONTENT_TYPE, "text/plain")));
+
+        RouteBuilder.addRoutes(context, b -> {
+            b.from("knative:channel/channel?reply=false")
+                    .throwException(new IllegalStateException("Forced"));
+        });
+
+        context.start();
+
+        given()
+                .body("test")
+                .header(Exchange.CONTENT_TYPE, "text/plain")
+                .header(httpAttribute(ce, CloudEvent.CAMEL_CLOUD_EVENT_VERSION), ce.version())
+                .header(httpAttribute(ce, CloudEvent.CAMEL_CLOUD_EVENT_TYPE), "org.apache.camel.event")
+                .header(httpAttribute(ce, CloudEvent.CAMEL_CLOUD_EVENT_ID), "myEventID")
+                .header(httpAttribute(ce, CloudEvent.CAMEL_CLOUD_EVENT_TIME),
+                        DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(ZonedDateTime.now()))
+                .header(httpAttribute(ce, CloudEvent.CAMEL_CLOUD_EVENT_SOURCE), "/somewhere")
+                .when()
+                .post()
+                .then()
+                .statusCode(500)
                 .body(is(emptyOrNullString()));
     }
 
@@ -2142,6 +2296,9 @@ public class KnativeHttpTest {
         context.getPropertiesComponent().addInitialProperty("camel.knative.client.ssl.verify.hostname", "false");
         context.getPropertiesComponent().addInitialProperty("camel.knative.client.ssl.key.path", "keystore/client.pem");
         context.getPropertiesComponent().addInitialProperty("camel.knative.client.ssl.key.cert.path", "keystore/client.crt");
+        // The test server presents a self-signed certificate. Enabling SSL no longer implies trusting every
+        // certificate, so the trust decision has to be made here.
+        context.getPropertiesComponent().addInitialProperty("camel.knative.client.ssl.trust.all", "true");
 
         KnativeComponent component = configureKnativeComponent(
                 context,

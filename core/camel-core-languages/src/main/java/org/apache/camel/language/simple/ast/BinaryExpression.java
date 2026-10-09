@@ -19,6 +19,7 @@ package org.apache.camel.language.simple.ast;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,16 +27,15 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.Expression;
 import org.apache.camel.Predicate;
-import org.apache.camel.language.simple.BaseSimpleParser;
 import org.apache.camel.language.simple.types.BinaryOperatorType;
 import org.apache.camel.language.simple.types.SimpleIllegalSyntaxException;
 import org.apache.camel.language.simple.types.SimpleParserException;
 import org.apache.camel.language.simple.types.SimpleToken;
+import org.apache.camel.language.simple.types.UnaryOperatorType;
 import org.apache.camel.support.ObjectHelper;
 import org.apache.camel.support.builder.ExpressionBuilder;
 import org.apache.camel.support.builder.PredicateBuilder;
 import org.apache.camel.support.builder.ValueBuilder;
-import org.apache.camel.util.StringHelper;
 
 /**
  * Represents a binary expression in the AST.
@@ -60,8 +60,34 @@ public class BinaryExpression extends BaseSimpleNode {
     }
 
     public boolean acceptLeftNode(SimpleNode lef) {
+        if (lef instanceof UnaryExpression unary && unary.getOperator() == UnaryOperatorType.NOT) {
+            // ! negates a function, not a comparison: !${body} == 'x' would read as neither of the two things it
+            // could mean, so it is refused and the negated operator is offered instead (CAMEL-24984)
+            throw new SimpleParserException(
+                    "! cannot be compared: it negates a function, not a comparison"
+                                            + (negatedOperator() != null
+                                                    ? ": write ${...} " + negatedOperator() + " value"
+                                                    : ": compare the other way round"),
+                    getToken().getIndex());
+        }
         this.left = lef;
         return true;
+    }
+
+    /** The eleven operators that have one saying the opposite; the comparisons do not, and answer null. */
+    private static final Set<String> NEGATED = Set.of(
+            "==", "=~", "~~", "contains", "endsWith", "equals", "in", "is", "range", "regex", "startsWith");
+
+    /**
+     * The operator that says the opposite of this one, or null when it has none: {@code >} and the other comparisons
+     * are negated by using the opposite comparison, not by putting a ! in front of them.
+     */
+    private String negatedOperator() {
+        String text = operator.toString();
+        if (!NEGATED.contains(text)) {
+            return null;
+        }
+        return "==".equals(text) ? "!=" : "!" + text;
     }
 
     public boolean acceptRightNode(SimpleNode right) {
@@ -135,6 +161,11 @@ public class BinaryExpression extends BaseSimpleNode {
         } else if (operator == BinaryOperatorType.NOT_ENDS_WITH) {
             return createExpression(camelContext, leftExp, rightExp,
                     PredicateBuilder.not(PredicateBuilder.endsWith(leftExp, rightExp)));
+        } else if (operator == BinaryOperatorType.EQUALS) {
+            return createExpression(camelContext, leftExp, rightExp, PredicateBuilder.equalsString(leftExp, rightExp));
+        } else if (operator == BinaryOperatorType.NOT_EQUALS) {
+            return createExpression(camelContext, leftExp, rightExp,
+                    PredicateBuilder.not(PredicateBuilder.equalsString(leftExp, rightExp)));
         }
 
         throw new SimpleParserException("Unknown binary operator " + operator, token.getIndex());
@@ -189,7 +220,10 @@ public class BinaryExpression extends BaseSimpleNode {
             @Override
             public <T> T evaluate(Exchange exchange, Class<T> type) {
                 // reg ex should use String pattern, so we evaluate the right hand side as a String
-                Predicate predicate = PredicateBuilder.regex(leftExp, rightExp.evaluate(exchange, String.class));
+                String pattern = rightExp.evaluate(exchange, String.class);
+                // no pattern (such as a missing header) matches nothing
+                Predicate predicate = pattern != null
+                        ? PredicateBuilder.regex(leftExp, pattern) : PredicateBuilder.constant(false);
                 if (operator == BinaryOperatorType.NOT_REGEX) {
                     predicate = PredicateBuilder.not(predicate);
                 }
@@ -242,8 +276,11 @@ public class BinaryExpression extends BaseSimpleNode {
                 Predicate predicate;
 
                 String range = rightExp.evaluate(exchange, String.class);
-                Matcher matcher = RANGE_PATTERN.matcher(range);
-                if (matcher.matches()) {
+                Matcher matcher = range != null ? RANGE_PATTERN.matcher(range) : null;
+                if (range == null) {
+                    // no range (such as a missing header) contains nothing
+                    predicate = PredicateBuilder.constant(false);
+                } else if (matcher.matches()) {
                     // wrap as constant expression for the from and to values
                     Expression from = ExpressionBuilder.constantExpression(matcher.group(1));
                     Expression to = ExpressionBuilder.constantExpression(matcher.group(3));
@@ -286,86 +323,4 @@ public class BinaryExpression extends BaseSimpleNode {
             }
         };
     }
-
-    @Override
-    public String createCode(CamelContext camelContext, String expression) throws SimpleParserException {
-        return BaseSimpleParser.CODE_START + doCreateCode(camelContext, expression) + BaseSimpleParser.CODE_END;
-    }
-
-    private String doCreateCode(CamelContext camelContext, String expression) throws SimpleParserException {
-        org.apache.camel.util.ObjectHelper.notNull(left, "left node", this);
-        org.apache.camel.util.ObjectHelper.notNull(right, "right node", this);
-
-        final String leftExp = left.createCode(camelContext, expression);
-        final String rightExp = right.createCode(camelContext, expression);
-
-        if (operator == BinaryOperatorType.EQ) {
-            return "isEqualTo(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.EQ_IGNORE) {
-            return "isEqualToIgnoreCase(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.GT) {
-            return "isGreaterThan(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.GTE) {
-            return "isGreaterThanOrEqualTo(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.LT) {
-            return "isLessThan(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.LTE) {
-            return "isLessThanOrEqualTo(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.NOT_EQ) {
-            return "isNotEqualTo(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.NOT_EQ_IGNORE) {
-            return "!isEqualToIgnoreCase(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.CONTAINS) {
-            return "contains(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.CONTAINS_IGNORECASE) {
-            return "containsIgnoreCase(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.NOT_CONTAINS) {
-            return "!contains(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.NOT_CONTAINS_IGNORECASE) {
-            return "!containsIgnoreCase(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.IS) {
-            String type = StringHelper.removeQuotes(rightExp);
-            if (!type.endsWith(".class")) {
-                type = type + ".class";
-            }
-            type = type.replace('$', '.');
-            type = type.trim();
-            return "is(exchange, " + leftExp + ", " + type + ")";
-        } else if (operator == BinaryOperatorType.NOT_IS) {
-            String type = StringHelper.removeQuotes(rightExp);
-            if (!type.endsWith(".class")) {
-                type = type + ".class";
-            }
-            type = type.replace('$', '.');
-            type = type.trim();
-            return "!is(exchange, " + leftExp + ", " + type + ")";
-        } else if (operator == BinaryOperatorType.REGEX) {
-            // regexp is a pain with escapes
-            String escaped = rightExp.replace("\\", "\\\\");
-            return "regexp(exchange, " + leftExp + ", " + escaped + ")";
-        } else if (operator == BinaryOperatorType.NOT_REGEX) {
-            // regexp is a pain with escapes
-            String escaped = rightExp.replace("\\", "\\\\");
-            return "!regexp(exchange, " + leftExp + ", " + escaped + ")";
-        } else if (operator == BinaryOperatorType.IN) {
-            return "in(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.NOT_IN) {
-            return "!in(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.RANGE) {
-            return "range(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.NOT_RANGE) {
-            return "!range(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.STARTS_WITH) {
-            return "startsWith(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.NOT_STARTS_WITH) {
-            return "!startsWith(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.ENDS_WITH) {
-            return "endsWith(exchange, " + leftExp + ", " + rightExp + ")";
-        } else if (operator == BinaryOperatorType.NOT_ENDS_WITH) {
-            return "!endsWith(exchange, " + leftExp + ", " + rightExp + ")";
-        }
-
-        throw new SimpleParserException("Unknown binary operator " + operator, token.getIndex());
-    }
-
 }

@@ -34,6 +34,7 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -50,8 +51,11 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import ai.docling.core.DoclingDocument;
+import ai.docling.core.DoclingDocument.BaseTextItem;
+import ai.docling.core.DoclingDocument.DocItemLabel;
 import ai.docling.core.DoclingDocument.DocumentOrigin;
 import ai.docling.serve.api.DoclingServeApi;
+import ai.docling.serve.api.chunk.request.ChunkDocumentRequest;
 import ai.docling.serve.api.chunk.request.HierarchicalChunkDocumentRequest;
 import ai.docling.serve.api.chunk.request.HybridChunkDocumentRequest;
 import ai.docling.serve.api.chunk.request.options.HierarchicalChunkerOptions;
@@ -158,7 +162,7 @@ public class DoclingProducer extends DefaultProducer {
     private DoclingConfiguration configuration;
     private DoclingServeApi doclingServeApi;
     private ObjectMapper objectMapper;
-    private Map<String, CompletableFuture<ConvertDocumentResponse>> pendingAsyncTasks;
+    private Map<String, AsyncTaskEntry> pendingAsyncTasks;
     private AtomicLong taskIdCounter;
 
     public DoclingProducer(DoclingEndpoint endpoint) {
@@ -366,10 +370,11 @@ public class DoclingProducer extends DefaultProducer {
         CompletableFuture<ConvertDocumentResponse> asyncResult
                 = doclingServeApi.convertSourceAsync(request).toCompletableFuture();
 
-        // Generate a unique task ID and store the future for later status checks
+        // Generate a unique task ID and store the future with timestamp for later status checks
         String taskId = "task-" + taskIdCounter.incrementAndGet();
-        pendingAsyncTasks.put(taskId, asyncResult);
-        LOG.debug("Started async conversion with task ID: {}", taskId);
+        AsyncTaskEntry taskEntry = new AsyncTaskEntry(taskId, asyncResult, outputFormat);
+        pendingAsyncTasks.put(taskId, taskEntry);
+        LOG.debug("Started async conversion with task ID: {} at {}", taskId, taskEntry.getCreatedAtMs());
 
         // Set task ID in body and header
         exchange.getIn().setBody(taskId);
@@ -424,9 +429,9 @@ public class DoclingProducer extends DefaultProducer {
         LOG.debug("Checking status for task: {}", taskId);
 
         // Check the local pending tasks map first (tasks submitted via SUBMIT_ASYNC_CONVERSION)
-        CompletableFuture<ConvertDocumentResponse> future = pendingAsyncTasks.get(taskId);
-        if (future != null) {
-            return checkLocalAsyncTask(taskId, future);
+        AsyncTaskEntry taskEntry = pendingAsyncTasks.get(taskId);
+        if (taskEntry != null) {
+            return checkLocalAsyncTask(taskEntry);
         }
 
         // Fall back to server-side task polling
@@ -464,7 +469,9 @@ public class DoclingProducer extends DefaultProducer {
         }
     }
 
-    private ConversionStatus checkLocalAsyncTask(String taskId, CompletableFuture<ConvertDocumentResponse> future) {
+    private ConversionStatus checkLocalAsyncTask(AsyncTaskEntry taskEntry) {
+        String taskId = taskEntry.getTaskId();
+        CompletableFuture<ConvertDocumentResponse> future = taskEntry.getFuture();
         if (!future.isDone()) {
             return new ConversionStatus(taskId, ConversionStatus.Status.IN_PROGRESS);
         }
@@ -486,7 +493,7 @@ public class DoclingProducer extends DefaultProducer {
         pendingAsyncTasks.remove(taskId);
         try {
             ConvertDocumentResponse response = future.join();
-            String result = extractConvertedContent(response, configuration.getOutputFormat());
+            String result = extractConvertedContent(response, taskEntry.getOutputFormat());
             return new ConversionStatus(taskId, ConversionStatus.Status.COMPLETED, result, null, null);
         } catch (Exception e) {
             return new ConversionStatus(taskId, ConversionStatus.Status.FAILED, null, e.getMessage(), null);
@@ -618,9 +625,9 @@ public class DoclingProducer extends DefaultProducer {
     }
 
     private void addSourceToChunkRequest(
-            ai.docling.serve.api.chunk.request.ChunkDocumentRequest.Builder requestBuilder, String inputSource)
+            ChunkDocumentRequest.Builder requestBuilder, String inputSource)
             throws IOException {
-        if (inputSource.startsWith("http://") || inputSource.startsWith("https://")) {
+        if (isRemoteSource(inputSource)) {
             requestBuilder.source(
                     HttpSource.builder()
                             .url(URI.create(inputSource))
@@ -662,7 +669,7 @@ public class DoclingProducer extends DefaultProducer {
 
         try {
             // Extract basic file information for file paths
-            if (!inputPath.startsWith("http://") && !inputPath.startsWith("https://")) {
+            if (!isRemoteSource(inputPath)) {
                 File file = new File(inputPath);
                 if (file.exists()) {
                     metadata.setFileName(file.getName());
@@ -678,6 +685,9 @@ public class DoclingProducer extends DefaultProducer {
             if (origin != null && origin.getMimetype() != null) {
                 metadata.setFormat(origin.getMimetype());
             }
+
+            metadata.setDocumentType(deriveDocumentType(origin));
+            metadata.setTitle(extractTitle(doclingDocument));
 
             // Store raw metadata if requested
             if (configuration.isIncludeRawMetadata()) {
@@ -727,11 +737,14 @@ public class DoclingProducer extends DefaultProducer {
                 metadata.setFormat(origin.getMimetype());
             }
 
+            metadata.setDocumentType(deriveDocumentType(origin));
+            metadata.setTitle(extractTitle(doclingDocument));
+
             // Store raw metadata if configured
             if (configuration.isIncludeRawMetadata()) {
                 JsonNode rootNode = objectMapper.readTree(jsonOutput);
                 @SuppressWarnings("unchecked")
-                Map<String, Object> rawMap = objectMapper.convertValue(rootNode, java.util.Map.class);
+                Map<String, Object> rawMap = objectMapper.convertValue(rootNode, Map.class);
                 metadata.setRawMetadata(rawMap);
             }
 
@@ -743,6 +756,12 @@ public class DoclingProducer extends DefaultProducer {
     }
 
     private void setMetadataHeaders(Exchange exchange, DocumentMetadata metadata) {
+        if (metadata.getTitle() != null) {
+            exchange.getIn().setHeader(DoclingHeaders.METADATA_TITLE, metadata.getTitle());
+        }
+        if (metadata.getDocumentType() != null) {
+            exchange.getIn().setHeader(DoclingHeaders.METADATA_DOCUMENT_TYPE, metadata.getDocumentType());
+        }
         if (metadata.getPageCount() != null) {
             exchange.getIn().setHeader(DoclingHeaders.METADATA_PAGE_COUNT, metadata.getPageCount());
         }
@@ -759,6 +778,52 @@ public class DoclingProducer extends DefaultProducer {
                 && !metadata.getRawMetadata().isEmpty()) {
             exchange.getIn().setHeader(DoclingHeaders.METADATA_RAW, metadata.getRawMetadata());
         }
+    }
+
+    /**
+     * Extracts the document title from the Docling document, defined as the first text item labelled as
+     * {@link DocItemLabel#TITLE}. Returns {@code null} when the document does not expose a title.
+     */
+    private String extractTitle(DoclingDocument doclingDocument) {
+        List<BaseTextItem> texts = doclingDocument.getTexts();
+        if (texts == null) {
+            return null;
+        }
+        for (BaseTextItem item : texts) {
+            if (item != null && item.getLabel() == DocItemLabel.TITLE) {
+                String text = item.getText();
+                if (text != null && !text.isBlank()) {
+                    return text.trim();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Derives a short, human-readable document type (e.g., {@code PDF}, {@code DOCX}) from the document origin,
+     * preferring the source file extension and falling back to the MIME subtype. Returns {@code null} when the type
+     * cannot be determined.
+     */
+    private String deriveDocumentType(DocumentOrigin origin) {
+        if (origin == null) {
+            return null;
+        }
+        String filename = origin.getFilename();
+        if (filename != null) {
+            int dot = filename.lastIndexOf('.');
+            if (dot > 0 && dot < filename.length() - 1) {
+                return filename.substring(dot + 1).toUpperCase(Locale.ROOT);
+            }
+        }
+        String mimetype = origin.getMimetype();
+        if (mimetype != null && !mimetype.isBlank()) {
+            int slash = mimetype.lastIndexOf('/');
+            String subtype = slash >= 0 && slash < mimetype.length() - 1
+                    ? mimetype.substring(slash + 1) : mimetype;
+            return subtype.toUpperCase(Locale.ROOT);
+        }
+        return null;
     }
 
     private void processBatchConversion(Exchange exchange, String outputFormat) throws Exception {
@@ -983,7 +1048,27 @@ public class DoclingProducer extends DefaultProducer {
     }
 
     @SuppressWarnings("unchecked")
-    private List<String> extractDocumentList(Exchange exchange) {
+    private List<String> extractDocumentList(Exchange exchange) throws IOException {
+        return containBatchPaths(extractDocumentPaths(exchange));
+    }
+
+    /**
+     * Applies the {@code inputBaseDirectory} restriction to every path of a batch. When no base directory is configured
+     * the paths are returned untouched.
+     */
+    private List<String> containBatchPaths(List<String> paths) throws IOException {
+        String base = configuration.getInputBaseDirectory();
+        if (base == null || base.isEmpty()) {
+            return paths;
+        }
+        List<String> contained = new ArrayList<>(paths.size());
+        for (String path : paths) {
+            contained.add(resolveWithinInputBaseDirectory(path).toString());
+        }
+        return contained;
+    }
+
+    private List<String> extractDocumentPaths(Exchange exchange) {
         Object body = exchange.getIn().getBody();
 
         // Handle List<String>
@@ -1042,6 +1127,15 @@ public class DoclingProducer extends DefaultProducer {
 
         // Handle single String (directory path to scan)
         if (body instanceof String path) {
+            // as in getInputPath, a bare String body is ambiguous - reading it as a location must be opted into.
+            // Typed bodies (List<String>, String[], List<File>, File[]) are explicit path collections and are
+            // handled above without a gate.
+            if (!configuration.isAllowFilePathSource()) {
+                throw new IllegalArgumentException(
+                        "Batch message body is a String path but allowFilePathSource is disabled."
+                                                   + " Set allowFilePathSource=true, or pass the documents as a List<String>,"
+                                                   + " String[], List<File> or File[] body.");
+            }
             File dir = new File(path);
             if (dir.isDirectory()) {
                 File[] files = dir.listFiles();
@@ -1459,7 +1553,7 @@ public class DoclingProducer extends DefaultProducer {
 
     private void addSourceToRequest(ConvertDocumentRequest.Builder requestBuilder, String inputSource) throws IOException {
         // Check if input is a URL or file path
-        if (inputSource.startsWith("http://") || inputSource.startsWith("https://")) {
+        if (isRemoteSource(inputSource)) {
             requestBuilder.source(
                     HttpSource.builder()
                             .url(URI.create(inputSource))
@@ -1558,45 +1652,7 @@ public class DoclingProducer extends DefaultProducer {
     }
 
     private String extractConvertedContent(ConvertDocumentResponse response, String outputFormat) throws IOException {
-        try {
-            if (response instanceof InBodyConvertDocumentResponse inBodyResponse) {
-                DocumentResponse document = inBodyResponse.getDocument();
-
-                if (document == null) {
-                    throw new IOException("No document in response");
-                }
-
-                String format = mapOutputFormat(outputFormat);
-
-                switch (format) {
-                    case "md":
-                        String markdown = document.getMarkdownContent();
-                        return markdown != null ? markdown : "";
-                    case "html":
-                        String html = document.getHtmlContent();
-                        return html != null ? html : "";
-                    case "text":
-                        String text = document.getTextContent();
-                        return text != null ? text : "";
-                    case "json":
-                        // Return the document JSON content
-                        var jsonDoc = document.getJsonContent();
-                        if (jsonDoc != null) {
-                            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(jsonDoc);
-                        }
-                        return "{}";
-                    default:
-                        // Default to markdown
-                        String defaultMarkdown = document.getMarkdownContent();
-                        return defaultMarkdown != null ? defaultMarkdown : "";
-                }
-            } else {
-                throw new IOException("Unsupported response type: cannot extract converted content");
-            }
-        } catch (Exception e) {
-            LOG.warn("Failed to extract content from response: {}", e.getMessage());
-            throw new IOException("Failed to extract content from response", e);
-        }
+        return DoclingContentExtractor.extract(response, outputFormat);
     }
 
     private OutputFormat mapToOutputFormat(String outputFormat) {
@@ -1624,32 +1680,15 @@ public class DoclingProducer extends DefaultProducer {
         }
     }
 
-    private String mapOutputFormat(String outputFormat) {
-        if (outputFormat == null) {
-            return "md";
-        }
-
-        switch (outputFormat.toLowerCase()) {
-            case "markdown":
-            case "md":
-                return "md";
-            case "html":
-                return "html";
-            case "json":
-                return "json";
-            case "text":
-            case "txt":
-                return "text";
-            default:
-                return "md";
-        }
-    }
-
     private String getInputPath(Exchange exchange) throws InvalidPayloadException, IOException {
         String inputPath = exchange.getIn().getHeader(DoclingHeaders.INPUT_FILE_PATH, String.class);
 
         if (inputPath != null) {
-            validateFileSize(inputPath);
+            // the header is an explicit "the document lives here" signal from the route, so it keeps its
+            // meaning - but a local path is still bound by inputBaseDirectory when one is configured
+            if (!isRemoteSource(inputPath)) {
+                return validateLocalInputPath(inputPath);
+            }
             return inputPath;
         }
 
@@ -1659,21 +1698,29 @@ public class DoclingProducer extends DefaultProducer {
             body = wf.getBody();
         }
         if (body instanceof String content) {
-            // Check if it's a URL (http:// or https://) or a file path
-            if (content.startsWith("http://") || content.startsWith("https://")) {
-                // Return URL as-is, no validation needed
+            // A String body is ambiguous: it may be the document itself, a location to fetch, or a path to
+            // read. Only the content reading is unconditional; the two location readings must be opted into.
+            if (isRemoteSource(content)) {
+                if (!configuration.isAllowUrlSource()) {
+                    throw new IllegalArgumentException(
+                            "Message body starts with http:// or https:// but allowUrlSource is disabled."
+                                                       + " Set allowUrlSource=true to have Docling fetch it, or pass the document itself as the body.");
+                }
                 return content;
-            } else if (content.startsWith("/") || content.contains("\\")) {
-                // It's a file path
-                validateFileSize(content);
-                return content;
+            } else if (isLocalPathSource(content)) {
+                if (!configuration.isAllowFilePathSource()) {
+                    throw new IllegalArgumentException(
+                            "Message body looks like a file path but allowFilePathSource is disabled."
+                                                       + " Set allowFilePathSource=true to have Docling read it, or pass the document itself as the body.");
+                }
+                return validateLocalInputPath(content);
             } else {
                 // Treat as content to be written to a temp file
                 Path secureTempDir = createSecureTempDir();
                 Path tempFile = createSecureTempFile(secureTempDir);
                 Files.write(tempFile, content.getBytes());
                 registerTempDirCleanup(exchange, secureTempDir);
-                validateFileSize(tempFile.toString());
+                validateFileSizeIfPresent(tempFile.toString());
                 return tempFile.toString();
             }
         } else if (body instanceof byte[] content) {
@@ -1686,8 +1733,7 @@ public class DoclingProducer extends DefaultProducer {
             registerTempDirCleanup(exchange, secureTempDir);
             return tempFile.toString();
         } else if (body instanceof File file) {
-            validateFileSize(file.getAbsolutePath());
-            return file.getAbsolutePath();
+            return validateLocalInputPath(file.getAbsolutePath());
         }
 
         throw new InvalidPayloadException(exchange, String.class);
@@ -1750,7 +1796,64 @@ public class DoclingProducer extends DefaultProducer {
         }
     }
 
-    private void validateFileSize(String filePath) throws IOException {
+    /**
+     * Returns whether the given input source is a remote location that Docling should fetch itself, rather than
+     * something to be read from the local filesystem.
+     */
+    private static boolean isRemoteSource(String inputSource) {
+        return inputSource.startsWith("http://") || inputSource.startsWith("https://");
+    }
+
+    /**
+     * Returns whether the given String body looks like a local filesystem path rather than document content.
+     */
+    private static boolean isLocalPathSource(String content) {
+        return content.startsWith("/") || content.contains("\\");
+    }
+
+    /**
+     * Validates a local filesystem path used as Docling input: it must stay inside {@code inputBaseDirectory} when one
+     * is configured, it must exist, and it must not exceed {@code maxFileSize}.
+     *
+     * @return the normalized path, as a string
+     */
+    private String validateLocalInputPath(String filePath) throws IOException {
+        Path path = resolveWithinInputBaseDirectory(filePath);
+        if (!Files.exists(path)) {
+            throw new IOException("File not found: " + filePath);
+        }
+        validateFileSizeIfPresent(path.toString());
+        return path.toString();
+    }
+
+    /**
+     * Normalizes the given path and, when {@code inputBaseDirectory} is configured, verifies that it stays inside that
+     * directory. Normalization is lexical and the comparison is made on path-segment boundaries, so a sibling directory
+     * sharing a name prefix with the base directory is not accepted.
+     */
+    private Path resolveWithinInputBaseDirectory(String filePath) throws IOException {
+        String base = configuration.getInputBaseDirectory();
+        if (base == null || base.isEmpty()) {
+            // no directory restriction: normalize lexically only, and leave relative paths relative so that
+            // they keep resolving the way they did before - against the CLI working directory, when one is set
+            return Paths.get(filePath).normalize();
+        }
+        Path baseDir = Paths.get(base).toAbsolutePath().normalize();
+        // resolve relative paths against the base directory itself, so that the path checked here is exactly
+        // the path used downstream regardless of the process working directory
+        Path path = baseDir.resolve(Paths.get(filePath)).normalize();
+        if (!path.startsWith(baseDir)) {
+            throw new IOException("Input path resolves outside of inputBaseDirectory (" + baseDir + "): " + filePath);
+        }
+        return path;
+    }
+
+    /**
+     * Enforces {@code maxFileSize} on the given path <em>if the path currently resolves to something on disk</em>. A
+     * path that does not exist is not an error here - callers that require the input to exist must use
+     * {@link #validateLocalInputPath(String)} instead.
+     */
+    private void validateFileSizeIfPresent(String filePath) throws IOException {
         Path path = Paths.get(filePath);
         if (Files.exists(path)) {
             long fileSize = Files.size(path);
@@ -1961,7 +2064,9 @@ public class DoclingProducer extends DefaultProducer {
         }
     }
 
-    private List<String> buildDoclingCommand(String inputPath, String outputFormat, Exchange exchange, String outputDirectory) {
+    // package-private so DoclingOutputPathValidationTest can assert the built command without reflection
+    List<String> buildDoclingCommand(String inputPath, String outputFormat, Exchange exchange, String outputDirectory)
+            throws IOException {
         List<String> command = new ArrayList<>();
         command.add(configuration.getDoclingCommand());
 
@@ -1999,7 +2104,7 @@ public class DoclingProducer extends DefaultProducer {
 
     /**
      * Validates custom CLI arguments using an allowlist approach. Only recognized docling CLI flags are permitted.
-     * Producer-managed flags, shell metacharacters, and path traversal sequences are rejected.
+     * Producer-managed flags, shell metacharacters, absolute paths, and path traversal sequences are rejected.
      */
     private void validateCustomArguments(List<String> customArgs) {
         for (int i = 0; i < customArgs.size(); i++) {
@@ -2082,9 +2187,14 @@ public class DoclingProducer extends DefaultProducer {
             throw new IllegalArgumentException(
                     "Custom argument at index " + index + " contains a relative path traversal sequence");
         }
-        // Normalize path-like values to detect traversal via redundant separators
+        // Normalize path-like values to detect absolute paths or traversal via redundant separators
         if (value.contains("/") || value.contains("\\")) {
-            Path normalized = Paths.get(value).normalize();
+            Path path = Paths.get(value);
+            if (path.isAbsolute()) {
+                throw new IllegalArgumentException(
+                        "Custom argument at index " + index + " must not be an absolute path");
+            }
+            Path normalized = path.normalize();
             for (Path component : normalized) {
                 if ("..".equals(component.toString())) {
                     throw new IllegalArgumentException(
@@ -2117,15 +2227,42 @@ public class DoclingProducer extends DefaultProducer {
         }
     }
 
-    private void addOutputDirectoryArguments(List<String> command, Exchange exchange, String outputDirectory) {
+    private void addOutputDirectoryArguments(List<String> command, Exchange exchange, String outputDirectory)
+            throws IOException {
         String outputPath = exchange.getIn().getHeader(DoclingHeaders.OUTPUT_FILE_PATH, String.class);
+        command.add("--output");
         if (outputPath != null) {
-            command.add("--output");
-            command.add(outputPath);
+            // the header is caller-provided, so it gets the same normalization and optional base-directory
+            // containment as input paths do, instead of reaching the CLI verbatim
+            command.add(resolveWithinOutputBaseDirectory(outputPath).toString());
         } else {
-            command.add("--output");
             command.add(outputDirectory);
         }
+    }
+
+    /**
+     * Normalizes the given output directory and, when {@code outputBaseDirectory} is configured, verifies that it stays
+     * inside that directory. Mirrors {@link #resolveWithinInputBaseDirectory(String)} so that the output directory
+     * carried by the {@link DoclingHeaders#OUTPUT_FILE_PATH} header receives the same treatment as input paths. The
+     * containment check is lexical: symbolic links are not resolved, so - like
+     * {@link #resolveWithinInputBaseDirectory(String)} - a symlink inside the base directory that points outside it is
+     * not detected.
+     */
+    private Path resolveWithinOutputBaseDirectory(String outputPath) throws IOException {
+        String base = configuration.getOutputBaseDirectory();
+        if (base == null || base.isEmpty()) {
+            // no directory restriction: normalize lexically only, and leave relative paths relative so that they keep
+            // resolving the way they did before - against the CLI working directory, when one is set
+            return Paths.get(outputPath).normalize();
+        }
+        Path baseDir = Paths.get(base).toAbsolutePath().normalize();
+        // resolve relative paths against the base directory itself, so that the path checked here is exactly the path
+        // used downstream regardless of the process working directory; an absolute header value that escapes is rejected
+        Path path = baseDir.resolve(Paths.get(outputPath)).normalize();
+        if (!path.startsWith(baseDir)) {
+            throw new IOException("Output path resolves outside of outputBaseDirectory (" + baseDir + "): " + outputPath);
+        }
+        return path;
     }
 
     private String mapToDoclingFormat(String outputFormat) {

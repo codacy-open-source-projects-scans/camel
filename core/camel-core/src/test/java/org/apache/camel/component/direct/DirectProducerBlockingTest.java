@@ -16,8 +16,9 @@
  */
 package org.apache.camel.component.direct;
 
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.camel.CamelExchangeException;
 import org.apache.camel.CamelExecutionException;
@@ -74,19 +75,20 @@ public class DirectProducerBlockingTest extends ContextTestSupport {
     public void testProducerBlocksResumeTest() throws Exception {
         context.getRouteController().suspendRoute("foo");
 
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        executor.submit(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    Thread.sleep(200);
-                    log.info("Resuming consumer");
-                    context.getRouteController().resumeRoute("foo");
-                } catch (Exception e) {
-                    // ignore
-                }
+        // Schedule route resume after 200ms. This is race-tolerant by design:
+        // - If resume fires before sendBody starts blocking: route is already
+        //   resumed, sendBody finds the consumer immediately and succeeds
+        // - If resume fires while sendBody is blocking: sendBody gets unblocked
+        // Either outcome produces a passing test.
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+        executor.schedule(() -> {
+            try {
+                log.info("Resuming consumer");
+                context.getRouteController().resumeRoute("foo");
+            } catch (Exception e) {
+                log.error("Error resuming route", e);
             }
-        });
+        }, 200, TimeUnit.MILLISECONDS);
 
         getMockEndpoint("mock:result").expectedMessageCount(1);
 

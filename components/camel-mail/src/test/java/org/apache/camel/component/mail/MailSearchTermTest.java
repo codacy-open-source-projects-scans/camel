@@ -35,13 +35,13 @@ import static org.apache.camel.component.mail.SearchTermBuilder.Op;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class MailSearchTermTest extends CamelTestSupport {
-    protected static final MailboxUser bill = Mailbox.getOrCreateUser("bill", "secret");
+    protected static final MailboxUser bill = Mailbox.getOrCreateUser("MailSearchTermTest-bill", "secret");
 
     @BindToRegistry("myTerm")
     private SearchTerm term = createSearchTerm();
 
     @Override
-    public void doPreSetup() throws Exception {
+    public void setupResources() throws Exception {
         prepareMailbox();
     }
 
@@ -66,7 +66,7 @@ public class MailSearchTermTest extends CamelTestSupport {
 
     private void prepareMailbox() throws Exception {
         // connect to mailbox
-        Mailbox.clearAll();
+        Mailbox.clearAll(bill);
         JavaMailSender sender = new DefaultJavaMailSender();
         Store store = sender.getSession().getStore("imap");
         store.connect("localhost", Mailbox.getPort(Protocol.imap), bill.getLogin(), bill.getPassword());

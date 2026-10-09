@@ -166,14 +166,18 @@ class ElasticsearchProducer extends DefaultAsyncProducer {
                 configIndexName = true;
             }
 
+            boolean configSize = false;
             Integer size = message.getHeader(ElasticsearchConstants.PARAM_SIZE, Integer.class);
             if (size == null) {
                 message.setHeader(ElasticsearchConstants.PARAM_SIZE, configuration.getSize());
+                configSize = true;
             }
 
+            boolean configFrom = false;
             Integer from = message.getHeader(ElasticsearchConstants.PARAM_FROM, Integer.class);
             if (from == null) {
                 message.setHeader(ElasticsearchConstants.PARAM_FROM, configuration.getFrom());
+                configFrom = true;
             }
 
             Boolean enableDocumentOnlyMode = message.getHeader(ElasticsearchConstants.PARAM_DOCUMENT_MODE, Boolean.class);
@@ -193,7 +197,8 @@ class ElasticsearchProducer extends DefaultAsyncProducer {
                 documentClass = configuration.getDocumentClass();
             }
 
-            ActionContext ctx = new ActionContext(exchange, callback, transport, configIndexName, configWaitForActiveShards);
+            ActionContext ctx = new ActionContext(
+                    exchange, callback, transport, configIndexName, configWaitForActiveShards, configSize, configFrom);
 
             switch (operation) {
                 case Index: {
@@ -455,6 +460,12 @@ class ElasticsearchProducer extends DefaultAsyncProducer {
             if (ctx.isConfigWaitForActiveShards()) {
                 message.removeHeader(ElasticsearchConstants.PARAM_WAIT_FOR_ACTIVE_SHARDS);
             }
+            if (ctx.isConfigSize()) {
+                message.removeHeader(ElasticsearchConstants.PARAM_SIZE);
+            }
+            if (ctx.isConfigFrom()) {
+                message.removeHeader(ElasticsearchConstants.PARAM_FROM);
+            }
             if (configuration.isDisconnect()) {
                 IOHelper.close(ctx.getTransport());
                 if (configuration.isEnableSniffer()) {
@@ -482,12 +493,12 @@ class ElasticsearchProducer extends DefaultAsyncProducer {
             lock.lock();
             try {
                 if (client == null) {
-                    LOG.info("Connecting to the ElasticSearch cluster: {}", configuration.getClusterName());
+                    LOG.info("Connecting to the Elasticsearch cluster: {}", configuration.getClusterName());
                     if (configuration.getHostAddressesList() != null
                             && !configuration.getHostAddressesList().isEmpty()) {
                         client = createClient();
                     } else {
-                        LOG.warn("Incorrect ip address and port parameters settings for ElasticSearch cluster");
+                        LOG.warn("Incorrect ip address and port parameters settings for Elasticsearch cluster");
                     }
                 }
             } finally {
@@ -501,18 +512,27 @@ class ElasticsearchProducer extends DefaultAsyncProducer {
 
         builder.setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
                 .setConnectTimeout(configuration.getConnectionTimeout()).setSocketTimeout(configuration.getSocketTimeout()));
-        if (configuration.getUser() != null && configuration.getPassword() != null) {
-            final CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-            credentialsProvider.setCredentials(AuthScope.ANY,
-                    new UsernamePasswordCredentials(configuration.getUser(), configuration.getPassword()));
-            builder.setHttpClientConfigCallback(httpClientBuilder -> {
+        builder.setHttpClientConfigCallback(httpClientBuilder -> {
+            if (configuration.getUser() != null && configuration.getPassword() != null) {
+                final CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+                credentialsProvider.setCredentials(AuthScope.ANY,
+                        new UsernamePasswordCredentials(configuration.getUser(), configuration.getPassword()));
                 httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider);
-                if (configuration.getCertificatePath() != null) {
-                    httpClientBuilder.setSSLContext(createSslContextFromCa());
+            }
+            if (configuration.getSslContextParameters() != null) {
+                // Use SSLContextParameters (allows configuring named groups, signature schemes, cipher suites and
+                // protocols), e.g. for post-quantum readiness on JDK 25+
+                try {
+                    httpClientBuilder.setSSLContext(
+                            configuration.getSslContextParameters().createSSLContext(getEndpoint().getCamelContext()));
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to create SSLContext from SSLContextParameters", e);
                 }
-                return httpClientBuilder;
-            });
-        }
+            } else if (configuration.getCertificatePath() != null) {
+                httpClientBuilder.setSSLContext(createSslContextFromCa());
+            }
+            return httpClientBuilder;
+        });
         final RestClient restClient = builder.build();
         if (configuration.isEnableSniffer()) {
             SnifferBuilder snifferBuilder = Sniffer.builder(restClient);
@@ -526,7 +546,7 @@ class ElasticsearchProducer extends DefaultAsyncProducer {
     @Override
     protected void doStop() throws Exception {
         if (client != null) {
-            LOG.info("Disconnecting from ElasticSearch cluster: {}", configuration.getClusterName());
+            LOG.info("Disconnecting from Elasticsearch cluster: {}", configuration.getClusterName());
             client.close();
             if (sniffer != null) {
                 sniffer.close();
@@ -577,14 +597,18 @@ class ElasticsearchProducer extends DefaultAsyncProducer {
         private final ElasticsearchTransport transport;
         private final boolean configIndexName;
         private final boolean configWaitForActiveShards;
+        private final boolean configSize;
+        private final boolean configFrom;
 
         ActionContext(Exchange exchange, AsyncCallback callback, ElasticsearchTransport transport, boolean configIndexName,
-                      boolean configWaitForActiveShards) {
+                      boolean configWaitForActiveShards, boolean configSize, boolean configFrom) {
             this.exchange = exchange;
             this.callback = callback;
             this.transport = transport;
             this.configIndexName = configIndexName;
             this.configWaitForActiveShards = configWaitForActiveShards;
+            this.configSize = configSize;
+            this.configFrom = configFrom;
         }
 
         ElasticsearchTransport getTransport() {
@@ -601,6 +625,14 @@ class ElasticsearchProducer extends DefaultAsyncProducer {
 
         boolean isConfigWaitForActiveShards() {
             return configWaitForActiveShards;
+        }
+
+        boolean isConfigSize() {
+            return configSize;
+        }
+
+        boolean isConfigFrom() {
+            return configFrom;
         }
 
         Exchange getExchange() {

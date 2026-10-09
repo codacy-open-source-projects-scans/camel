@@ -40,12 +40,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Unit test for Camel attachments and Mail attachments.
  */
 public class MailContentTypeResolverTest extends CamelTestSupport {
-    private static final MailboxUser james = Mailbox.getOrCreateUser("james", "secret");
+    private static final MailboxUser james = Mailbox.getOrCreateUser("MailContentTypeResolverTest-james", "secret");
 
     @Test
     public void testCustomContentTypeResolver() throws Exception {
         // clear mailbox
-        Mailbox.clearAll();
+        Mailbox.clearAll(james);
 
         // create an exchange with a normal body and attachment to be produced as email
         Endpoint endpoint = context.getEndpoint(james.uriPrefix(Protocol.smtp));
@@ -99,7 +99,9 @@ public class MailContentTypeResolverTest extends CamelTestSupport {
                     }
                 });
 
-                from(james.uriPrefix(Protocol.pop3) + "&initialDelay=100&delay=100").to("mock:result");
+                from(james.uriPrefix(Protocol.pop3) + "&initialDelay=100&delay=100")
+                        .convertBodyTo(String.class)
+                        .to("mock:result");
             }
         };
     }

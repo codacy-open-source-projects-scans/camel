@@ -16,6 +16,10 @@
  */
 package org.apache.camel;
 
+import java.util.Objects;
+
+import org.apache.camel.util.ArtifactUtils;
+
 /**
  * A runtime exception thrown if an attempt is made to resolve an unknown language definition.
  *
@@ -25,8 +29,12 @@ public class NoSuchLanguageException extends RuntimeCamelException {
 
     private final String language;
 
+    /**
+     * @param language the language name that could not be resolved
+     */
     public NoSuchLanguageException(String language) {
-        super("No language could be found for: " + language);
+        super("No language could be found for: " + Objects.requireNonNull(language, "language")
+              + ArtifactUtils.languageHint(language));
         this.language = language;
     }
 

@@ -18,11 +18,13 @@ package org.apache.camel.component.cxf.transport.message;
 
 import java.io.InputStream;
 
+import org.apache.camel.Exchange;
 import org.apache.camel.component.cxf.common.header.CxfHeaderHelper;
 import org.apache.camel.component.cxf.transport.CamelTransportConstants;
 import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.cxf.message.ExchangeImpl;
+import org.apache.cxf.message.Message;
 import org.apache.cxf.message.MessageImpl;
 
 public final class CxfMessageHelper {
@@ -31,9 +33,9 @@ public final class CxfMessageHelper {
         //Helper class
     }
 
-    public static org.apache.cxf.message.Message getCxfInMessage(
+    public static Message getCxfInMessage(
             HeaderFilterStrategy headerFilterStrategy,
-            org.apache.camel.Exchange exchange,
+            Exchange exchange,
             boolean isClient) {
         MessageImpl answer = new MessageImpl();
         org.apache.cxf.message.Exchange cxfExchange = exchange
@@ -58,7 +60,7 @@ public final class CxfMessageHelper {
             answer.setContent(InputStream.class, body);
         } else if (message.getBody() != null) {
             // fallback and set the body as what it is
-            answer.setContent(Object.class, body);
+            answer.setContent(Object.class, message.getBody());
         }
 
         answer.putAll(message.getHeaders());

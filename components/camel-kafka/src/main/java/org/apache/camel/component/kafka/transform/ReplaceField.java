@@ -29,16 +29,17 @@ import org.apache.camel.util.ObjectHelper;
 
 public class ReplaceField {
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     public JsonNode process(
             @ExchangeProperty("enabled") String enabled, @ExchangeProperty("disabled") String disabled,
             @ExchangeProperty("renames") String renames, Exchange ex)
             throws InvalidPayloadException {
-        ObjectMapper mapper = new ObjectMapper();
         List<String> enabledFields = new ArrayList<>();
         List<String> disabledFields = new ArrayList<>();
         List<String> renameFields = new ArrayList<>();
         JsonNode jsonNodeBody = ex.getMessage().getBody(JsonNode.class);
-        Map<Object, Object> body = mapper.convertValue(jsonNodeBody, new TypeReference<Map<Object, Object>>() {
+        Map<Object, Object> body = OBJECT_MAPPER.convertValue(jsonNodeBody, new TypeReference<Map<Object, Object>>() {
         });
         if (ObjectHelper.isNotEmpty(enabled) && !enabled.equalsIgnoreCase("all")) {
             enabledFields = Arrays.stream(enabled.split(",")).collect(Collectors.toList());
@@ -46,7 +47,7 @@ public class ReplaceField {
         if (ObjectHelper.isNotEmpty(disabled) && !disabled.equalsIgnoreCase("none")) {
             disabledFields = Arrays.stream(disabled.split(",")).collect(Collectors.toList());
         }
-        if (ObjectHelper.isNotEmpty(disabled)) {
+        if (ObjectHelper.isNotEmpty(renames)) {
             renameFields = Arrays.stream(renames.split(",")).collect(Collectors.toList());
         }
         Map<Object, Object> updatedBody = new HashMap<>();
@@ -63,9 +64,9 @@ public class ReplaceField {
             }
         }
         if (!updatedBody.isEmpty()) {
-            return mapper.valueToTree(updatedBody);
+            return OBJECT_MAPPER.valueToTree(updatedBody);
         } else {
-            return mapper.valueToTree(body);
+            return OBJECT_MAPPER.valueToTree(body);
         }
     }
 

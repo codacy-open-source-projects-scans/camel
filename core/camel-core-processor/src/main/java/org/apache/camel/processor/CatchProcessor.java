@@ -33,6 +33,7 @@ import org.apache.camel.Traceable;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.InterceptableProcessor;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.EventHelper;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.util.ObjectHelper;
@@ -43,13 +44,14 @@ import org.slf4j.LoggerFactory;
  * A processor which catches exceptions.
  */
 public class CatchProcessor extends BaseDelegateProcessorSupport
-        implements Traceable, IdAware, RouteIdAware, InterceptableProcessor {
+        implements Traceable, IdAware, RouteIdAware, StepIdAware, InterceptableProcessor {
 
     private static final Logger LOG = LoggerFactory.getLogger(CatchProcessor.class);
 
     private final CamelContext camelContext;
     private String id;
     private String routeId;
+    private String stepId;
     private final List<Class<? extends Throwable>> exceptions;
     private boolean extendedStatistics;
     // to capture how many different exceptions has been caught
@@ -107,6 +109,16 @@ public class CatchProcessor extends BaseDelegateProcessorSupport
     }
 
     @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
+    @Override
     public String getTraceLabel() {
         return "catch";
     }
@@ -119,9 +131,25 @@ public class CatchProcessor extends BaseDelegateProcessorSupport
     @Override
     public boolean process(final Exchange exchange, final AsyncCallback callback) {
         final Exception e = exchange.getException();
-        Throwable caught = catches(exchange, e);
-        // If a previous catch clause handled the exception or if this clause does not match, exit
-        if (exchange.getProperty(ExchangePropertyKey.EXCEPTION_HANDLED) != null || caught == null) {
+        // If a previous catch clause handled the exception, exit (before matching so this clause is not counted)
+        if (exchange.getProperty(ExchangePropertyKey.EXCEPTION_HANDLED) != null) {
+            callback.done(true);
+            return true;
+        }
+        Throwable caught;
+        try {
+            caught = catches(exchange, e);
+        } catch (Exception onWhenException) {
+            // the onWhen predicate failed, so the exchange fails with this exception (and the original as suppressed)
+            if (e != null && e != onWhenException) {
+                onWhenException.addSuppressed(e);
+            }
+            exchange.setException(onWhenException);
+            callback.done(true);
+            return true;
+        }
+        // If this clause does not match, exit
+        if (caught == null) {
             callback.done(true);
             return true;
         }
@@ -141,11 +169,6 @@ public class CatchProcessor extends BaseDelegateProcessorSupport
         // store the last to endpoint as the failure endpoint
         if (exchange.getProperty(ExchangePropertyKey.FAILURE_ENDPOINT) == null) {
             exchange.setProperty(ExchangePropertyKey.FAILURE_ENDPOINT, exchange.getProperty(ExchangePropertyKey.TO_ENDPOINT));
-        }
-        // and store the route id so we know in which route we failed
-        String routeId = ExchangeHelper.getAtRouteId(exchange);
-        if (routeId != null) {
-            exchange.setProperty(ExchangePropertyKey.FAILURE_ROUTE_ID, routeId);
         }
         // give the rest of the pipeline another chance
         exchange.setProperty(ExchangePropertyKey.EXCEPTION_HANDLED, true);

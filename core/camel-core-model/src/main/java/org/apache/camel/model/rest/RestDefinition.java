@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -45,9 +46,11 @@ import org.apache.camel.model.errorhandler.NoErrorHandlerDefinition;
 import org.apache.camel.spi.AsEndpointUri;
 import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.NodeIdFactory;
+import org.apache.camel.spi.PropertiesComponent;
 import org.apache.camel.spi.Resource;
 import org.apache.camel.spi.ResourceAware;
 import org.apache.camel.spi.RestConfiguration;
+import org.apache.camel.spi.annotations.DslArg;
 import org.apache.camel.support.CamelContextHelper;
 import org.apache.camel.util.FileUtil;
 import org.apache.camel.util.ObjectHelper;
@@ -60,7 +63,8 @@ import static org.apache.camel.support.CamelContextHelper.parseText;
 /**
  * Defines a rest service using the rest-dsl
  */
-@Metadata(label = "rest")
+@Metadata(label = "rest",
+          description = "Defines a REST service with HTTP operations (GET, POST, PUT, DELETE, etc.) using the Camel REST DSL")
 @XmlRootElement(name = "rest")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition> implements ResourceAware {
@@ -68,47 +72,64 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
     public static final String MISSING_VERB = "Must add verb first, such as get/post/delete";
 
     @XmlAttribute
+    @DslArg
+    @Metadata(description = "Path of the rest service, such as /foo.")
     private String path;
     @XmlAttribute
+    @Metadata(description = "The content type the REST service consumes (accept as input), such as application/xml or application/json. This option will override what may be configured on a parent level.")
     private String consumes;
     @XmlAttribute
+    @Metadata(description = "The content type the REST service produces (uses for output), such as application/xml or application/json. This option will override what may be configured on a parent level.")
     private String produces;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean")
+    @Metadata(description = "Whether to disable this REST service from the route during build time. Once an REST service has been disabled then it cannot be enabled later at runtime.",
+              label = "advanced", javaType = "java.lang.Boolean")
     private String disabled;
     @XmlAttribute
-    @Metadata(defaultValue = "off", enums = "off,auto,json,xml,json_xml")
+    @Metadata(description = "Sets the binding mode for automatic marshalling and unmarshalling of request and response bodies. off (default) disables binding. auto detects JSON or XML from the Content-Type header. json binds using a JSON data format only. xml binds using an XML data format only. json_xml supports both JSON and XML. This option will override what may be configured on a parent level.",
+              defaultValue = "off", enums = "off,auto,json,xml,json_xml")
     private String bindingMode;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
+    @Metadata(description = "Whether to skip binding on output if there is a custom HTTP error code header. This allows to build custom error messages that do not bind to json / xml etc, as success messages otherwise will do. This option will override what may be configured on a parent level.",
+              label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
     private String skipBindingOnErrorCode;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
+    @Metadata(description = "Whether to enable validation of the client request to check whether Content-Type/Accept headers, required parameters, and message body are valid.",
+              label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
     private String clientRequestValidation;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
+    @Metadata(description = "Whether to validate what Camel is returning as response to the client, such as checking status-code, Content-Type, and headers match the Rest DSL response definition.",
+              label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
     private String clientResponseValidation;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
+    @Metadata(description = "Whether to enable CORS headers in the HTTP response. This option will override what may be configured on a parent level.",
+              label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
     private String enableCORS;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
+    @Metadata(description = "Whether to return HTTP 204 with an empty body when a response contains an empty JSON object or XML root object.",
+              label = "advanced", javaType = "java.lang.Boolean", defaultValue = "false")
     private String enableNoContentResponse;
     @XmlAttribute
-    @Metadata(label = "advanced", javaType = "java.lang.Boolean", defaultValue = "true")
+    @Metadata(description = "Whether to include or exclude this rest operation in API documentation. This option will override what may be configured on a parent level.",
+              label = "advanced", javaType = "java.lang.Boolean", defaultValue = "true")
     private String apiDocs;
     @XmlAttribute
-    @Metadata(label = "advanced")
+    @Metadata(description = "To configure a special tag for the operations within this rest definition.",
+              label = "advanced")
     private String tag;
     @XmlElement
+    @Metadata(description = "To use an existing OpenAPI specification as contract-first for Camel Rest DSL.")
     private OpenApiDefinition openApi;
     @XmlElement(name = "securityDefinitions") // use the name Swagger/OpenAPI uses
-    @Metadata(label = "security")
+    @Metadata(description = "Sets the security definitions such as Basic, OAuth2 etc.",
+              label = "security")
     private RestSecuritiesDefinition securityDefinitions;
     @XmlElement
-    @Metadata(label = "security")
+    @Metadata(description = "Sets the security requirement(s) for all endpoints.",
+              label = "security")
     private List<SecurityDefinition> securityRequirements = new ArrayList<>();
     @XmlElementRef
+    @Metadata(description = "The HTTP verb operations (GET, POST, PUT, DELETE, PATCH, HEAD) this REST service accepts and uses.")
     private List<VerbDefinition> verbs = new ArrayList<>();
     @XmlTransient
     private Resource resource;
@@ -127,9 +148,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return path;
     }
 
-    /**
-     * Path of the rest service, such as "/foo"
-     */
     public void setPath(String path) {
         this.path = path;
     }
@@ -138,9 +156,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return tag;
     }
 
-    /**
-     * To configure a special tag for the operations within this rest definition.
-     */
     public void setTag(String tag) {
         this.tag = tag;
     }
@@ -149,10 +164,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return consumes;
     }
 
-    /**
-     * To define the content type what the REST service consumes (accept as input), such as application/xml or
-     * application/json. This option will override what may be configured on a parent level
-     */
     public void setConsumes(String consumes) {
         this.consumes = consumes;
     }
@@ -161,10 +172,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return produces;
     }
 
-    /**
-     * To define the content type what the REST service produces (uses for output), such as application/xml or
-     * application/json This option will override what may be configured on a parent level
-     */
     public void setProduces(String produces) {
         this.produces = produces;
     }
@@ -173,10 +180,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return disabled;
     }
 
-    /**
-     * Whether to disable this REST service from the route during build time. Once an REST service has been disabled
-     * then it cannot be enabled later at runtime.
-     */
     public void setDisabled(String disabled) {
         this.disabled = disabled;
     }
@@ -185,11 +188,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return bindingMode;
     }
 
-    /**
-     * Sets the binding mode to use. This option will override what may be configured on a parent level
-     * <p/>
-     * The default value is auto
-     */
     public void setBindingMode(String bindingMode) {
         this.bindingMode = bindingMode;
     }
@@ -202,9 +200,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return securityDefinitions;
     }
 
-    /**
-     * Sets the security definitions such as Basic, OAuth2 etc.
-     */
     public void setSecurityDefinitions(RestSecuritiesDefinition securityDefinitions) {
         this.securityDefinitions = securityDefinitions;
     }
@@ -213,16 +208,10 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return securityRequirements;
     }
 
-    /**
-     * Sets the security requirement(s) for all endpoints.
-     */
     public void setSecurityRequirements(List<SecurityDefinition> securityRequirements) {
         this.securityRequirements = securityRequirements;
     }
 
-    /**
-     * The HTTP verbs this REST service accepts and uses
-     */
     public void setVerbs(List<VerbDefinition> verbs) {
         this.verbs = verbs;
     }
@@ -231,11 +220,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return skipBindingOnErrorCode;
     }
 
-    /**
-     * Whether to skip binding on output if there is a custom HTTP error code header. This allows to build custom error
-     * messages that do not bind to json / xml etc, as success messages otherwise will do. This option will override
-     * what may be configured on a parent level
-     */
     public void setSkipBindingOnErrorCode(String skipBindingOnErrorCode) {
         this.skipBindingOnErrorCode = skipBindingOnErrorCode;
     }
@@ -244,14 +228,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return clientRequestValidation;
     }
 
-    /**
-     * Whether to enable validation of the client request to check:
-     * <p>
-     * 1) Content-Type header matches what the Rest DSL consumes; returns HTTP Status 415 if validation error. 2) Accept
-     * header matches what the Rest DSL produces; returns HTTP Status 406 if validation error. 3) Missing required data
-     * (query parameters, HTTP headers, body); returns HTTP Status 400 if validation error. 4) Parsing error of the
-     * message body (JSon, XML or Auto binding mode must be enabled); returns HTTP Status 400 if validation error.
-     */
     public void setClientRequestValidation(String clientRequestValidation) {
         this.clientRequestValidation = clientRequestValidation;
     }
@@ -260,13 +236,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return clientResponseValidation;
     }
 
-    /**
-     * Whether to check what Camel is returning as response to the client:
-     *
-     * 1) Status-code and Content-Type matches Rest DSL response messages. 2) Check whether expected headers is included
-     * according to the Rest DSL repose message headers. 3) If the response body is JSon then check whether its valid
-     * JSon. Returns 500 if validation error detected.
-     */
     public void setClientResponseValidation(String clientResponseValidation) {
         this.clientResponseValidation = clientResponseValidation;
     }
@@ -275,12 +244,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return enableCORS;
     }
 
-    /**
-     * Whether to enable CORS headers in the HTTP response. This option will override what may be configured on a parent
-     * level
-     * <p/>
-     * The default value is false.
-     */
     public void setEnableCORS(String enableCORS) {
         this.enableCORS = enableCORS;
     }
@@ -289,11 +252,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return enableNoContentResponse;
     }
 
-    /**
-     * Whether to return HTTP 204 with an empty body when a response contains an empty JSON object or XML root object.
-     * <p/>
-     * The default value is false.
-     */
     public void setEnableNoContentResponse(String enableNoContentResponse) {
         this.enableNoContentResponse = enableNoContentResponse;
     }
@@ -302,12 +260,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return apiDocs;
     }
 
-    /**
-     * Whether to include or exclude this rest operation in API documentation. This option will override what may be
-     * configured on a parent level.
-     * <p/>
-     * The default value is true.
-     */
     public void setApiDocs(String apiDocs) {
         this.apiDocs = apiDocs;
     }
@@ -316,9 +268,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         return openApi;
     }
 
-    /**
-     * To use an existing OpenAPI specification as contract-first for Camel Rest DSL.
-     */
     public void setOpenApi(OpenApiDefinition openApi) {
         this.openApi = openApi;
     }
@@ -584,6 +533,7 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         ResponseMessageDefinition msg = responseMessage(verb);
         msg.setCode(String.valueOf(code));
         msg.setMessage(message);
+        verb.getResponseMsgs().add(msg);
         return this;
     }
 
@@ -672,12 +622,16 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
     }
 
     public RestDefinition bindingMode(String mode) {
+        // a property placeholder must keep its case (the key is case-sensitive)
+        if (!mode.contains(PropertiesComponent.PREFIX_TOKEN)) {
+            mode = mode.toLowerCase(Locale.ENGLISH);
+        }
         if (getVerbs().isEmpty()) {
-            this.bindingMode = mode.toLowerCase();
+            this.bindingMode = mode;
         } else {
             // add on last verb as that is how the Java DSL works
             VerbDefinition verb = getVerbs().get(getVerbs().size() - 1);
-            verb.setBindingMode(mode.toLowerCase());
+            verb.setBindingMode(mode);
         }
 
         return this;
@@ -1078,6 +1032,9 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
         if (openApi.getMissingOperation() != null) {
             options.put("missingOperation", parseText(camelContext, openApi.getMissingOperation()));
         }
+        if (openApi.getUnmatchedRequestHandling() != null) {
+            options.put("unmatchedRequestHandling", parseText(camelContext, openApi.getUnmatchedRequestHandling()));
+        }
         if (openApi.getMockIncludePattern() != null) {
             options.put("mockIncludePattern", parseText(camelContext, openApi.getMockIncludePattern()));
         }
@@ -1189,9 +1146,13 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
             } else {
                 binding.setProduces(getProduces());
             }
-            if (binding.getType() != null || binding.getOutType() != null && binding.getBindingMode() != null) {
+            // the binding mode from the verb or rest, or else from the rest configuration
+            String mode = parseText(camelContext, binding.getBindingMode());
+            if (mode == null && camelContext.getRestConfiguration().getBindingMode() != null) {
+                mode = camelContext.getRestConfiguration().getBindingMode().name();
+            }
+            if (mode != null && (binding.getType() != null || binding.getOutType() != null)) {
                 // okay we have binding mode and in/out type defined - then we can infer consume/produces
-                String mode = binding.getBindingMode();
                 if ("json".equals(mode)) {
                     if (binding.getConsumes() == null && binding.getType() != null) {
                         binding.setConsumes("application/json");
@@ -1240,6 +1201,20 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
             } else {
                 binding.setEnableNoContentResponse(getEnableNoContentResponse());
             }
+            // the body parameter from the type must be added before the parameters are registered on the binding,
+            // so a required body is enforced
+            if (verb.getType() != null) {
+                String bodyType = parseText(camelContext, verb.getType());
+                ParamDefinition param = findBodyParam(verb);
+                if (param == null) {
+                    // must be body type and set the model class as data type
+                    param(verb).name(RestParamType.body.name()).type(RestParamType.body).dataType(bodyType).endParam();
+                } else {
+                    // must be body type and set the model class as data type
+                    param.type(RestParamType.body).dataType(bodyType);
+                }
+            }
+
             for (ParamDefinition param : verb.getParams()) {
                 // register all the default values for the query and header parameters
                 RestParamType type = param.getType();
@@ -1254,7 +1229,7 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
                     binding.addAllowedValue(name, parseText(camelContext, param.getAllowableValuesAsCommaString()));
                 }
                 // register which parameters are required
-                Boolean required = param.getRequired();
+                Boolean required = parseBoolean(camelContext, param.getRequired());
                 if (required != null && required) {
                     if (RestParamType.query == type) {
                         binding.addRequiredQueryParameter(name);
@@ -1270,7 +1245,8 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
                 if (rm.getHeaders() != null) {
                     for (var header : rm.getHeaders()) {
                         String name = parseText(camelContext, header.getName());
-                        binding.addResponseHeader(name);
+                        // the headers are only required on the responses of this code
+                        binding.addResponseHeader(rm.getCode(), name);
                     }
                 }
             }
@@ -1334,18 +1310,6 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
             } else {
                 // no query parameters
                 uriTemplating(camelContext, verb, allPath, false);
-            }
-
-            if (verb.getType() != null) {
-                String bodyType = parseText(camelContext, verb.getType());
-                ParamDefinition param = findParam(verb, RestParamType.body.name());
-                if (param == null) {
-                    // must be body type and set the model class as data type
-                    param(verb).name(RestParamType.body.name()).type(RestParamType.body).dataType(bodyType).endParam();
-                } else {
-                    // must be body type and set the model class as data type
-                    param.type(RestParamType.body).dataType(bodyType);
-                }
             }
 
             // create the from endpoint uri which is using the rest component
@@ -1456,6 +1420,19 @@ public class RestDefinition extends OptionalIdentifiedDefinition<RestDefinition>
             answer = "";
         }
         return parseText(camelContext, answer);
+    }
+
+    /**
+     * The body parameter of the verb, which is the parameter of type body (whatever its name), or else the parameter
+     * named body
+     */
+    private ParamDefinition findBodyParam(VerbDefinition verb) {
+        for (ParamDefinition param : verb.getParams()) {
+            if (param.getType() == RestParamType.body) {
+                return param;
+            }
+        }
+        return findParam(verb, RestParamType.body.name());
     }
 
     private ParamDefinition findParam(VerbDefinition verb, String name) {

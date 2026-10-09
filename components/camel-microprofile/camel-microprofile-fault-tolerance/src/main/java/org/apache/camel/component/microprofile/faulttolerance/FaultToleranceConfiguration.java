@@ -24,7 +24,6 @@ public class FaultToleranceConfiguration {
     private float failureRatio;
     private boolean timeoutEnabled;
     private long timeoutDuration;
-    private int timeoutPoolSize;
     private String timeoutExecutorServiceRef;
     private boolean bulkheadEnabled;
     private int bulkheadMaxConcurrentCalls;
@@ -76,14 +75,6 @@ public class FaultToleranceConfiguration {
 
     public void setTimeoutDuration(long timeoutDuration) {
         this.timeoutDuration = timeoutDuration;
-    }
-
-    public int getTimeoutPoolSize() {
-        return timeoutPoolSize;
-    }
-
-    public void setTimeoutPoolSize(int timeoutPoolSize) {
-        this.timeoutPoolSize = timeoutPoolSize;
     }
 
     public String getTimeoutExecutorServiceRef() {

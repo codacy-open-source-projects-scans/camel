@@ -31,6 +31,7 @@ import com.hazelcast.transaction.TransactionalMap;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.RuntimeCamelException;
+import org.apache.camel.component.hazelcast.HazelcastSerializationFilterHelper;
 import org.apache.camel.spi.Configurer;
 import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.OptimisticLockingAggregationRepository;
@@ -389,10 +390,12 @@ public class HazelcastAggregationRepository extends ServiceSupport
                     TransactionalMap<String, DefaultExchangeHolder> tCache = tCtx.getMap(cache.getName());
                     TransactionalMap<String, DefaultExchangeHolder> tPersistentCache = tCtx.getMap(persistedCache.getName());
 
-                    DefaultExchangeHolder removedHolder = tCache.remove(key);
+                    tCache.remove(key);
                     LOG.trace("Putting an exchange with ID {} for key {} into a recoverable storage in a thread-safe manner.",
                             exchange.getExchangeId(), key);
-                    tPersistentCache.put(exchange.getExchangeId(), removedHolder);
+                    // store the given exchange and not the removed entry: when a group is completed by an incoming
+                    // exchange, the last aggregated exchange is not added to the repository before it is removed
+                    tPersistentCache.put(exchange.getExchangeId(), holder);
 
                     tCtx.commitTransaction();
                     LOG.trace("Removed an exchange with ID {} for key {} in a thread-safe manner.", exchange.getExchangeId(),
@@ -450,6 +453,7 @@ public class HazelcastAggregationRepository extends ServiceSupport
             useLocalHzInstance = true;
             Config cfg = new XmlConfigBuilder().build();
             cfg.setProperty("hazelcast.version.check.enabled", "false");
+            HazelcastSerializationFilterHelper.applyDefault(cfg);
             hazelcastInstance = Hazelcast.newHazelcastInstance(cfg);
         } else {
             ObjectHelper.notNull(hazelcastInstance, "hazelcastInstance");

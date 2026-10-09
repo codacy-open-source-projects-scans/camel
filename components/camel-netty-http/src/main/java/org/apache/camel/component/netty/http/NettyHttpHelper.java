@@ -18,7 +18,6 @@ package org.apache.camel.component.netty.http;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -28,31 +27,17 @@ import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpMethod;
 import org.apache.camel.Exchange;
 import org.apache.camel.Message;
-import org.apache.camel.RuntimeExchangeException;
+import org.apache.camel.support.DeserializationFilterHelper;
 import org.apache.camel.util.CollectionHelper;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.URISupport;
 import org.apache.camel.util.UnsafeUriCharactersEncoder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Helpers.
  */
 public final class NettyHttpHelper {
-
-    /**
-     * Default {@link ObjectInputFilter} pattern applied when deserializing Java objects from HTTP responses with
-     * Content-Type {@code application/x-java-serialized-object}. Allows standard Java types and Apache Camel types and
-     * rejects everything else. Can be overridden per-endpoint via
-     * {@link NettyHttpConfiguration#setDeserializationFilter(String)} or globally via the JVM system property
-     * {@code jdk.serialFilter}.
-     */
-    static final String DEFAULT_DESERIALIZATION_FILTER
-            = "!java.net.**;java.**;javax.**;org.apache.camel.**;!*";
-
-    private static final Logger LOG = LoggerFactory.getLogger(NettyHttpHelper.class);
 
     private NettyHttpHelper() {
     }
@@ -69,6 +54,28 @@ public final class NettyHttpHelper {
      */
     public static void appendHeader(Map<String, Object> headers, String key, Object value) {
         CollectionHelper.appendEntry(headers, key, value);
+    }
+
+    /**
+     * Gets the charset parameter of the content type. The parameter name is case-insensitive (RFC 9110, section 5.6.6).
+     *
+     * @param  contentType the content type, may be <tt>null</tt>
+     * @return             the charset name, or <tt>null</tt> if the content type has no charset parameter, or an empty
+     *                     one
+     */
+    public static String getCharsetFromContentType(String contentType) {
+        if (contentType == null) {
+            return null;
+        }
+        String[] parts = contentType.split(";");
+        for (int i = 1; i < parts.length; i++) {
+            String part = parts[i].trim();
+            if (part.regionMatches(true, 0, "charset=", 0, 8)) {
+                String name = IOHelper.normalizeCharset(part.substring(8));
+                return ObjectHelper.isEmpty(name) ? null : name;
+            }
+        }
+        return null;
     }
 
     /**
@@ -155,7 +162,7 @@ public final class NettyHttpHelper {
 
         Object answer = null;
         ObjectInputStream ois = new ObjectInputStream(is);
-        ois.setObjectInputFilter(resolveDeserializationFilter(deserializationFilter));
+        ois.setObjectInputFilter(DeserializationFilterHelper.resolveDeserializationFilter(deserializationFilter));
         try {
             answer = ois.readObject();
         } finally {
@@ -163,19 +170,6 @@ public final class NettyHttpHelper {
         }
 
         return answer;
-    }
-
-    private static ObjectInputFilter resolveDeserializationFilter(String configuredPattern) {
-        if (configuredPattern != null && !configuredPattern.isBlank()) {
-            return ObjectInputFilter.Config.createFilter(configuredPattern);
-        }
-        ObjectInputFilter jvmFilter = ObjectInputFilter.Config.getSerialFilter();
-        if (jvmFilter != null) {
-            return jvmFilter;
-        }
-        LOG.debug("No JVM-wide deserialization filter set, applying default Camel filter: {}",
-                DEFAULT_DESERIALIZATION_FILTER);
-        return ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER);
     }
 
     /**
@@ -192,12 +186,8 @@ public final class NettyHttpHelper {
             uri = endpoint.getEndpointUri();
         }
 
-        // resolve placeholders in uri
-        try {
-            uri = exchange.getContext().resolvePropertyPlaceholders(uri);
-        } catch (Exception e) {
-            throw new RuntimeExchangeException("Cannot resolve property placeholders with uri: " + uri, exchange, e);
-        }
+        // NOTE: property placeholders are resolved at build time on the endpoint uri written in the route,
+        // never on the message-supplied override headers (see CAMEL-24282 / CAMEL-24418)
 
         // append HTTP_PATH to HTTP_URI if it is provided in the header
         String path = exchange.getIn().getHeader(NettyHttpConstants.HTTP_PATH, String.class);

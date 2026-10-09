@@ -22,6 +22,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.component.aws2.timestream.Timestream2Configuration;
 import org.apache.camel.component.aws2.timestream.Timestream2Constants;
 import org.apache.camel.component.aws2.timestream.Timestream2Operations;
@@ -114,11 +115,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.describeEndpoints(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Endpoints command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Endpoints command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeEndpoints operation requires DescribeEndpointsRequest in POJO mode");
             }
         } else {
             DescribeEndpointsRequest.Builder builder = DescribeEndpointsRequest.builder();
@@ -127,7 +131,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.describeEndpoints(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Endpoints command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Endpoints command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -144,11 +148,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.createBatchLoadTask(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create Batch Load Task command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create Batch Load Task command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createBatchLoadTask operation requires CreateBatchLoadTaskRequest in POJO mode");
             }
         } else {
             CreateBatchLoadTaskRequest.Builder builder = CreateBatchLoadTaskRequest.builder();
@@ -188,7 +195,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.createBatchLoadTask(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create Batch Load Task command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create Batch Load Task command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -205,11 +212,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.describeBatchLoadTask(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Batch Load Task command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Batch Load Task command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeBatchLoadTask operation requires DescribeBatchLoadTaskRequest in POJO mode");
             }
         } else {
             DescribeBatchLoadTaskRequest.Builder builder = DescribeBatchLoadTaskRequest.builder();
@@ -222,7 +232,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.describeBatchLoadTask(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Batch Load Task command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Batch Load Task command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -239,11 +249,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.resumeBatchLoadTask(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Resume Batch Load Task command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Resume Batch Load Task command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "resumeBatchLoadTask operation requires ResumeBatchLoadTaskRequest in POJO mode");
             }
         } else {
             ResumeBatchLoadTaskRequest.Builder builder = ResumeBatchLoadTaskRequest.builder();
@@ -256,7 +269,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.resumeBatchLoadTask(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Resume Batch Load Task command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Resume Batch Load Task command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -273,11 +286,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.listBatchLoadTasks(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Batch Load Tasks command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Batch Load Tasks command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listBatchLoadTasks operation requires ListBatchLoadTasksRequest in POJO mode");
             }
         } else {
             ListBatchLoadTasksRequest.Builder builder = ListBatchLoadTasksRequest.builder();
@@ -294,7 +310,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.listBatchLoadTasks(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Batch Load Tasks command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Batch Load Tasks command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -310,11 +326,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.createDatabase(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create Database command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create Database command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createDatabase operation requires CreateDatabaseRequest in POJO mode");
             }
         } else {
             CreateDatabaseRequest.Builder builder = CreateDatabaseRequest.builder();
@@ -331,7 +350,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.createDatabase(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create Database command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create Database command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -347,11 +366,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.deleteDatabase(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete Database command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete Database command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteDatabase operation requires DeleteDatabaseRequest in POJO mode");
             }
         } else {
             DeleteDatabaseRequest.Builder builder = DeleteDatabaseRequest.builder();
@@ -364,7 +386,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.deleteDatabase(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete Database command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete Database command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -381,11 +403,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.describeDatabase(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Database command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Database command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeDatabase operation requires DescribeDatabaseRequest in POJO mode");
             }
         } else {
             DescribeDatabaseRequest.Builder builder = DescribeDatabaseRequest.builder();
@@ -398,7 +423,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.describeDatabase(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Database command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Database command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -414,11 +439,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.updateDatabase(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Update Database command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Update Database command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "updateDatabase operation requires UpdateDatabaseRequest in POJO mode");
             }
         } else {
             UpdateDatabaseRequest.Builder builder = UpdateDatabaseRequest.builder();
@@ -435,7 +463,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.updateDatabase(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Update Database command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Update Database command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -451,11 +479,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.listDatabases(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Databases command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Databases command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listDatabases operation requires ListDatabasesRequest in POJO mode");
             }
         } else {
             ListDatabasesRequest.Builder builder = ListDatabasesRequest.builder();
@@ -468,7 +499,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.listDatabases(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Databases command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Databases command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -484,11 +515,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.createTable(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createTable operation requires CreateTableRequest in POJO mode");
             }
         } else {
             CreateTableRequest.Builder builder = CreateTableRequest.builder();
@@ -519,7 +553,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.createTable(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -535,11 +569,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.deleteTable(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteTable operation requires DeleteTableRequest in POJO mode");
             }
         } else {
             DeleteTableRequest.Builder builder = DeleteTableRequest.builder();
@@ -556,7 +593,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.deleteTable(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -572,11 +609,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.describeTable(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeTable operation requires DescribeTableRequest in POJO mode");
             }
         } else {
             DescribeTableRequest.Builder builder = DescribeTableRequest.builder();
@@ -593,7 +633,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.describeTable(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -609,11 +649,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.updateTable(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Update Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Update Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "updateTable operation requires UpdateTableRequest in POJO mode");
             }
         } else {
             UpdateTableRequest.Builder builder = UpdateTableRequest.builder();
@@ -644,7 +687,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.updateTable(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Update Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Update Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -660,11 +703,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.listTables(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Tables command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Tables command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listTables operation requires ListTablesRequest in POJO mode");
             }
         } else {
             ListTablesRequest.Builder builder = ListTablesRequest.builder();
@@ -681,7 +727,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.listTables(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Tables command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Tables command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -697,11 +743,14 @@ public class Timestream2WriteProducer extends DefaultProducer {
                 try {
                     result = timestreamWriteClient.writeRecords(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Write Records command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Write Records command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "writeRecords operation requires WriteRecordsRequest in POJO mode");
             }
         } else {
             WriteRecordsRequest.Builder builder = WriteRecordsRequest.builder();
@@ -726,7 +775,7 @@ public class Timestream2WriteProducer extends DefaultProducer {
             try {
                 result = timestreamWriteClient.writeRecords(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Write Records command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Write Records command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);

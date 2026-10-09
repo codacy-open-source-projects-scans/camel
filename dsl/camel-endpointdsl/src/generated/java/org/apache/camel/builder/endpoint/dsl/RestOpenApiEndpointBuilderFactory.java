@@ -175,6 +175,23 @@ public interface RestOpenApiEndpointBuilderFactory {
             doSetProperty("missingOperation", missingOperation);
             return this;
         }
+        /**
+         * OAuth profile name passed to the HTTP consumer delegate for
+         * validating incoming Authorization: Bearer tokens. The selected
+         * consumer component must support the oauthProfile option; delegates
+         * that ignore unknown options will start without endpoint protection.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param oauthProfile the value to set
+         * @return the dsl builder
+         */
+        default RestOpenApiEndpointConsumerBuilder oauthProfile(String oauthProfile) {
+            doSetProperty("oauthProfile", oauthProfile);
+            return this;
+        }
     }
 
     /**
@@ -366,6 +383,23 @@ public interface RestOpenApiEndpointBuilderFactory {
          */
         default AdvancedRestOpenApiEndpointConsumerBuilder restOpenapiProcessorStrategy(String restOpenapiProcessorStrategy) {
             doSetProperty("restOpenapiProcessorStrategy", restOpenapiProcessorStrategy);
+            return this;
+        }
+        /**
+         * Who answers requests that match no operation in the OpenAPI
+         * specification: the HTTP layer (platform) or Camel via the unmatched
+         * request handler (camel).
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Default: platform
+         * Group: consumer (advanced)
+         * 
+         * @param unmatchedRequestHandling the value to set
+         * @return the dsl builder
+         */
+        default AdvancedRestOpenApiEndpointConsumerBuilder unmatchedRequestHandling(String unmatchedRequestHandling) {
+            doSetProperty("unmatchedRequestHandling", unmatchedRequestHandling);
             return this;
         }
     }

@@ -92,7 +92,7 @@ public class OBSEndpoint extends ScheduledPollEndpoint {
     @Metadata(required = true)
     private String secretKey;
 
-    @UriParam(description = "Name of bucket to perform operation on", displayName = "Bucket Name")
+    @UriParam(description = "Name of bucket to perform operation on", displayName = "Bucket Name", endpointIdentity = true)
     @Metadata(required = false)
     private String bucketName;
 
@@ -379,7 +379,7 @@ public class OBSEndpoint extends ScheduledPollEndpoint {
 
         // setup proxy information (if needed)
         if (ObjectHelper.isNotEmpty(getProxyHost())
-                && ObjectHelper.isNotEmpty(getProxyPort())) {
+                && getProxyPort() > 0) {
             HttpProxyConfiguration httpConfig = new HttpProxyConfiguration();
             httpConfig.setProxyAddr(getProxyHost());
             httpConfig.setProxyPort(getProxyPort());

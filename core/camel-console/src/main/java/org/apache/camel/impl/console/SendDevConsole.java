@@ -19,6 +19,7 @@ package org.apache.camel.impl.console;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,11 +42,21 @@ import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.StopWatch;
 import org.apache.camel.util.TimeUtils;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 
-@DevConsole(name = "send", displayName = "Camel Send", description = "Send messages to endpoints")
+@DevConsole(name = "send", displayName = "Camel Send", description = "Send messages to endpoints", readOnly = false)
 @Configurer(extended = true)
 public class SendDevConsole extends AbstractDevConsole {
+
+    public record Response(
+            @Metadata(description = "Epoch time in milliseconds when the send was performed") long timestamp,
+            @Metadata(description = "The send status, success/error/timeout") String status,
+            @Metadata(description = "Elapsed time in milliseconds") long elapsed,
+            @Metadata(description = "The endpoint URI (only present when known)") String endpoint,
+            @Metadata(description = "The exception, as an opaque JSON object (only present on error)") Map<String, Object> exception,
+            @Metadata(description = "The exchange ID (only present when a response message is available)") String exchangeId,
+            @Metadata(description = "The response message, as an opaque JSON object (only present when a response message is available)") Map<String, Object> message) {
+    }
 
     private ProducerTemplate producer;
     private ConsumerTemplate consumer;
@@ -58,34 +69,34 @@ public class SendDevConsole extends AbstractDevConsole {
               description = "Timeout when using poll mode")
     private int pollTimeout = 20000;
 
-    /**
-     * Maximum size of the message body to include in the dump
-     */
+    @Metadata(label = "query", description = "Maximum size of the message body to include in the dump",
+              javaType = "java.lang.Integer", defaultValue = "32768")
     public static final String BODY_MAX_CHARS = "bodyMaxChars";
 
-    /**
-     * The message body to send. Can refer to files using file: prefix
-     */
+    @Metadata(label = "query", description = "The message body to send. Can refer to files using file: prefix",
+              javaType = "java.lang.String")
     public static final String BODY = "body";
 
-    /**
-     * Whether to poll message from the endpoint instead of sending
-     */
+    @Metadata(label = "query",
+              description = "Encoding of the body option. Use base64 to send binary content, which is decoded and sent as byte[].",
+              javaType = "java.lang.String", enums = "base64")
+    public static final String BODY_ENCODING = "bodyEncoding";
+
+    @Metadata(label = "query", description = "Whether to poll message from the endpoint instead of sending",
+              javaType = "java.lang.Boolean")
     public static final String POLL = "poll";
 
-    /**
-     * Timeout when using poll mode
-     */
+    @Metadata(label = "query", description = "Timeout when using poll mode",
+              javaType = "java.lang.Integer", defaultValue = "20000")
     public static final String POLL_TIMEOUT = "pollTimeout";
 
-    /**
-     * Exchange pattern when sending
-     */
+    @Metadata(label = "query", description = "Exchange pattern when sending",
+              javaType = "java.lang.String", enums = "InOnly,InOut")
     public static final String EXCHANGE_PATTERN = "exchangePattern";
 
-    /**
-     * Endpoint for where to send messages (can also refer to a route id, endpoint pattern).
-     */
+    @Metadata(label = "query",
+              description = "Endpoint for where to send messages (can also refer to a route id, endpoint pattern)",
+              javaType = "java.lang.String")
     public static final String ENDPOINT = "endpoint";
 
     public SendDevConsole() {
@@ -125,11 +136,14 @@ public class SendDevConsole extends AbstractDevConsole {
         StringBuilder sb = new StringBuilder();
 
         StopWatch watch = new StopWatch();
-        String endpoint = (String) options.get(ENDPOINT);
-        String body = (String) options.getOrDefault(BODY, "");
-        String exchangePattern = (String) options.get(EXCHANGE_PATTERN);
-        boolean poll = "true".equals(options.get(POLL));
-        int timeout = Integer.parseInt((String) options.getOrDefault(POLL_TIMEOUT, String.valueOf(pollTimeout)));
+        String endpoint = optionString(options, ENDPOINT);
+        String body = optionString(options, BODY);
+        if (body == null) {
+            body = "";
+        }
+        String exchangePattern = optionString(options, EXCHANGE_PATTERN);
+        boolean poll = optionBoolean(options, POLL, false);
+        int timeout = optionInt(options, POLL_TIMEOUT, pollTimeout);
         // give extra time as CLI needs to process reply also
         timeout += 5000;
 
@@ -172,7 +186,7 @@ public class SendDevConsole extends AbstractDevConsole {
         }
         if (out != null && (poll || "InOut".equals(exchangePattern))) {
             sb.append("\n    Response Message:\n\n");
-            int maxChars = Integer.parseInt((String) options.getOrDefault(BODY_MAX_CHARS, "" + bodyMaxChars));
+            int maxChars = optionInt(options, BODY_MAX_CHARS, bodyMaxChars);
             String json
                     = MessageHelper.dumpAsJSon(out.getMessage(), true, true, true, 2, true, true, true,
                             maxChars, true);
@@ -185,15 +199,16 @@ public class SendDevConsole extends AbstractDevConsole {
 
     @Override
     protected Map<String, Object> doCallJson(Map<String, Object> options) {
-        JsonObject root = new JsonObject();
-
         StopWatch watch = new StopWatch();
         long timestamp = System.currentTimeMillis();
-        String endpoint = (String) options.get(ENDPOINT);
-        String body = (String) options.getOrDefault(BODY, "");
-        String exchangePattern = (String) options.get(EXCHANGE_PATTERN);
-        boolean poll = "true".equals(options.get(POLL));
-        int timeout = Integer.parseInt((String) options.getOrDefault(POLL_TIMEOUT, String.valueOf(pollTimeout)));
+        String endpoint = optionString(options, ENDPOINT);
+        String body = optionString(options, BODY);
+        if (body == null) {
+            body = "";
+        }
+        String exchangePattern = optionString(options, EXCHANGE_PATTERN);
+        boolean poll = optionBoolean(options, POLL, false);
+        int timeout = optionInt(options, POLL_TIMEOUT, pollTimeout);
         // give extra time as CLI needs to process reply also
         timeout += 5000;
 
@@ -220,27 +235,31 @@ public class SendDevConsole extends AbstractDevConsole {
             status = "timeout";
         }
 
-        root.put("timestamp", timestamp);
-        root.put("status", status);
-        root.put("elapsed", taken);
+        String endpointStr = null;
         if (target != null) {
-            root.put("endpoint", target.toString());
+            endpointStr = target.toString();
         } else if (endpoint != null) {
-            root.put("endpoint", endpoint);
-        }
-        if (cause != null) {
-            // avoid double wrap
-            root.put("exception", MessageHelper.dumpExceptionAsJSonObject(cause).getMap("exception"));
-        }
-        if (out != null && (poll || "InOut".equals(exchangePattern))) {
-            root.put("exchangeId", out.getExchangeId());
-            int maxChars = Integer.parseInt((String) options.getOrDefault(BODY_MAX_CHARS, "" + bodyMaxChars));
-            // avoid double wrap
-            root.put("message", MessageHelper.dumpAsJSonObject(out.getMessage(), true, true, true, true, true, true,
-                    maxChars).getMap("message"));
+            endpointStr = endpoint;
         }
 
-        return root;
+        Map<String, Object> exception = null;
+        if (cause != null) {
+            // avoid double wrap
+            exception = MessageHelper.dumpExceptionAsJSonObject(cause).getMap("exception");
+        }
+
+        String exchangeId = null;
+        Map<String, Object> message = null;
+        if (out != null && (poll || "InOut".equals(exchangePattern))) {
+            exchangeId = out.getExchangeId();
+            int maxChars = optionInt(options, BODY_MAX_CHARS, bodyMaxChars);
+            // avoid double wrap
+            message = MessageHelper.dumpAsJSonObject(out.getMessage(), true, true, true, true, true, true, maxChars)
+                    .getMap("message");
+        }
+
+        Response response = new Response(timestamp, status, taken, endpointStr, exception, exchangeId, message);
+        return JsonRecordSupport.toJsonObject(response);
     }
 
     private Exchange findToTarget(
@@ -248,7 +267,7 @@ public class SendDevConsole extends AbstractDevConsole {
             throws Exception {
         Exchange out = null;
         if (target != null) {
-            final Object inputBody = prepareBody(body);
+            final Object inputBody = prepareBody(body, optionString(options, BODY_ENCODING));
             final Map<String, Object> inputHeaders = prepareHeaders(options);
             if (poll) {
                 out = consumer.receive(target, timeout);
@@ -311,7 +330,13 @@ public class SendDevConsole extends AbstractDevConsole {
         return target;
     }
 
-    private Object prepareBody(String body) throws Exception {
+    private Object prepareBody(String body, String bodyEncoding) throws Exception {
+        if (bodyEncoding != null) {
+            if (!"base64".equalsIgnoreCase(bodyEncoding)) {
+                throw new IllegalArgumentException("Unsupported bodyEncoding: " + bodyEncoding + " (supported: base64)");
+            }
+            return Base64.getDecoder().decode(body);
+        }
         Object b = body;
         if (body.startsWith("file:")) {
             File file = new File(body.substring(5));
@@ -331,7 +356,8 @@ public class SendDevConsole extends AbstractDevConsole {
     }
 
     private static boolean isCustomHeader(String key) {
-        return !BODY.equals(key) && !BODY_MAX_CHARS.equals(key) && !POLL.equals(key) && !POLL_TIMEOUT.equals(key)
+        return !BODY.equals(key) && !BODY_ENCODING.equals(key) && !BODY_MAX_CHARS.equals(key) && !POLL.equals(key)
+                && !POLL_TIMEOUT.equals(key)
                 && !EXCHANGE_PATTERN.equals(key) && !ENDPOINT.equals(key)
                 && !"CamelHttpPath".equals(key); // do not include ourself /q/dev/send
     }

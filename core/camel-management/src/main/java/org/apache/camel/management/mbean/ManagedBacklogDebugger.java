@@ -335,7 +335,9 @@ public class ManagedBacklogDebugger implements ManagedBacklogDebuggerMBean {
 
     @Override
     public String evaluateExpressionAtBreakpoint(String nodeId, String language, String expression) {
-        return evaluateExpressionAtBreakpoint(nodeId, language, expression, "java.lang.String").toString();
+        // null when the node is not suspended, or the expression evaluates to null
+        Object answer = evaluateExpressionAtBreakpoint(nodeId, language, expression, "java.lang.String");
+        return answer != null ? answer.toString() : null;
     }
 
     @Override
@@ -478,6 +480,9 @@ public class ManagedBacklogDebugger implements ManagedBacklogDebuggerMBean {
                             .append(" processorId=\"").append(StringHelper.xmlEncode(id)).append("\"")
                             .append(" processor=\"").append(StringHelper.xmlEncode(label)).append("\"")
                             .append(" elapsed=\"").append(elapsed).append("\"")
+                            .append(history.getBodyType() != null
+                                    ? " bodyType=\"" + StringHelper.xmlEncode(history.getBodyType()) + "\"" : "")
+                            .append(history.getBodySize() >= 0 ? " bodySize=\"" + history.getBodySize() + "\"" : "")
                             .append("/>\n");
                 }
             }

@@ -29,6 +29,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.support.ObjectHelper;
 import org.apache.camel.test.junit6.CamelTestSupport;
+import org.apache.camel.test.junit6.TestSupport;
 import org.apache.camel.util.CastUtils;
 import org.junit.jupiter.api.Test;
 
@@ -83,7 +84,6 @@ public class MailMessageTest extends CamelTestSupport {
 
     @Override
     public void doPostSetup() throws Exception {
-        Mailbox.clearAll();
 
         endpoint = checkEndpoint("pop3://someone@myhost:30/subject");
 
@@ -96,7 +96,7 @@ public class MailMessageTest extends CamelTestSupport {
     }
 
     protected MailEndpoint checkEndpoint(String uri) {
-        Endpoint endpoint = super.resolveMandatoryEndpoint(uri);
+        Endpoint endpoint = TestSupport.resolveMandatoryEndpoint(context, uri);
         return assertIsInstanceOf(MailEndpoint.class, endpoint);
     }
 }

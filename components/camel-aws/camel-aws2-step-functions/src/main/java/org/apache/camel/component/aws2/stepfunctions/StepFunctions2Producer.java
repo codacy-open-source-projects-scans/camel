@@ -20,6 +20,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.health.HealthCheck;
 import org.apache.camel.health.HealthCheckHelper;
 import org.apache.camel.health.WritableHealthCheckRepository;
@@ -106,11 +107,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.createStateMachine(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create State Machine command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create State Machine command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createStateMachine operation requires CreateStateMachineRequest in POJO mode");
             }
         } else {
             CreateStateMachineRequest.Builder builder = CreateStateMachineRequest.builder();
@@ -143,7 +147,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.createStateMachine(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create State Machine command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create State Machine command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -159,11 +163,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.deleteStateMachine(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete State Machine command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete State Machine command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteStateMachine operation requires DeleteStateMachineRequest in POJO mode");
             }
         } else {
             DeleteStateMachineRequest.Builder builder = DeleteStateMachineRequest.builder();
@@ -177,7 +184,7 @@ public class StepFunctions2Producer extends DefaultProducer {
                 DeleteStateMachineRequest request = builder.build();
                 result = sfnClient.deleteStateMachine(request);
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete State Machine command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete State Machine command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -193,11 +200,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.updateStateMachine(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Update State Machine command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Update State Machine command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "updateStateMachine operation requires UpdateStateMachineRequest in POJO mode");
             }
         } else {
             UpdateStateMachineRequest.Builder builder = UpdateStateMachineRequest.builder();
@@ -220,7 +230,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.updateStateMachine(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Update State Machine command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Update State Machine command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -236,11 +246,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.describeStateMachine(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe State Machine command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe State Machine command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeStateMachine operation requires DescribeStateMachineRequest in POJO mode");
             }
         } else {
             DescribeStateMachineRequest.Builder builder = DescribeStateMachineRequest.builder();
@@ -253,7 +266,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.describeStateMachine(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe State Machine command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe State Machine command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -269,11 +282,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.listStateMachines(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List State Machines command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List State Machines command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listStateMachines operation requires ListStateMachinesRequest in POJO mode");
             }
         } else {
             ListStateMachinesRequest.Builder builder = ListStateMachinesRequest.builder();
@@ -286,7 +302,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.listStateMachines(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List State Machines command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List State Machines command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -302,11 +318,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.createActivity(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Create Activity command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Create Activity command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "createActivity operation requires CreateActivityRequest in POJO mode");
             }
         } else {
             CreateActivityRequest.Builder builder = CreateActivityRequest.builder();
@@ -319,7 +338,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.createActivity(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Create Activity command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Create Activity command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -335,11 +354,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.deleteActivity(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Delete Activity command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Delete Activity command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "deleteActivity operation requires DeleteActivityRequest in POJO mode");
             }
         } else {
             DeleteActivityRequest.Builder builder = DeleteActivityRequest.builder();
@@ -352,7 +374,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.deleteActivity(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Delete Activity command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Delete Activity command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -368,11 +390,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.describeActivity(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Activity command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Activity command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeActivity operation requires DescribeActivityRequest in POJO mode");
             }
         } else {
             DescribeActivityRequest.Builder builder = DescribeActivityRequest.builder();
@@ -385,7 +410,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.describeActivity(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Activity command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Activity command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -401,11 +426,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.getActivityTask(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Activity Task command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Activity Task command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getActivityTask operation requires GetActivityTaskRequest in POJO mode");
             }
         } else {
             GetActivityTaskRequest.Builder builder = GetActivityTaskRequest.builder();
@@ -418,7 +446,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.getActivityTask(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Activity Task command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Activity Task command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -434,11 +462,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.listActivities(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Activities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Activities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listActivities operation requires ListActivitiesRequest in POJO mode");
             }
         } else {
             ListActivitiesRequest.Builder builder = ListActivitiesRequest.builder();
@@ -451,7 +482,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.listActivities(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Activities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Activities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -467,11 +498,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.startExecution(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Start Execution command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Start Execution command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "startExecution operation requires StartExecutionRequest in POJO mode");
             }
         } else {
             StartExecutionRequest.Builder builder = StartExecutionRequest.builder();
@@ -497,7 +531,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.startExecution(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Start Execution command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Start Execution command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -513,11 +547,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.startSyncExecution(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Start Sync Execution command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Start Sync Execution command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "startSyncExecution operation requires StartSyncExecutionRequest in POJO mode");
             }
         } else {
             StartSyncExecutionRequest.Builder builder = StartSyncExecutionRequest.builder();
@@ -543,7 +580,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.startSyncExecution(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Start Sync Execution command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Start Sync Execution command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -559,11 +596,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.stopExecution(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Stop Execution command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Stop Execution command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "stopExecution operation requires StopExecutionRequest in POJO mode");
             }
         } else {
             StopExecutionRequest.Builder builder = StopExecutionRequest.builder();
@@ -576,7 +616,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.stopExecution(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Stop Execution command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Stop Execution command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -592,11 +632,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.describeExecution(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Execution command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Execution command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeExecution operation requires DescribeExecutionRequest in POJO mode");
             }
         } else {
             DescribeExecutionRequest.Builder builder = DescribeExecutionRequest.builder();
@@ -609,7 +652,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.describeExecution(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Execution command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Execution command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -625,14 +668,21 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.listExecutions(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Executions command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Executions command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listExecutions operation requires ListExecutionsRequest in POJO mode");
             }
         } else {
             ListExecutionsRequest.Builder builder = ListExecutionsRequest.builder();
+            if (ObjectHelper.isNotEmpty(exchange.getIn().getHeader(StepFunctions2Constants.STATE_MACHINE_ARN))) {
+                String stateMachineArn = exchange.getIn().getHeader(StepFunctions2Constants.STATE_MACHINE_ARN, String.class);
+                builder.stateMachineArn(stateMachineArn);
+            }
             if (ObjectHelper.isNotEmpty(exchange.getIn().getHeader(StepFunctions2Constants.EXECUTIONS_MAX_RESULTS))) {
                 int maxRes = exchange.getIn().getHeader(StepFunctions2Constants.EXECUTIONS_MAX_RESULTS, Integer.class);
                 builder.maxResults(maxRes);
@@ -642,7 +692,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.listExecutions(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Executions command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Executions command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -658,11 +708,14 @@ public class StepFunctions2Producer extends DefaultProducer {
                 try {
                     result = sfnClient.getExecutionHistory(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Execution History command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Execution History command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getExecutionHistory operation requires GetExecutionHistoryRequest in POJO mode");
             }
         } else {
             GetExecutionHistoryRequest.Builder builder = GetExecutionHistoryRequest.builder();
@@ -690,7 +743,7 @@ public class StepFunctions2Producer extends DefaultProducer {
             try {
                 result = sfnClient.getExecutionHistory(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Execution History command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Execution History command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);

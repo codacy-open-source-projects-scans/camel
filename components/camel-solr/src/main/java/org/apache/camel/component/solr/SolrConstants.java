@@ -42,8 +42,14 @@ public interface SolrConstants {
     @Metadata(description = "The content type is used to identify the type when inserting files.", javaType = "String")
     String PARAM_CONTENT_TYPE = Exchange.CONTENT_TYPE;
 
-    String HEADER_FIELD_PREFIX = "SolrField.";
-    String HEADER_PARAM_PREFIX = "SolrParam.";
+    @Metadata(description = "The prefix of the headers that carry the fields of the document to insert: the header"
+                            + " CamelSolrField.id holds the id field.",
+              javaType = "Object")
+    String HEADER_FIELD_PREFIX = "CamelSolrField.";
+    @Metadata(description = "The prefix of the headers that carry extra request parameters: the header"
+                            + " CamelSolrParam.commit holds the commit parameter.",
+              javaType = "String")
+    String HEADER_PARAM_PREFIX = "CamelSolrParam.";
 
     String PROPERTY_ACTION_CONTEXT = "SolrActionContext";
 

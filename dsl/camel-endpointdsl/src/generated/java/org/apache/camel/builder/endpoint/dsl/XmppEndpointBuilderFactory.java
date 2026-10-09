@@ -1291,8 +1291,9 @@ public interface XmppEndpointBuilderFactory {
          * Path parameter: host (required)
          * Hostname for the chat server
          * 
-         * Path parameter: port (required)
+         * Path parameter: port
          * Port number for the chat server
+         * Default value: 5222
          * 
          * Path parameter: participant
          * JID (Jabber ID) of person to receive messages. room parameter has
@@ -1317,8 +1318,9 @@ public interface XmppEndpointBuilderFactory {
          * Path parameter: host (required)
          * Hostname for the chat server
          * 
-         * Path parameter: port (required)
+         * Path parameter: port
          * Port number for the chat server
+         * Default value: 5222
          * 
          * Path parameter: participant
          * JID (Jabber ID) of person to receive messages. room parameter has
@@ -1342,7 +1344,7 @@ public interface XmppEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final XmppHeaderNameBuilder INSTANCE = new XmppHeaderNameBuilder();
+        public static final XmppHeaderNameBuilder INSTANCE = new XmppHeaderNameBuilder();
 
         /**
          * The XMPP message.

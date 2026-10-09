@@ -56,7 +56,7 @@ public interface DoclingComponentBuilderFactory {
          * The option is a:
          * &lt;code&gt;org.apache.camel.component.docling.DoclingConfiguration&lt;/code&gt; type.
          * 
-         * Group: producer
+         * Group: common
          * 
          * @param configuration the value to set
          * @return the dsl builder
@@ -74,7 +74,7 @@ public interface DoclingComponentBuilderFactory {
          * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
          * 
          * Default: false
-         * Group: producer
+         * Group: common
          * 
          * @param contentInBody the value to set
          * @return the dsl builder
@@ -91,7 +91,7 @@ public interface DoclingComponentBuilderFactory {
          * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
          * 
          * Default: http://localhost:5001
-         * Group: producer
+         * Group: common
          * 
          * @param doclingServeUrl the value to set
          * @return the dsl builder
@@ -108,7 +108,7 @@ public interface DoclingComponentBuilderFactory {
          * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
          * 
          * Default: true
-         * Group: producer
+         * Group: common
          * 
          * @param enableOCR the value to set
          * @return the dsl builder
@@ -125,13 +125,110 @@ public interface DoclingComponentBuilderFactory {
          * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
          * 
          * Default: false
-         * Group: producer
+         * Group: common
          * 
          * @param includeLayoutInfo the value to set
          * @return the dsl builder
          */
         default DoclingComponentBuilder includeLayoutInfo(boolean includeLayoutInfo) {
             doSetProperty("includeLayoutInfo", includeLayoutInfo);
+            return this;
+        }
+    
+        
+        /**
+         * Language code for OCR processing.
+         * 
+         * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
+         * 
+         * Default: en
+         * Group: common
+         * 
+         * @param ocrLanguage the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder ocrLanguage(java.lang.String ocrLanguage) {
+            doSetProperty("ocrLanguage", ocrLanguage);
+            return this;
+        }
+    
+        
+        /**
+         * The operation to perform.
+         * 
+         * The option is a:
+         * &lt;code&gt;org.apache.camel.component.docling.DoclingOperations&lt;/code&gt; type.
+         * 
+         * Default: CONVERT_TO_MARKDOWN
+         * Group: common
+         * 
+         * @param operation the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder operation(org.apache.camel.component.docling.DoclingOperations operation) {
+            doSetProperty("operation", operation);
+            return this;
+        }
+    
+        
+        /**
+         * Output format for document conversion.
+         * 
+         * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
+         * 
+         * Default: markdown
+         * Group: common
+         * 
+         * @param outputFormat the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder outputFormat(java.lang.String outputFormat) {
+            doSetProperty("outputFormat", outputFormat);
+            return this;
+        }
+    
+        
+        /**
+         * Use docling-serve API instead of CLI command.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: common
+         * 
+         * @param useDoclingServe the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder useDoclingServe(boolean useDoclingServe) {
+            doSetProperty("useDoclingServe", useDoclingServe);
+            return this;
+        }
+    
+        
+        /**
+         * Allows for bridging the consumer to the Camel routing Error Handler,
+         * which mean any exceptions (if possible) occurred while the Camel
+         * consumer is trying to pickup incoming messages, or the likes, will
+         * now be processed as a message and handled by the routing Error
+         * Handler. Important: This is only possible if the 3rd party component
+         * allows Camel to be alerted if an exception was thrown. Some
+         * components handle this internally only, and therefore
+         * bridgeErrorHandler is not possible. In other situations we may
+         * improve the Camel component to hook into the 3rd party component and
+         * make this possible for future releases. By default the consumer will
+         * use the org.apache.camel.spi.ExceptionHandler to deal with
+         * exceptions, that will be logged at WARN or ERROR level and ignored.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: consumer
+         * 
+         * @param bridgeErrorHandler the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder bridgeErrorHandler(boolean bridgeErrorHandler) {
+            doSetProperty("bridgeErrorHandler", bridgeErrorHandler);
             return this;
         }
     
@@ -157,75 +254,6 @@ public interface DoclingComponentBuilderFactory {
          */
         default DoclingComponentBuilder lazyStartProducer(boolean lazyStartProducer) {
             doSetProperty("lazyStartProducer", lazyStartProducer);
-            return this;
-        }
-    
-        
-        /**
-         * Language code for OCR processing.
-         * 
-         * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
-         * 
-         * Default: en
-         * Group: producer
-         * 
-         * @param ocrLanguage the value to set
-         * @return the dsl builder
-         */
-        default DoclingComponentBuilder ocrLanguage(java.lang.String ocrLanguage) {
-            doSetProperty("ocrLanguage", ocrLanguage);
-            return this;
-        }
-    
-        
-        /**
-         * The operation to perform.
-         * 
-         * The option is a:
-         * &lt;code&gt;org.apache.camel.component.docling.DoclingOperations&lt;/code&gt; type.
-         * 
-         * Default: CONVERT_TO_MARKDOWN
-         * Group: producer
-         * 
-         * @param operation the value to set
-         * @return the dsl builder
-         */
-        default DoclingComponentBuilder operation(org.apache.camel.component.docling.DoclingOperations operation) {
-            doSetProperty("operation", operation);
-            return this;
-        }
-    
-        
-        /**
-         * Output format for document conversion.
-         * 
-         * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
-         * 
-         * Default: markdown
-         * Group: producer
-         * 
-         * @param outputFormat the value to set
-         * @return the dsl builder
-         */
-        default DoclingComponentBuilder outputFormat(java.lang.String outputFormat) {
-            doSetProperty("outputFormat", outputFormat);
-            return this;
-        }
-    
-        
-        /**
-         * Use docling-serve API instead of CLI command.
-         * 
-         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
-         * 
-         * Default: false
-         * Group: producer
-         * 
-         * @param useDoclingServe the value to set
-         * @return the dsl builder
-         */
-        default DoclingComponentBuilder useDoclingServe(boolean useDoclingServe) {
-            doSetProperty("useDoclingServe", useDoclingServe);
             return this;
         }
     
@@ -260,6 +288,24 @@ public interface DoclingComponentBuilderFactory {
          */
         default DoclingComponentBuilder asyncPollInterval(long asyncPollInterval) {
             doSetProperty("asyncPollInterval", asyncPollInterval);
+            return this;
+        }
+    
+        
+        /**
+         * Time-to-live for pending async conversion tasks in milliseconds.
+         * Tasks older than this will be evicted from memory to prevent leaks.
+         * 
+         * The option is a: &lt;code&gt;long&lt;/code&gt; type.
+         * 
+         * Default: 86400000
+         * Group: advanced
+         * 
+         * @param asyncTaskTtl the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder asyncTaskTtl(long asyncTaskTtl) {
+            doSetProperty("asyncTaskTtl", asyncTaskTtl);
             return this;
         }
     
@@ -850,6 +896,47 @@ public interface DoclingComponentBuilderFactory {
     
         
         /**
+         * Whether a String message body that starts with / or contains \ is
+         * interpreted as a local filesystem path to read. When disabled, such a
+         * body is rejected instead of being read. This does not affect the
+         * CamelDoclingInputFilePath header, nor File, byte or explicit path
+         * collection bodies used by the batch operations.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param allowFilePathSource the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder allowFilePathSource(boolean allowFilePathSource) {
+            doSetProperty("allowFilePathSource", allowFilePathSource);
+            return this;
+        }
+    
+        
+        /**
+         * Whether a String message body that starts with http:// or https:// is
+         * interpreted as a remote URL for Docling to fetch. When disabled, such
+         * a body is rejected instead of being fetched. This does not affect the
+         * CamelDoclingInputFilePath header, nor bodies of any other type.
+         * 
+         * The option is a: &lt;code&gt;boolean&lt;/code&gt; type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param allowUrlSource the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder allowUrlSource(boolean allowUrlSource) {
+            doSetProperty("allowUrlSource", allowUrlSource);
+            return this;
+        }
+    
+        
+        /**
          * Header name for API key authentication.
          * 
          * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
@@ -898,6 +985,24 @@ public interface DoclingComponentBuilderFactory {
             return this;
         }
     
+        /**
+         * When set, every local input file path must resolve inside this
+         * directory once normalized. Applies to the CamelDoclingInputFilePath
+         * header, to file path message bodies, and to the paths used by the
+         * batch operations. When empty, no directory restriction is applied.
+         * 
+         * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
+         * 
+         * Group: security
+         * 
+         * @param inputBaseDirectory the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder inputBaseDirectory(java.lang.String inputBaseDirectory) {
+            doSetProperty("inputBaseDirectory", inputBaseDirectory);
+            return this;
+        }
+    
         
         /**
          * Maximum file size in bytes for processing.
@@ -932,6 +1037,26 @@ public interface DoclingComponentBuilderFactory {
             doSetProperty("oauthProfile", oauthProfile);
             return this;
         }
+    
+        /**
+         * When set, the output directory passed to the docling CLI must resolve
+         * inside this directory once normalized. Applies to the
+         * CamelDoclingOutputFilePath header. The check is lexical and does not
+         * resolve symbolic links, matching inputBaseDirectory. When empty, no
+         * directory restriction is applied and the header value is only
+         * normalized.
+         * 
+         * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
+         * 
+         * Group: security
+         * 
+         * @param outputBaseDirectory the value to set
+         * @return the dsl builder
+         */
+        default DoclingComponentBuilder outputBaseDirectory(java.lang.String outputBaseDirectory) {
+            doSetProperty("outputBaseDirectory", outputBaseDirectory);
+            return this;
+        }
     }
 
     class DoclingComponentBuilderImpl
@@ -958,13 +1083,15 @@ public interface DoclingComponentBuilderFactory {
             case "doclingServeUrl": getOrCreateConfiguration((DoclingComponent) component).setDoclingServeUrl((java.lang.String) value); return true;
             case "enableOCR": getOrCreateConfiguration((DoclingComponent) component).setEnableOCR((boolean) value); return true;
             case "includeLayoutInfo": getOrCreateConfiguration((DoclingComponent) component).setIncludeLayoutInfo((boolean) value); return true;
-            case "lazyStartProducer": ((DoclingComponent) component).setLazyStartProducer((boolean) value); return true;
             case "ocrLanguage": getOrCreateConfiguration((DoclingComponent) component).setOcrLanguage((java.lang.String) value); return true;
             case "operation": getOrCreateConfiguration((DoclingComponent) component).setOperation((org.apache.camel.component.docling.DoclingOperations) value); return true;
             case "outputFormat": getOrCreateConfiguration((DoclingComponent) component).setOutputFormat((java.lang.String) value); return true;
             case "useDoclingServe": getOrCreateConfiguration((DoclingComponent) component).setUseDoclingServe((boolean) value); return true;
+            case "bridgeErrorHandler": ((DoclingComponent) component).setBridgeErrorHandler((boolean) value); return true;
+            case "lazyStartProducer": ((DoclingComponent) component).setLazyStartProducer((boolean) value); return true;
             case "abortOnError": getOrCreateConfiguration((DoclingComponent) component).setAbortOnError((java.lang.Boolean) value); return true;
             case "asyncPollInterval": getOrCreateConfiguration((DoclingComponent) component).setAsyncPollInterval((long) value); return true;
+            case "asyncTaskTtl": getOrCreateConfiguration((DoclingComponent) component).setAsyncTaskTtl((long) value); return true;
             case "asyncTimeout": getOrCreateConfiguration((DoclingComponent) component).setAsyncTimeout((long) value); return true;
             case "autowiredEnabled": ((DoclingComponent) component).setAutowiredEnabled((boolean) value); return true;
             case "doclingCommand": getOrCreateConfiguration((DoclingComponent) component).setDoclingCommand((java.lang.String) value); return true;
@@ -1000,11 +1127,15 @@ public interface DoclingComponentBuilderFactory {
             case "chunkingUseMarkdownTables": getOrCreateConfiguration((DoclingComponent) component).setChunkingUseMarkdownTables((java.lang.Boolean) value); return true;
             case "includeMetadataInHeaders": getOrCreateConfiguration((DoclingComponent) component).setIncludeMetadataInHeaders((boolean) value); return true;
             case "includeRawMetadata": getOrCreateConfiguration((DoclingComponent) component).setIncludeRawMetadata((boolean) value); return true;
+            case "allowFilePathSource": getOrCreateConfiguration((DoclingComponent) component).setAllowFilePathSource((boolean) value); return true;
+            case "allowUrlSource": getOrCreateConfiguration((DoclingComponent) component).setAllowUrlSource((boolean) value); return true;
             case "apiKeyHeader": getOrCreateConfiguration((DoclingComponent) component).setApiKeyHeader((java.lang.String) value); return true;
             case "authenticationScheme": getOrCreateConfiguration((DoclingComponent) component).setAuthenticationScheme((org.apache.camel.component.docling.AuthenticationScheme) value); return true;
             case "authenticationToken": getOrCreateConfiguration((DoclingComponent) component).setAuthenticationToken((java.lang.String) value); return true;
+            case "inputBaseDirectory": getOrCreateConfiguration((DoclingComponent) component).setInputBaseDirectory((java.lang.String) value); return true;
             case "maxFileSize": getOrCreateConfiguration((DoclingComponent) component).setMaxFileSize((long) value); return true;
             case "oauthProfile": getOrCreateConfiguration((DoclingComponent) component).setOauthProfile((java.lang.String) value); return true;
+            case "outputBaseDirectory": getOrCreateConfiguration((DoclingComponent) component).setOutputBaseDirectory((java.lang.String) value); return true;
             default: return false;
             }
         }

@@ -2,12 +2,10 @@
 :doctitle: MVEL
 :shortname: mvel
 :artifactid: camel-mvel
-:description: Evaluates a MVEL template.
+:description: Evaluates a MVEL template
 :since: 2.0
 :supportlevel: Stable
 :tabs-sync-option:
-//Manually maintained attributes
-:camel-spring-boot-name: mvel
 
 *Since Camel {since}*
 
@@ -31,6 +29,7 @@ request.body.familyName
 
 Or use similar syntax as in Java:
 
+._Java-only: MVEL expression using Java method call syntax_
 [source,java]
 ----
 getRequest().getBody().getFamilyName()
@@ -58,18 +57,30 @@ The following Camel related variables are made available:
 |request |Message |the message
 |message |Message |the message
 |headers |Map |the message headers
-|header(name) |Object |the message header by the given name
-|header(name, type) |Type |the message header by the given name as the given type
+|getHeader(name) |Object |the message header by the given name
+|getHeader(name, type) |Type |the message header by the given name as the given type
 |properties |Map |the exchange properties
-|property(name) |Object |the exchange property by the given name
-|property(name, type) |Type |the exchange property by the given name as the given type
+|getProperty(name) |Object |the exchange property by the given name
+|getProperty(name, type) |Type |the exchange property by the given name as the given type
+|variables |Map |the exchange variables
+|getVariable(name) |Object |the exchange variable by the given name
+|getVariable(name, type) |Type |the exchange variable by the given name as the given type
 |=======================================================================
+
+`getHeader`, `getProperty` and `getVariable` are methods on the root object, so they are
+called by their full name, as in `getHeader('foo')` or `getVariable('foo')`. The maps can be
+read as `headers.foo` or `variables['foo']`. `getVariable` also resolves global and route
+variables, such as `getVariable('global:foo')`, which are not in the `variables` map.
 
 == Example
 
 For example, you could use MVEL inside a xref:eips:filter-eip.adoc[Message
 Filter]
 
+[tabs]
+====
+Java::
++
 [source,java]
 ----
 from("seda:foo")
@@ -77,8 +88,8 @@ from("seda:foo")
     .to("seda:bar");
 ----
 
-And in XML:
-
+XML::
++
 [source,xml]
 ----
 <route>
@@ -90,6 +101,24 @@ And in XML:
 </route>
 ----
 
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: seda:foo
+      steps:
+        - filter:
+            expression:
+              mvel:
+                expression: headers.foo == 'bar'
+            steps:
+              - to:
+                  uri: seda:bar
+----
+====
+
 == Loading script from external resource
 
 You can externalize the script and have Apache Camel load it from a resource
@@ -97,6 +126,7 @@ such as `"classpath:"`, `"file:"`, or `"http:"`.
 This is done using the following syntax: `"resource:scheme:location"`,
 e.g., to refer to a file on the classpath you can do:
 
+._Java-only: loading a MVEL script from the classpath_
 [source,java]
 ----
 .setHeader("myHeader").mvel("resource:classpath:script.mvel")
@@ -118,6 +148,3 @@ substituting the version number for the latest & greatest release.
   <version>x.x.x</version>
 </dependency>
 ----
-
-
-include::spring-boot:partial$starter.adoc[]

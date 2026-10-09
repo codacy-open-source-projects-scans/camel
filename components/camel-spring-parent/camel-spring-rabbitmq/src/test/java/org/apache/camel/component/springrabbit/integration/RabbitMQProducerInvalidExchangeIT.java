@@ -29,6 +29,8 @@ import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 public class RabbitMQProducerInvalidExchangeIT extends RabbitMQITSupport {
 
     @Override
@@ -40,8 +42,8 @@ public class RabbitMQProducerInvalidExchangeIT extends RabbitMQITSupport {
     public void testProducer() {
         ConnectionFactory cf = context.getRegistry().lookupByNameAndType("myCF", ConnectionFactory.class);
 
-        Queue q = new Queue("myqueue");
-        TopicExchange t = new TopicExchange("foo");
+        Queue q = new Queue(uniqueName("myqueue"));
+        TopicExchange t = new TopicExchange(uniqueName("foo"));
 
         AmqpAdmin admin = new RabbitAdmin(cf);
         admin.declareQueue(q);
@@ -50,7 +52,7 @@ public class RabbitMQProducerInvalidExchangeIT extends RabbitMQITSupport {
 
         final CamelExecutionException exception = Assertions.assertThrows(CamelExecutionException.class,
                 () -> template.sendBody("direct:start", "Hello World"));
-        Assertions.assertInstanceOf(ShutdownSignalException.class, exception.getCause());
+        assertThat(exception).hasRootCauseInstanceOf(ShutdownSignalException.class);
     }
 
     @Override
@@ -59,7 +61,7 @@ public class RabbitMQProducerInvalidExchangeIT extends RabbitMQITSupport {
             @Override
             public void configure() throws Exception {
                 from("direct:start")
-                        .to("spring-rabbitmq:unknown?routingKey=foo.bar");
+                        .to("spring-rabbitmq:" + uniqueName("unknown") + "?routingKey=foo.bar");
             }
         };
     }

@@ -31,58 +31,72 @@ import org.apache.camel.Exchange;
 import org.apache.camel.Route;
 import org.apache.camel.api.management.ManagedCamelContext;
 import org.apache.camel.api.management.mbean.ManagedRouteMBean;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.LoggerHelper;
 import org.apache.camel.support.PatternHelper;
 import org.apache.camel.support.console.AbstractDevConsole;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.StringHelper;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 import org.apache.camel.util.json.Jsoner;
 
-@DevConsole(name = "route-dump", description = "Dump route in XML or YAML format")
+@DevConsole(name = "route-dump", description = "Dump route in XML, YAML, or Java DSL format")
 public class RouteDumpDevConsole extends AbstractDevConsole {
+
+    public record CodeLine(
+            @Metadata(description = "The source line number, or -1 when not known") int line,
+            @Metadata(description = "The source code line") String code) {
+    }
+
+    public record RouteEntry(
+            @Metadata(description = "The route ID") String routeId,
+            @Metadata(description = "The route's endpoint URI") String from,
+            @Metadata(description = "The source location (only present when known)") String source,
+            @Metadata(description = "The dump format, xml/yaml/java (only present when the dump succeeded)") String format,
+            @Metadata(description = "The dumped route source code (only present when the dump succeeded)") List<CodeLine> code) {
+    }
+
+    public record Response(@Metadata(description = "The routes") List<RouteEntry> routes) {
+    }
 
     private static final Pattern XML_SOURCE_LOCATION_PATTERN = Pattern.compile("(\\ssourceLocation=\"(.*?)\")");
     private static final Pattern XML_SOURCE_LINE_PATTERN = Pattern.compile("(\\ssourceLineNumber=\"(.*?)\")");
 
-    /**
-     * To output in either xml, yaml, or text format
-     */
+    @Metadata(label = "query", description = "To output in either xml, yaml, or java format", javaType = "java.lang.String",
+              enums = "xml,yaml,java")
     public static final String FORMAT = "format";
 
-    /**
-     * Filters the routes matching by route id, route uri, and source location
-     */
+    @Metadata(label = "query", description = "Filters the routes matching by route id, route uri, and source location",
+              javaType = "java.lang.String")
     public static final String FILTER = "filter";
 
-    /**
-     * Limits the number of entries displayed
-     */
+    @Metadata(label = "query", description = "Limits the number of entries displayed", javaType = "java.lang.Integer")
     public static final String LIMIT = "limit";
 
-    /**
-     * Whether to expand URIs into separated key/value parameters
-     */
+    @Metadata(label = "query", description = "Whether to expand URIs into separated key/value parameters",
+              javaType = "java.lang.Boolean", defaultValue = "false")
     public static final String URI_AS_PARAMETERS = "uriAsParameters";
 
     public RouteDumpDevConsole() {
-        super("camel", "route-dump", "Route Dump", "Dump route in XML or YAML format");
+        super("camel", "route-dump", "Route Dump", "Dump route in XML, YAML, or Java DSL format");
     }
 
     @Override
     protected String doCallText(Map<String, Object> options) {
-        final String uriAsParameters = (String) options.getOrDefault(URI_AS_PARAMETERS, "false");
+        final boolean uriAsParameters = optionBoolean(options, URI_AS_PARAMETERS, false);
 
         final StringBuilder sb = new StringBuilder();
         Function<ManagedRouteMBean, Object> task = mrb -> {
             String dump = null;
             try {
-                String format = (String) options.get(FORMAT);
+                String format = optionString(options, FORMAT);
                 if (format == null || "xml".equals(format)) {
                     dump = mrb.dumpRouteAsXml(true);
                 } else if ("yaml".equals(format)) {
-                    dump = mrb.dumpRouteAsYaml(true, "true".equals(uriAsParameters));
+                    dump = mrb.dumpRouteAsYaml(true, uriAsParameters);
+                } else if ("java".equals(format)) {
+                    dump = mrb.dumpRouteAsJava(true, false);
                 }
             } catch (Exception e) {
                 // ignore
@@ -107,59 +121,53 @@ public class RouteDumpDevConsole extends AbstractDevConsole {
     }
 
     @Override
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        final String uriAsParameters = (String) options.getOrDefault(URI_AS_PARAMETERS, "false");
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        final boolean uriAsParameters = optionBoolean(options, URI_AS_PARAMETERS, false);
 
-        final JsonObject root = new JsonObject();
-        final List<JsonObject> list = new ArrayList<>();
+        final List<RouteEntry> list = new ArrayList<>();
 
         Function<ManagedRouteMBean, Object> task = mrb -> {
-            JsonObject jo = new JsonObject();
-            list.add(jo);
-
-            jo.put("routeId", mrb.getRouteId());
-            jo.put("from", mrb.getEndpointUri());
-            if (mrb.getSourceLocation() != null) {
-                jo.put("source", mrb.getSourceLocation());
-            }
+            String format = null;
+            List<CodeLine> code = null;
 
             try {
                 String dump = null;
-                String format = (String) options.get(FORMAT);
-                if (format == null || "xml".equals(format)) {
-                    jo.put("format", "xml");
+                String requestedFormat = optionString(options, FORMAT);
+                if (requestedFormat == null || "xml".equals(requestedFormat)) {
+                    format = "xml";
                     dump = mrb.dumpRouteAsXml(true, false, true);
-                } else if ("yaml".equals(format)) {
-                    jo.put("format", "yaml");
-                    dump = mrb.dumpRouteAsYaml(true, "true".equals(uriAsParameters), false, true);
+                } else if ("yaml".equals(requestedFormat)) {
+                    format = "yaml";
+                    dump = mrb.dumpRouteAsYaml(true, uriAsParameters, false, true);
+                } else if ("java".equals(requestedFormat)) {
+                    format = "java";
+                    dump = mrb.dumpRouteAsJava(true, false, true);
                 }
                 if (dump != null) {
-                    List<JsonObject> code;
-                    if (format == null || "xml".equals(format)) {
+                    if (requestedFormat == null || "xml".equals(requestedFormat)) {
                         code = xmlLoadSourceAsJson(new StringReader(dump));
                     } else {
-                        code = yamlLoadSourceAsJson(new StringReader(dump));
-                    }
-                    if (code != null) {
-                        jo.put("code", code);
+                        code = javaOrYamlLoadSourceAsJson(new StringReader(dump));
                     }
                 }
             } catch (Exception e) {
                 // ignore
             }
+
+            list.add(new RouteEntry(mrb.getRouteId(), mrb.getEndpointUri(), mrb.getSourceLocation(), format, code));
             return null;
         };
         doCall(options, task);
-        root.put("routes", list);
-        return root;
+
+        Response response = new Response(list);
+        return JsonRecordSupport.toJsonObject(response);
     }
 
     protected void doCall(Map<String, Object> options, Function<ManagedRouteMBean, Object> task) {
         String path = (String) options.get(Exchange.HTTP_PATH);
         String subPath = path != null ? StringHelper.after(path, "/") : null;
-        String filter = (String) options.get(FILTER);
-        String limit = (String) options.get(LIMIT);
-        final int max = limit == null ? Integer.MAX_VALUE : Integer.parseInt(limit);
+        String filter = optionString(options, FILTER);
+        final int max = optionInt(options, LIMIT, Integer.MAX_VALUE);
 
         ManagedCamelContext mcc = getCamelContext().getCamelContextExtension().getContextPlugin(ManagedCamelContext.class);
         if (mcc != null) {
@@ -193,8 +201,8 @@ public class RouteDumpDevConsole extends AbstractDevConsole {
         return o1.getRouteId().compareTo(o2.getRouteId());
     }
 
-    private static List<JsonObject> xmlLoadSourceAsJson(Reader reader) {
-        List<JsonObject> code = new ArrayList<>();
+    private static List<CodeLine> xmlLoadSourceAsJson(Reader reader) {
+        List<CodeLine> code = new ArrayList<>();
         try {
             LineNumberReader lnr = new LineNumberReader(reader);
             String t;
@@ -212,10 +220,7 @@ public class RouteDumpDevConsole extends AbstractDevConsole {
                         idx = m.group(2);
                         t = m.replaceFirst("");
                     }
-                    JsonObject c = new JsonObject();
-                    c.put("line", idx != null ? Integer.parseInt(idx) : -1);
-                    c.put("code", Jsoner.escape(t));
-                    code.add(c);
+                    code.add(new CodeLine(idx != null ? Integer.parseInt(idx) : -1, Jsoner.escape(t)));
                 }
             } while (t != null);
             IOHelper.close(lnr);
@@ -226,8 +231,11 @@ public class RouteDumpDevConsole extends AbstractDevConsole {
         return code.isEmpty() ? null : code;
     }
 
-    private static List<JsonObject> yamlLoadSourceAsJson(Reader reader) {
-        List<JsonObject> code = new ArrayList<>();
+    static List<CodeLine> javaOrYamlLoadSourceAsJson(Reader reader) {
+        List<CodeLine> code = new ArrayList<>();
+        // a dropped source location line that started a YAML list item: its dash and line number go to the next line
+        int dashIndent = -1;
+        int dashLine = -1;
         try {
             LineNumberReader lnr = new LineNumberReader(reader);
             String t;
@@ -235,30 +243,57 @@ public class RouteDumpDevConsole extends AbstractDevConsole {
                 t = lnr.readLine();
                 if (t != null) {
                     // extra source location from code line
-                    if (t.contains("sourceLocation: ")) {
-                        // skip this line
-                    } else if (t.contains("sourceLineNumber: ")) {
-                        String idx = StringHelper.after(t, "sourceLineNumber: ").trim();
-                        if (!code.isEmpty()) {
-                            // assign line number to previous code line
-                            JsonObject c = code.get(code.size() - 1);
+                    boolean location = t.contains("sourceLocation: ");
+                    boolean lineNumber = !location && t.contains("sourceLineNumber: ");
+                    if (location || lineNumber) {
+                        int idx = -1;
+                        if (lineNumber) {
                             try {
-                                c.put("line", Integer.parseInt(idx));
+                                idx = Integer.parseInt(StringHelper.after(t, "sourceLineNumber: ").trim());
                             } catch (NumberFormatException e) {
                                 // ignore
                             }
                         }
+                        int indent = t.length() - t.stripLeading().length();
+                        if (t.stripLeading().startsWith("- ")) {
+                            // the first key of a list item (such as a when of a choice): the next line takes the dash
+                            dashIndent = indent;
+                            dashLine = idx;
+                        } else if (dashIndent >= 0) {
+                            if (idx != -1) {
+                                dashLine = idx;
+                            }
+                        } else if (idx != -1 && !code.isEmpty()) {
+                            // assign line number to previous code line
+                            CodeLine prev = code.get(code.size() - 1);
+                            code.set(code.size() - 1, new CodeLine(idx, prev.code()));
+                        }
                     } else {
-                        JsonObject c = new JsonObject();
-                        c.put("code", Jsoner.escape(t));
-                        c.put("line", -1);
-                        code.add(c);
+                        if (dashIndent >= 0 && t.length() > dashIndent + 2 && t.startsWith(" ".repeat(dashIndent + 2))) {
+                            t = " ".repeat(dashIndent) + "- " + t.substring(dashIndent + 2);
+                            code.add(new CodeLine(dashLine, Jsoner.escape(t)));
+                        } else {
+                            code.add(new CodeLine(-1, Jsoner.escape(t)));
+                        }
+                        dashIndent = -1;
+                        dashLine = -1;
                     }
                 }
             } while (t != null);
             IOHelper.close(lnr);
         } catch (Exception e) {
             // ignore
+        }
+
+        // merge trailing ; with previous code line (sourceLineNumber comments may have separated them)
+        if (code.size() > 1) {
+            CodeLine last = code.get(code.size() - 1);
+            String lastCode = Jsoner.unescape(last.code()).trim();
+            if (";".equals(lastCode)) {
+                code.remove(code.size() - 1);
+                CodeLine prev = code.get(code.size() - 1);
+                code.set(code.size() - 1, new CodeLine(prev.line(), prev.code() + ";"));
+            }
         }
 
         return code.isEmpty() ? null : code;

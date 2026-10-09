@@ -37,7 +37,8 @@ import org.apache.camel.spi.ResourceAware;
 /**
  * Configure data formats.
  */
-@Metadata(label = "dataformat,transformation", title = "Data formats")
+@Metadata(label = "dataformat,transformation", title = "Data formats",
+          description = "Container for defining data format configurations")
 @XmlRootElement(name = "dataFormats")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class DataFormatsDefinition implements CopyableDefinition<DataFormatsDefinition>, ResourceAware {
@@ -84,6 +85,8 @@ public class DataFormatsDefinition implements CopyableDefinition<DataFormatsDefi
             @XmlElement(name = "swiftMx", type = SwiftMxDataFormat.class),
             @XmlElement(name = "syslog", type = SyslogDataFormat.class),
             @XmlElement(name = "tarFile", type = TarFileDataFormat.class),
+            @XmlElement(name = "toon", type = ToonDataFormat.class),
+            @XmlElement(name = "ubl", type = UblDataFormat.class),
             @XmlElement(name = "thrift", type = ThriftDataFormat.class),
             @XmlElement(name = "univocityCsv", type = UniVocityCsvDataFormat.class),
             @XmlElement(name = "univocityFixed", type = UniVocityFixedDataFormat.class),
@@ -92,6 +95,7 @@ public class DataFormatsDefinition implements CopyableDefinition<DataFormatsDefi
             @XmlElement(name = "yaml", type = YAMLDataFormat.class),
             @XmlElement(name = "zipDeflater", type = ZipDeflaterDataFormat.class),
             @XmlElement(name = "zipFile", type = ZipFileDataFormat.class) })
+    @Metadata(description = "The configured data formats.")
     private List<DataFormatDefinition> dataFormats;
     @XmlTransient
     private Resource resource;
@@ -108,9 +112,6 @@ public class DataFormatsDefinition implements CopyableDefinition<DataFormatsDefi
         return new DataFormatsDefinition(this);
     }
 
-    /**
-     * A list holding the configured data formats
-     */
     public void setDataFormats(List<DataFormatDefinition> dataFormats) {
         this.dataFormats = dataFormats;
     }

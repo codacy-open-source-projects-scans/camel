@@ -16,58 +16,37 @@
  */
 package org.apache.camel.opentelemetry.metrics.integration.messagehistory;
 
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.LogRecord;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
-import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.exporter.logging.LoggingMetricExporter;
 import io.opentelemetry.sdk.metrics.data.HistogramPointData;
 import io.opentelemetry.sdk.metrics.data.MetricData;
 import io.opentelemetry.sdk.metrics.data.PointData;
+import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension;
 import org.apache.camel.CamelContext;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
-import org.apache.camel.opentelemetry.metrics.integration.MemoryLogHandler;
 import org.apache.camel.opentelemetry.metrics.messagehistory.OpenTelemetryMessageHistoryFactory;
 import org.apache.camel.test.junit6.CamelTestSupport;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static org.apache.camel.opentelemetry.metrics.OpenTelemetryConstants.DEFAULT_CAMEL_MESSAGE_HISTORY_METER_NAME;
 import static org.apache.camel.opentelemetry.metrics.OpenTelemetryConstants.ROUTE_ID_ATTRIBUTE;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ManagedMessageHistoryAutoConfigIT extends CamelTestSupport {
 
-    @BeforeAll
-    public static void init() {
-        // Open telemetry autoconfiguration using an exporter that writes to the console via logging.
-        // Other possible exporters include 'logging-otlp' and 'otlp'.
-        GlobalOpenTelemetry.resetForTest();
-        System.setProperty("otel.java.global-autoconfigure.enabled", "true");
-        System.setProperty("otel.metrics.exporter", "console");
-        System.setProperty("otel.traces.exporter", "none");
-        System.setProperty("otel.logs.exporter", "none");
-        System.setProperty("otel.propagators", "tracecontext");
-        System.setProperty("otel.metric.export.interval", "300");
-    }
-
-    @AfterEach
-    void cleanup() {
-        GlobalOpenTelemetry.resetForTest();
-    }
+    // Registers an in-memory OTel SDK as GlobalOpenTelemetry before the Camel context is
+    // created, so the message history factory's GlobalOpenTelemetry.get() call returns this
+    // test SDK. Avoids all JUL log-capture complexity and periodic-export timing races.
+    @RegisterExtension
+    static OpenTelemetryExtension otelExtension = OpenTelemetryExtension.create();
 
     @Override
     protected CamelContext createCamelContext() throws Exception {
@@ -79,10 +58,6 @@ public class ManagedMessageHistoryAutoConfigIT extends CamelTestSupport {
 
     @Test
     public void testMessageHistory() throws Exception {
-        Logger logger = Logger.getLogger(LoggingMetricExporter.class.getName());
-        MemoryLogHandler handler = new MemoryLogHandler();
-        logger.addHandler(handler);
-
         int count = 10;
         getMockEndpoint("mock:foo").expectedMessageCount(count / 2);
         getMockEndpoint("mock:bar").expectedMessageCount(count / 2);
@@ -98,38 +73,23 @@ public class ManagedMessageHistoryAutoConfigIT extends CamelTestSupport {
 
         MockEndpoint.assertIsSatisfied(context);
 
-        await().atMost(Duration.ofMillis(1000L)).until(handler::hasLogs);
+        List<MetricData> metrics = otelExtension.getMetrics();
+        MetricData camelMetric = metrics.stream()
+                .filter(md -> DEFAULT_CAMEL_MESSAGE_HISTORY_METER_NAME.equals(md.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No Camel metric data found"));
 
-        List<LogRecord> logs = new ArrayList<>(handler.getLogs());
-        assertFalse(logs.isEmpty(), "No metrics were exported");
-        int dataCount = 0;
-        for (LogRecord log : logs) {
-            if (log.getParameters() != null && log.getParameters().length > 0) {
-                MetricData metricData = (MetricData) log.getParameters()[0];
-                // Skip non-Camel metrics (e.g. otel.sdk.* internal metrics added in OTel 1.60+)
-                if (!metricData.getName().startsWith("camel.")) {
-                    continue;
-                }
-                assertEquals(DEFAULT_CAMEL_MESSAGE_HISTORY_METER_NAME, metricData.getName());
-
-                assertPointDataForRouteId(metricData, "route1");
-
-                assertMetricDataHasNodeId(metricData, "route1", "foo");
-                assertMetricDataHasNodeId(metricData, "route2", "bar");
-                assertMetricDataHasNodeId(metricData, "route2", "baz");
-
-                dataCount++;
-            }
-        }
-        assertTrue(dataCount > 0, "No metric data found");
+        assertPointDataForRouteId(camelMetric, "route1");
+        assertMetricDataHasNodeId(camelMetric, "route1", "foo");
+        assertMetricDataHasNodeId(camelMetric, "route2", "bar");
+        assertMetricDataHasNodeId(camelMetric, "route2", "baz");
     }
 
     private void assertMetricDataHasNodeId(MetricData metricData, String routeId, String nodeId) {
         assertThat(metricData.getData().getPoints())
-                .anyMatch(point -> {
-                    return routeId.equals(getRouteId(point))
-                            && nodeId.equals(point.getAttributes().get(AttributeKey.stringKey("nodeId")));
-                }, "No metric data found for node " + nodeId + "of route " + routeId + " ");
+                .anyMatch(point -> routeId.equals(getRouteId(point))
+                        && nodeId.equals(point.getAttributes().get(AttributeKey.stringKey("nodeId"))),
+                        "No metric data found for node " + nodeId + " of route " + routeId);
     }
 
     private void assertPointDataForRouteId(MetricData metricData, String routeId) {
@@ -137,8 +97,7 @@ public class ManagedMessageHistoryAutoConfigIT extends CamelTestSupport {
                 .filter(point -> routeId.equals(getRouteId(point)))
                 .collect(Collectors.toList());
         assertEquals(1, pdList.size(), "Should have one metric for routeId " + routeId);
-        PointData pd = pdList.get(0);
-        assertInstanceOf(HistogramPointData.class, pd);
+        assertInstanceOf(HistogramPointData.class, pdList.get(0));
     }
 
     protected String getRouteId(PointData pd) {

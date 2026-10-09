@@ -35,6 +35,7 @@ import java.util.concurrent.CompletionStage;
 import org.apache.camel.AsyncCallback;
 import org.apache.camel.AsyncProcessor;
 import org.apache.camel.CamelContext;
+import org.apache.camel.DynamicRouter;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePattern;
 import org.apache.camel.ExchangePropertyKey;
@@ -46,6 +47,8 @@ import org.apache.camel.Message;
 import org.apache.camel.NoTypeConversionAvailableException;
 import org.apache.camel.Pattern;
 import org.apache.camel.Processor;
+import org.apache.camel.RecipientList;
+import org.apache.camel.RoutingSlip;
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.RuntimeExchangeException;
 import org.apache.camel.StreamCache;
@@ -131,43 +134,25 @@ public class MethodInfo {
             pattern = aep;
         }
 
-        org.apache.camel.RoutingSlip routingSlipAnnotation
-                = (org.apache.camel.RoutingSlip) collectedMethodAnnotation.get(org.apache.camel.RoutingSlip.class);
+        RoutingSlip routingSlipAnnotation
+                = (RoutingSlip) collectedMethodAnnotation.get(RoutingSlip.class);
         if (routingSlipAnnotation != null) {
             routingSlip = PluginHelper.getAnnotationBasedProcessorFactory(camelContext)
                     .createRoutingSlip(camelContext, routingSlipAnnotation);
-            // add created routingSlip as a service so we have its lifecycle managed
-            try {
-                camelContext.addService(routingSlip);
-            } catch (Exception e) {
-                throw RuntimeCamelException.wrapRuntimeCamelException(e);
-            }
         }
 
-        org.apache.camel.DynamicRouter dynamicRouterAnnotation
-                = (org.apache.camel.DynamicRouter) collectedMethodAnnotation.get(org.apache.camel.DynamicRouter.class);
+        DynamicRouter dynamicRouterAnnotation
+                = (DynamicRouter) collectedMethodAnnotation.get(DynamicRouter.class);
         if (dynamicRouterAnnotation != null) {
             dynamicRouter = PluginHelper.getAnnotationBasedProcessorFactory(camelContext)
                     .createDynamicRouter(camelContext, dynamicRouterAnnotation);
-            // add created dynamicRouter as a service so we have its lifecycle managed
-            try {
-                camelContext.addService(dynamicRouter);
-            } catch (Exception e) {
-                throw RuntimeCamelException.wrapRuntimeCamelException(e);
-            }
         }
 
-        org.apache.camel.RecipientList recipientListAnnotation
-                = (org.apache.camel.RecipientList) collectedMethodAnnotation.get(org.apache.camel.RecipientList.class);
+        RecipientList recipientListAnnotation
+                = (RecipientList) collectedMethodAnnotation.get(RecipientList.class);
         if (recipientListAnnotation != null) {
             recipientList = PluginHelper.getAnnotationBasedProcessorFactory(camelContext)
                     .createRecipientList(camelContext, recipientListAnnotation);
-            // add created recipientList as a service so we have its lifecycle managed
-            try {
-                camelContext.addService(recipientList);
-            } catch (Exception e) {
-                throw RuntimeCamelException.wrapRuntimeCamelException(e);
-            }
         }
     }
 
@@ -329,6 +314,11 @@ public class MethodInfo {
 
                 //If it's Java 8 async result
                 if (CompletionStage.class.isAssignableFrom(method.getReturnType())) {
+                    if (result == null) {
+                        throw new RuntimeCamelException(
+                                "Bean method " + method.getDeclaringClass().getName() + "." + method.getName()
+                                                        + " returned null CompletionStage");
+                    }
                     CompletionStage<?> completionStage = (CompletionStage<?>) result;
 
                     completionStage
@@ -510,9 +500,39 @@ public class MethodInfo {
                     exchange, e);
         } catch (IllegalArgumentException e) {
             throw new RuntimeExchangeException(
-                    "IllegalArgumentException occurred invoking method: " + mth + " using arguments: " + asList(arguments),
+                    "IllegalArgumentException occurred invoking method: " + mth + " using arguments: " + asList(arguments)
+                                               + argumentsHint(mth, arguments),
                     exchange, e);
         }
+    }
+
+    /**
+     * A method with several parameters gets the body as the first and nothing for the others: say that the arguments
+     * are written in the method name.
+     */
+    private static String argumentsHint(Method mth, Object[] arguments) {
+        Class<?>[] types = mth.getParameterTypes();
+        if (types.length < 2 || arguments == null) {
+            return "";
+        }
+        boolean nullForPrimitive = false;
+        for (int i = 0; i < types.length && i < arguments.length; i++) {
+            if (arguments[i] == null && types[i].isPrimitive()) {
+                nullForPrimitive = true;
+            }
+        }
+        if (!nullForPrimitive && arguments.length == types.length) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(" (the method takes ").append(types.length)
+                .append(" parameters and only the message body is bound by default: pass them in the method name, for"
+                        + " example method: \"")
+                .append(mth.getName()).append("(${body}");
+        for (int i = 1; i < types.length; i++) {
+            sb.append(", ").append(types[i].isPrimitive() || Number.class.isAssignableFrom(types[i]) ? "1" : "'value'");
+        }
+        sb.append(")\"; ${header.name} and ${exchangeProperty.name} work too)");
+        return sb.toString();
     }
 
     protected Expression[] createParameterExpressions() {
@@ -589,7 +609,8 @@ public class MethodInfo {
             if (methodParameters != null) {
                 // split the parameters safely separated by comma, but beware that we can have
                 // quoted parameters which contains comma as well, so do a safe quote split (keep quotes)
-                String[] parameters = StringQuoteHelper.splitSafeQuote(methodParameters, ',', true, true);
+                // and a parameter such as ${body.substring(0, 3)} can have comma inside parenthesis
+                String[] parameters = StringQuoteHelper.splitSafeQuote(methodParameters, ',', true, true, true);
                 it = ObjectHelper.createIterator(parameters, ",", true);
             }
 
@@ -703,10 +724,22 @@ public class MethodInfo {
                 return null;
             }
 
+            // an explicit null parameter value
+            if ("null".equals(exp)) {
+                return Void.TYPE;
+            }
+
             parameterValue = evaluateSimpleExpression(exchange, index, exp);
 
-            if ("null".equals(parameterValue)) {
+            // the expression evaluated to null, which is a valid value we need to honor
+            if (parameterValue == null) {
                 return Void.TYPE;
+            }
+
+            // we need to unquote a quoted String parameter value, as the enclosing quotes is there to denote a
+            // parameter value, but a value from an expression such as ${body} or ${header.foo} is used as-is
+            if (StringHelper.isQuoted(exp.trim()) && parameterValue instanceof String string) {
+                parameterValue = StringHelper.removeLeadingAndEndingQuotes(string);
             }
 
             boolean valid = isValidParameterValue(exchange, exp, parameterValue, parameterType, varargs);
@@ -740,8 +773,7 @@ public class MethodInfo {
             Expression expression = null;
             try {
                 expression = exchange.getContext().resolveLanguage("simple").createExpression(exp);
-                Object result = expression.evaluate(exchange, Object.class);
-                return result != null ? result : "null";
+                return expression.evaluate(exchange, Object.class);
             } catch (Exception e) {
                 throw new ExpressionEvaluationException(
                         expression, "Cannot create/evaluate simple expression: " + exp
@@ -768,9 +800,6 @@ public class MethodInfo {
 
         private Object convertParameterValue(
                 Exchange exchange, int index, Object parameterValue, Class<?> parameterType, boolean varargs) {
-            if (parameterValue instanceof String string) {
-                parameterValue = StringHelper.removeLeadingAndEndingQuotes(string);
-            }
             if (varargs) {
                 return parameterValue;
             }

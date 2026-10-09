@@ -220,6 +220,10 @@ public class BeanInfo {
                     methodInfo = evalMethods(pojo, exchange, methodName, emptyParameters, name, methods);
                 } else {
                     // a specific method was given to invoke but not found
+                    String closest = closestMethodName(name);
+                    if (closest != null) {
+                        throw new MethodNotFoundException(exchange, pojo, methodName, "(did you mean " + closest + "()?)");
+                    }
                     throw new MethodNotFoundException(exchange, pojo, methodName);
                 }
             }
@@ -262,6 +266,46 @@ public class BeanInfo {
             throw new AmbiguousMethodCallException(exchange, methods);
         }
         return methodInfo;
+    }
+
+    /**
+     * The public method name of the bean closest to the given one (a typo such as lenght for length), or null.
+     */
+    private String closestMethodName(String name) {
+        if (name == null || name.length() < 3) {
+            return null;
+        }
+        String best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        int threshold = Math.max(2, name.length() / 3);
+        String lower = name.toLowerCase(Locale.ROOT);
+        for (String candidate : operations.keySet()) {
+            int d = editDistance(lower, candidate.toLowerCase(Locale.ROOT));
+            if (d > 0 && d <= threshold && (d < bestDistance || d == bestDistance && candidate.length() < best.length())) {
+                best = candidate;
+                bestDistance = d;
+            }
+        }
+        return best;
+    }
+
+    private static int editDistance(String a, String b) {
+        int[] prev = new int[b.length() + 1];
+        int[] cur = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) {
+            prev[j] = j;
+        }
+        for (int i = 1; i <= a.length(); i++) {
+            cur[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            int[] t = prev;
+            prev = cur;
+            cur = t;
+        }
+        return prev[b.length()];
     }
 
     private static MethodInfo createSingleMethodInvocation(
@@ -885,7 +929,7 @@ public class BeanInfo {
             // let's try converting
             Object newBody = null;
             MethodInfo matched = null;
-            int matchCounter = 0;
+            List<MethodInfo> candidates = new ArrayList<>();
             for (MethodInfo methodInfo : operationList) {
                 if (methodInfo.getBodyParameterType() != null) {
                     if (methodInfo.getBodyParameterType().isInstance(body)) {
@@ -900,14 +944,14 @@ public class BeanInfo {
                             LOG.trace("Converted body from: {} to: {}",
                                     body.getClass().getCanonicalName(), methodInfo.getBodyParameterType().getCanonicalName());
                         }
-                        matchCounter++;
+                        candidates.add(methodInfo);
                         newBody = value;
                         matched = methodInfo;
                     }
                 }
             }
-            if (matchCounter > 1) {
-                throw new AmbiguousMethodCallException(exchange, Arrays.asList(matched, matched));
+            if (candidates.size() > 1) {
+                throw new AmbiguousMethodCallException(exchange, candidates);
             }
             if (matched != null) {
                 LOG.trace("Setting converted body: {}", body);
@@ -1158,7 +1202,8 @@ public class BeanInfo {
         String types = StringHelper.betweenOuterPair(methodName, '(', ')');
         if (org.apache.camel.util.ObjectHelper.isNotEmpty(types)) {
             // we must qualify based on types to match method
-            String[] parameters = StringQuoteHelper.splitSafeQuote(types, ',', true, true);
+            // split the same way as the parameter values (see MethodInfo)
+            String[] parameters = StringQuoteHelper.splitSafeQuote(types, ',', true, true, true);
             Class<?>[] parameterTypes = null;
             Iterator<?> it = ObjectHelper.createIterator(parameters);
             for (int i = 0; i < method.getParameterCount(); i++) {

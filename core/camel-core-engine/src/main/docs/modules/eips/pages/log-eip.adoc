@@ -1,7 +1,7 @@
 = Logger EIP
 :doctitle: Logger
 :shortname: log
-:description: Used for printing custom messages to the logger.
+:description: Logs a message using an expression that can include message body, headers, and other exchange data
 :since: 
 :supportlevel: Stable
 :tabs-sync-option:
@@ -214,6 +214,7 @@ YAML::
 
 In Java DSL the logger instance may be used as well:
 
+._Java-only: using a logger instance directly in Java DSL_
 [source,java]
 ----
 from("direct:start")
@@ -395,9 +396,9 @@ Spring XML::
 [source,xml]
 ----
 <camelContext>
-  <properties>
-    <property key="CamelLogEipName" value="com.foo.myapp"/>
-  </properties>
+  <globalOptions>
+    <globalOption key="CamelLogEipName" value="com.foo.myapp"/>
+  </globalOptions>
 </camelContext>
 ----
 
@@ -501,8 +502,13 @@ The know set of keywords to mask is gathered from all the different component op
 The list is generated into the source code in `org.apache.camel.util.SensitiveUtils`.
 At this time of writing, there are more than 65 different keywords.
 
+In addition to name-based masking, `DefaultMaskingFormatter` also masks two value shapes that have no
+sensitive key name: URI userinfo passwords (`scheme://user:password@host`) and PEM private-key blocks
+(`-----BEGIN … PRIVATE KEY-----`). Certificates and public keys are left unchanged.
+
 Custom keywords can be added as shown:
 
+._Java-only: registering a custom masking formatter with additional keywords_
 [source,java]
 ----
 DefaultMaskingFormatter formatter = new DefaultMaskingFormatter();

@@ -48,8 +48,8 @@ public interface KafkaEndpointBuilderFactory {
          * producer in case they can't be set directly on the camel
          * configurations (e.g.: new Kafka properties that are not reflected yet
          * in Camel configurations), the properties have to be prefixed with
-         * additionalProperties.., e.g.:
-         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties and the property enclosed in square brackets, like this example: camel.component.kafka.additional-propertiesdelivery.timeout.ms=15000. This is a multi-value option with prefix: additionalProperties.
+         * additionalProperties., e.g.:
+         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties (camel.component.kafka-share.additional-properties for the Kafka Share component) followed by the property name enclosed in square brackets, for example the delivery.timeout.ms property in square brackets. This is a multi-value option with prefix: additionalProperties.
          * 
          * The option is a: <code>java.util.Map&lt;java.lang.String,
          * java.lang.Object&gt;</code> type.
@@ -72,8 +72,8 @@ public interface KafkaEndpointBuilderFactory {
          * producer in case they can't be set directly on the camel
          * configurations (e.g.: new Kafka properties that are not reflected yet
          * in Camel configurations), the properties have to be prefixed with
-         * additionalProperties.., e.g.:
-         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties and the property enclosed in square brackets, like this example: camel.component.kafka.additional-propertiesdelivery.timeout.ms=15000. This is a multi-value option with prefix: additionalProperties.
+         * additionalProperties., e.g.:
+         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties (camel.component.kafka-share.additional-properties for the Kafka Share component) followed by the property name enclosed in square brackets, for example the delivery.timeout.ms property in square brackets. This is a multi-value option with prefix: additionalProperties.
          * 
          * The option is a: <code>java.util.Map&lt;java.lang.String,
          * java.lang.Object&gt;</code> type.
@@ -124,6 +124,39 @@ public interface KafkaEndpointBuilderFactory {
             return this;
         }
         /**
+         * Close idle connections after the number of milliseconds specified by
+         * this config.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 540000
+         * Group: common
+         * 
+         * @param connectionMaxIdleMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder connectionMaxIdleMs(Integer connectionMaxIdleMs) {
+            doSetProperty("connectionMaxIdleMs", connectionMaxIdleMs);
+            return this;
+        }
+        /**
+         * Close idle connections after the number of milliseconds specified by
+         * this config.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 540000
+         * Group: common
+         * 
+         * @param connectionMaxIdleMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder connectionMaxIdleMs(String connectionMaxIdleMs) {
+            doSetProperty("connectionMaxIdleMs", connectionMaxIdleMs);
+            return this;
+        }
+        /**
          * To use a custom HeaderFilterStrategy to filter header to and from
          * Camel message.
          * 
@@ -153,6 +186,153 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointConsumerBuilder headerFilterStrategy(String headerFilterStrategy) {
             doSetProperty("headerFilterStrategy", headerFilterStrategy);
+            return this;
+        }
+        /**
+         * The period of time in milliseconds after which we force a refresh of
+         * metadata even if we haven't seen any partition leadership changes to
+         * proactively discover any new brokers or partitions.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 300000
+         * Group: common
+         * 
+         * @param metadataMaxAgeMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder metadataMaxAgeMs(Integer metadataMaxAgeMs) {
+            doSetProperty("metadataMaxAgeMs", metadataMaxAgeMs);
+            return this;
+        }
+        /**
+         * The period of time in milliseconds after which we force a refresh of
+         * metadata even if we haven't seen any partition leadership changes to
+         * proactively discover any new brokers or partitions.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 300000
+         * Group: common
+         * 
+         * @param metadataMaxAgeMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder metadataMaxAgeMs(String metadataMaxAgeMs) {
+            doSetProperty("metadataMaxAgeMs", metadataMaxAgeMs);
+            return this;
+        }
+        /**
+         * A list of classes to use as metrics reporters. Implementing the
+         * MetricReporter interface allows plugging in classes that will be
+         * notified of new metric creation. The JmxReporter is always included
+         * to register JMX statistics.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: common
+         * 
+         * @param metricReporters the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder metricReporters(String metricReporters) {
+            doSetProperty("metricReporters", metricReporters);
+            return this;
+        }
+        /**
+         * The window of time a metrics sample is computed over.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 30000
+         * Group: common
+         * 
+         * @param metricsSampleWindowMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder metricsSampleWindowMs(Integer metricsSampleWindowMs) {
+            doSetProperty("metricsSampleWindowMs", metricsSampleWindowMs);
+            return this;
+        }
+        /**
+         * The window of time a metrics sample is computed over.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 30000
+         * Group: common
+         * 
+         * @param metricsSampleWindowMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder metricsSampleWindowMs(String metricsSampleWindowMs) {
+            doSetProperty("metricsSampleWindowMs", metricsSampleWindowMs);
+            return this;
+        }
+        /**
+         * The number of samples maintained to compute metrics.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 2
+         * Group: common
+         * 
+         * @param noOfMetricsSample the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder noOfMetricsSample(Integer noOfMetricsSample) {
+            doSetProperty("noOfMetricsSample", noOfMetricsSample);
+            return this;
+        }
+        /**
+         * The number of samples maintained to compute metrics.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 2
+         * Group: common
+         * 
+         * @param noOfMetricsSample the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder noOfMetricsSample(String noOfMetricsSample) {
+            doSetProperty("noOfMetricsSample", noOfMetricsSample);
+            return this;
+        }
+        /**
+         * The size of the TCP receive buffer (SO_RCVBUF) to use when reading
+         * data.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 65536
+         * Group: common
+         * 
+         * @param receiveBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder receiveBufferBytes(Integer receiveBufferBytes) {
+            doSetProperty("receiveBufferBytes", receiveBufferBytes);
+            return this;
+        }
+        /**
+         * The size of the TCP receive buffer (SO_RCVBUF) to use when reading
+         * data.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 65536
+         * Group: common
+         * 
+         * @param receiveBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder receiveBufferBytes(String receiveBufferBytes) {
+            doSetProperty("receiveBufferBytes", receiveBufferBytes);
             return this;
         }
         /**
@@ -192,6 +372,43 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointConsumerBuilder reconnectBackoffMaxMs(String reconnectBackoffMaxMs) {
             doSetProperty("reconnectBackoffMaxMs", reconnectBackoffMaxMs);
+            return this;
+        }
+        /**
+         * The amount of time to wait before attempting to reconnect to a given
+         * host. This avoids repeatedly connecting to a host in a tight loop.
+         * This backoff applies to all requests sent by the consumer to the
+         * broker.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 50
+         * Group: common
+         * 
+         * @param reconnectBackoffMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder reconnectBackoffMs(Integer reconnectBackoffMs) {
+            doSetProperty("reconnectBackoffMs", reconnectBackoffMs);
+            return this;
+        }
+        /**
+         * The amount of time to wait before attempting to reconnect to a given
+         * host. This avoids repeatedly connecting to a host in a tight loop.
+         * This backoff applies to all requests sent by the consumer to the
+         * broker.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 50
+         * Group: common
+         * 
+         * @param reconnectBackoffMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder reconnectBackoffMs(String reconnectBackoffMs) {
+            doSetProperty("reconnectBackoffMs", reconnectBackoffMs);
             return this;
         }
         /**
@@ -280,6 +497,37 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointConsumerBuilder retryBackoffMs(String retryBackoffMs) {
             doSetProperty("retryBackoffMs", retryBackoffMs);
+            return this;
+        }
+        /**
+         * Socket write buffer size.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 131072
+         * Group: common
+         * 
+         * @param sendBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder sendBufferBytes(Integer sendBufferBytes) {
+            doSetProperty("sendBufferBytes", sendBufferBytes);
+            return this;
+        }
+        /**
+         * Socket write buffer size.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 131072
+         * Group: common
+         * 
+         * @param sendBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointConsumerBuilder sendBufferBytes(String sendBufferBytes) {
+            doSetProperty("sendBufferBytes", sendBufferBytes);
             return this;
         }
         /**
@@ -420,10 +668,12 @@ public interface KafkaEndpointBuilderFactory {
             return this;
         }
         /**
-         * What to do when there is no initial offset in ZooKeeper or if an
-         * offset is out of range: earliest : automatically reset the offset to
-         * the earliest offset latest: automatically reset the offset to the
-         * latest offset fail: throw exception to the consumer.
+         * Where a consumer group starts reading when it has no committed
+         * offset, or the committed offset is out of range. Valid values are:
+         * earliest (seek to the earliest available offset), latest (seek to the
+         * latest offset, the default), none (throw an exception if no previous
+         * offset is found), by_duration: followed by an ISO-8601 duration (e.g.
+         * by_duration:PT5M or by_duration:P1D; requires Kafka 4.0 or later).
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -2363,8 +2613,8 @@ public interface KafkaEndpointBuilderFactory {
          * producer in case they can't be set directly on the camel
          * configurations (e.g.: new Kafka properties that are not reflected yet
          * in Camel configurations), the properties have to be prefixed with
-         * additionalProperties.., e.g.:
-         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties and the property enclosed in square brackets, like this example: camel.component.kafka.additional-propertiesdelivery.timeout.ms=15000. This is a multi-value option with prefix: additionalProperties.
+         * additionalProperties., e.g.:
+         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties (camel.component.kafka-share.additional-properties for the Kafka Share component) followed by the property name enclosed in square brackets, for example the delivery.timeout.ms property in square brackets. This is a multi-value option with prefix: additionalProperties.
          * 
          * The option is a: <code>java.util.Map&lt;java.lang.String,
          * java.lang.Object&gt;</code> type.
@@ -2387,8 +2637,8 @@ public interface KafkaEndpointBuilderFactory {
          * producer in case they can't be set directly on the camel
          * configurations (e.g.: new Kafka properties that are not reflected yet
          * in Camel configurations), the properties have to be prefixed with
-         * additionalProperties.., e.g.:
-         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties and the property enclosed in square brackets, like this example: camel.component.kafka.additional-propertiesdelivery.timeout.ms=15000. This is a multi-value option with prefix: additionalProperties.
+         * additionalProperties., e.g.:
+         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties (camel.component.kafka-share.additional-properties for the Kafka Share component) followed by the property name enclosed in square brackets, for example the delivery.timeout.ms property in square brackets. This is a multi-value option with prefix: additionalProperties.
          * 
          * The option is a: <code>java.util.Map&lt;java.lang.String,
          * java.lang.Object&gt;</code> type.
@@ -2439,6 +2689,39 @@ public interface KafkaEndpointBuilderFactory {
             return this;
         }
         /**
+         * Close idle connections after the number of milliseconds specified by
+         * this config.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 540000
+         * Group: common
+         * 
+         * @param connectionMaxIdleMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder connectionMaxIdleMs(Integer connectionMaxIdleMs) {
+            doSetProperty("connectionMaxIdleMs", connectionMaxIdleMs);
+            return this;
+        }
+        /**
+         * Close idle connections after the number of milliseconds specified by
+         * this config.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 540000
+         * Group: common
+         * 
+         * @param connectionMaxIdleMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder connectionMaxIdleMs(String connectionMaxIdleMs) {
+            doSetProperty("connectionMaxIdleMs", connectionMaxIdleMs);
+            return this;
+        }
+        /**
          * To use a custom HeaderFilterStrategy to filter header to and from
          * Camel message.
          * 
@@ -2468,6 +2751,153 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointProducerBuilder headerFilterStrategy(String headerFilterStrategy) {
             doSetProperty("headerFilterStrategy", headerFilterStrategy);
+            return this;
+        }
+        /**
+         * The period of time in milliseconds after which we force a refresh of
+         * metadata even if we haven't seen any partition leadership changes to
+         * proactively discover any new brokers or partitions.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 300000
+         * Group: common
+         * 
+         * @param metadataMaxAgeMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder metadataMaxAgeMs(Integer metadataMaxAgeMs) {
+            doSetProperty("metadataMaxAgeMs", metadataMaxAgeMs);
+            return this;
+        }
+        /**
+         * The period of time in milliseconds after which we force a refresh of
+         * metadata even if we haven't seen any partition leadership changes to
+         * proactively discover any new brokers or partitions.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 300000
+         * Group: common
+         * 
+         * @param metadataMaxAgeMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder metadataMaxAgeMs(String metadataMaxAgeMs) {
+            doSetProperty("metadataMaxAgeMs", metadataMaxAgeMs);
+            return this;
+        }
+        /**
+         * A list of classes to use as metrics reporters. Implementing the
+         * MetricReporter interface allows plugging in classes that will be
+         * notified of new metric creation. The JmxReporter is always included
+         * to register JMX statistics.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: common
+         * 
+         * @param metricReporters the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder metricReporters(String metricReporters) {
+            doSetProperty("metricReporters", metricReporters);
+            return this;
+        }
+        /**
+         * The window of time a metrics sample is computed over.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 30000
+         * Group: common
+         * 
+         * @param metricsSampleWindowMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder metricsSampleWindowMs(Integer metricsSampleWindowMs) {
+            doSetProperty("metricsSampleWindowMs", metricsSampleWindowMs);
+            return this;
+        }
+        /**
+         * The window of time a metrics sample is computed over.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 30000
+         * Group: common
+         * 
+         * @param metricsSampleWindowMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder metricsSampleWindowMs(String metricsSampleWindowMs) {
+            doSetProperty("metricsSampleWindowMs", metricsSampleWindowMs);
+            return this;
+        }
+        /**
+         * The number of samples maintained to compute metrics.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 2
+         * Group: common
+         * 
+         * @param noOfMetricsSample the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder noOfMetricsSample(Integer noOfMetricsSample) {
+            doSetProperty("noOfMetricsSample", noOfMetricsSample);
+            return this;
+        }
+        /**
+         * The number of samples maintained to compute metrics.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 2
+         * Group: common
+         * 
+         * @param noOfMetricsSample the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder noOfMetricsSample(String noOfMetricsSample) {
+            doSetProperty("noOfMetricsSample", noOfMetricsSample);
+            return this;
+        }
+        /**
+         * The size of the TCP receive buffer (SO_RCVBUF) to use when reading
+         * data.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 65536
+         * Group: common
+         * 
+         * @param receiveBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder receiveBufferBytes(Integer receiveBufferBytes) {
+            doSetProperty("receiveBufferBytes", receiveBufferBytes);
+            return this;
+        }
+        /**
+         * The size of the TCP receive buffer (SO_RCVBUF) to use when reading
+         * data.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 65536
+         * Group: common
+         * 
+         * @param receiveBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder receiveBufferBytes(String receiveBufferBytes) {
+            doSetProperty("receiveBufferBytes", receiveBufferBytes);
             return this;
         }
         /**
@@ -2507,6 +2937,43 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointProducerBuilder reconnectBackoffMaxMs(String reconnectBackoffMaxMs) {
             doSetProperty("reconnectBackoffMaxMs", reconnectBackoffMaxMs);
+            return this;
+        }
+        /**
+         * The amount of time to wait before attempting to reconnect to a given
+         * host. This avoids repeatedly connecting to a host in a tight loop.
+         * This backoff applies to all requests sent by the consumer to the
+         * broker.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 50
+         * Group: common
+         * 
+         * @param reconnectBackoffMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder reconnectBackoffMs(Integer reconnectBackoffMs) {
+            doSetProperty("reconnectBackoffMs", reconnectBackoffMs);
+            return this;
+        }
+        /**
+         * The amount of time to wait before attempting to reconnect to a given
+         * host. This avoids repeatedly connecting to a host in a tight loop.
+         * This backoff applies to all requests sent by the consumer to the
+         * broker.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 50
+         * Group: common
+         * 
+         * @param reconnectBackoffMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder reconnectBackoffMs(String reconnectBackoffMs) {
+            doSetProperty("reconnectBackoffMs", reconnectBackoffMs);
             return this;
         }
         /**
@@ -2595,6 +3062,37 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointProducerBuilder retryBackoffMs(String retryBackoffMs) {
             doSetProperty("retryBackoffMs", retryBackoffMs);
+            return this;
+        }
+        /**
+         * Socket write buffer size.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 131072
+         * Group: common
+         * 
+         * @param sendBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder sendBufferBytes(Integer sendBufferBytes) {
+            doSetProperty("sendBufferBytes", sendBufferBytes);
+            return this;
+        }
+        /**
+         * Socket write buffer size.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 131072
+         * Group: common
+         * 
+         * @param sendBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointProducerBuilder sendBufferBytes(String sendBufferBytes) {
+            doSetProperty("sendBufferBytes", sendBufferBytes);
             return this;
         }
         /**
@@ -2731,39 +3229,6 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointProducerBuilder compressionCodec(String compressionCodec) {
             doSetProperty("compressionCodec", compressionCodec);
-            return this;
-        }
-        /**
-         * Close idle connections after the number of milliseconds specified by
-         * this config.
-         * 
-         * The option is a: <code>java.lang.Integer</code> type.
-         * 
-         * Default: 540000
-         * Group: producer
-         * 
-         * @param connectionMaxIdleMs the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder connectionMaxIdleMs(Integer connectionMaxIdleMs) {
-            doSetProperty("connectionMaxIdleMs", connectionMaxIdleMs);
-            return this;
-        }
-        /**
-         * Close idle connections after the number of milliseconds specified by
-         * this config.
-         * 
-         * The option will be converted to a <code>java.lang.Integer</code>
-         * type.
-         * 
-         * Default: 540000
-         * Group: producer
-         * 
-         * @param connectionMaxIdleMs the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder connectionMaxIdleMs(String connectionMaxIdleMs) {
-            doSetProperty("connectionMaxIdleMs", connectionMaxIdleMs);
             return this;
         }
         /**
@@ -3110,120 +3575,6 @@ public interface KafkaEndpointBuilderFactory {
             return this;
         }
         /**
-         * The period of time in milliseconds after which we force a refresh of
-         * metadata even if we haven't seen any partition leadership changes to
-         * proactively discover any new brokers or partitions.
-         * 
-         * The option is a: <code>java.lang.Integer</code> type.
-         * 
-         * Default: 300000
-         * Group: producer
-         * 
-         * @param metadataMaxAgeMs the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder metadataMaxAgeMs(Integer metadataMaxAgeMs) {
-            doSetProperty("metadataMaxAgeMs", metadataMaxAgeMs);
-            return this;
-        }
-        /**
-         * The period of time in milliseconds after which we force a refresh of
-         * metadata even if we haven't seen any partition leadership changes to
-         * proactively discover any new brokers or partitions.
-         * 
-         * The option will be converted to a <code>java.lang.Integer</code>
-         * type.
-         * 
-         * Default: 300000
-         * Group: producer
-         * 
-         * @param metadataMaxAgeMs the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder metadataMaxAgeMs(String metadataMaxAgeMs) {
-            doSetProperty("metadataMaxAgeMs", metadataMaxAgeMs);
-            return this;
-        }
-        /**
-         * A list of classes to use as metrics reporters. Implementing the
-         * MetricReporter interface allows plugging in classes that will be
-         * notified of new metric creation. The JmxReporter is always included
-         * to register JMX statistics.
-         * 
-         * The option is a: <code>java.lang.String</code> type.
-         * 
-         * Group: producer
-         * 
-         * @param metricReporters the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder metricReporters(String metricReporters) {
-            doSetProperty("metricReporters", metricReporters);
-            return this;
-        }
-        /**
-         * The window of time a metrics sample is computed over.
-         * 
-         * The option is a: <code>java.lang.Integer</code> type.
-         * 
-         * Default: 30000
-         * Group: producer
-         * 
-         * @param metricsSampleWindowMs the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder metricsSampleWindowMs(Integer metricsSampleWindowMs) {
-            doSetProperty("metricsSampleWindowMs", metricsSampleWindowMs);
-            return this;
-        }
-        /**
-         * The window of time a metrics sample is computed over.
-         * 
-         * The option will be converted to a <code>java.lang.Integer</code>
-         * type.
-         * 
-         * Default: 30000
-         * Group: producer
-         * 
-         * @param metricsSampleWindowMs the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder metricsSampleWindowMs(String metricsSampleWindowMs) {
-            doSetProperty("metricsSampleWindowMs", metricsSampleWindowMs);
-            return this;
-        }
-        /**
-         * The number of samples maintained to compute metrics.
-         * 
-         * The option is a: <code>java.lang.Integer</code> type.
-         * 
-         * Default: 2
-         * Group: producer
-         * 
-         * @param noOfMetricsSample the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder noOfMetricsSample(Integer noOfMetricsSample) {
-            doSetProperty("noOfMetricsSample", noOfMetricsSample);
-            return this;
-        }
-        /**
-         * The number of samples maintained to compute metrics.
-         * 
-         * The option will be converted to a <code>java.lang.Integer</code>
-         * type.
-         * 
-         * Default: 2
-         * Group: producer
-         * 
-         * @param noOfMetricsSample the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder noOfMetricsSample(String noOfMetricsSample) {
-            doSetProperty("noOfMetricsSample", noOfMetricsSample);
-            return this;
-        }
-        /**
          * The partitioner class for partitioning messages amongst sub-topics.
          * The default partitioner is based on the hash of the key.
          * 
@@ -3355,9 +3706,8 @@ public interface KafkaEndpointBuilderFactory {
             return this;
         }
         /**
-         * The maximum number of unsent messages that can be queued up the
-         * producer when using async mode before either the producer must be
-         * blocked or data must be dropped.
+         * Deprecated: this option has no effect. Use bufferMemorySize or
+         * maxBlockMs instead.
          * 
          * The option is a: <code>java.lang.Integer</code> type.
          * 
@@ -3367,14 +3717,14 @@ public interface KafkaEndpointBuilderFactory {
          * @param queueBufferingMaxMessages the value to set
          * @return the dsl builder
          */
+        @Deprecated
         default KafkaEndpointProducerBuilder queueBufferingMaxMessages(Integer queueBufferingMaxMessages) {
             doSetProperty("queueBufferingMaxMessages", queueBufferingMaxMessages);
             return this;
         }
         /**
-         * The maximum number of unsent messages that can be queued up the
-         * producer when using async mode before either the producer must be
-         * blocked or data must be dropped.
+         * Deprecated: this option has no effect. Use bufferMemorySize or
+         * maxBlockMs instead.
          * 
          * The option will be converted to a <code>java.lang.Integer</code>
          * type.
@@ -3385,78 +3735,9 @@ public interface KafkaEndpointBuilderFactory {
          * @param queueBufferingMaxMessages the value to set
          * @return the dsl builder
          */
+        @Deprecated
         default KafkaEndpointProducerBuilder queueBufferingMaxMessages(String queueBufferingMaxMessages) {
             doSetProperty("queueBufferingMaxMessages", queueBufferingMaxMessages);
-            return this;
-        }
-        /**
-         * The size of the TCP receive buffer (SO_RCVBUF) to use when reading
-         * data.
-         * 
-         * The option is a: <code>java.lang.Integer</code> type.
-         * 
-         * Default: 65536
-         * Group: producer
-         * 
-         * @param receiveBufferBytes the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder receiveBufferBytes(Integer receiveBufferBytes) {
-            doSetProperty("receiveBufferBytes", receiveBufferBytes);
-            return this;
-        }
-        /**
-         * The size of the TCP receive buffer (SO_RCVBUF) to use when reading
-         * data.
-         * 
-         * The option will be converted to a <code>java.lang.Integer</code>
-         * type.
-         * 
-         * Default: 65536
-         * Group: producer
-         * 
-         * @param receiveBufferBytes the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder receiveBufferBytes(String receiveBufferBytes) {
-            doSetProperty("receiveBufferBytes", receiveBufferBytes);
-            return this;
-        }
-        /**
-         * The amount of time to wait before attempting to reconnect to a given
-         * host. This avoids repeatedly connecting to a host in a tight loop.
-         * This backoff applies to all requests sent by the consumer to the
-         * broker.
-         * 
-         * The option is a: <code>java.lang.Integer</code> type.
-         * 
-         * Default: 50
-         * Group: producer
-         * 
-         * @param reconnectBackoffMs the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder reconnectBackoffMs(Integer reconnectBackoffMs) {
-            doSetProperty("reconnectBackoffMs", reconnectBackoffMs);
-            return this;
-        }
-        /**
-         * The amount of time to wait before attempting to reconnect to a given
-         * host. This avoids repeatedly connecting to a host in a tight loop.
-         * This backoff applies to all requests sent by the consumer to the
-         * broker.
-         * 
-         * The option will be converted to a <code>java.lang.Integer</code>
-         * type.
-         * 
-         * Default: 50
-         * Group: producer
-         * 
-         * @param reconnectBackoffMs the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder reconnectBackoffMs(String reconnectBackoffMs) {
-            doSetProperty("reconnectBackoffMs", reconnectBackoffMs);
             return this;
         }
         /**
@@ -3587,37 +3868,6 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointProducerBuilder retries(String retries) {
             doSetProperty("retries", retries);
-            return this;
-        }
-        /**
-         * Socket write buffer size.
-         * 
-         * The option is a: <code>java.lang.Integer</code> type.
-         * 
-         * Default: 131072
-         * Group: producer
-         * 
-         * @param sendBufferBytes the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder sendBufferBytes(Integer sendBufferBytes) {
-            doSetProperty("sendBufferBytes", sendBufferBytes);
-            return this;
-        }
-        /**
-         * Socket write buffer size.
-         * 
-         * The option will be converted to a <code>java.lang.Integer</code>
-         * type.
-         * 
-         * Default: 131072
-         * Group: producer
-         * 
-         * @param sendBufferBytes the value to set
-         * @return the dsl builder
-         */
-        default KafkaEndpointProducerBuilder sendBufferBytes(String sendBufferBytes) {
-            doSetProperty("sendBufferBytes", sendBufferBytes);
             return this;
         }
         /**
@@ -4660,8 +4910,8 @@ public interface KafkaEndpointBuilderFactory {
          * producer in case they can't be set directly on the camel
          * configurations (e.g.: new Kafka properties that are not reflected yet
          * in Camel configurations), the properties have to be prefixed with
-         * additionalProperties.., e.g.:
-         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties and the property enclosed in square brackets, like this example: camel.component.kafka.additional-propertiesdelivery.timeout.ms=15000. This is a multi-value option with prefix: additionalProperties.
+         * additionalProperties., e.g.:
+         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties (camel.component.kafka-share.additional-properties for the Kafka Share component) followed by the property name enclosed in square brackets, for example the delivery.timeout.ms property in square brackets. This is a multi-value option with prefix: additionalProperties.
          * 
          * The option is a: <code>java.util.Map&lt;java.lang.String,
          * java.lang.Object&gt;</code> type.
@@ -4684,8 +4934,8 @@ public interface KafkaEndpointBuilderFactory {
          * producer in case they can't be set directly on the camel
          * configurations (e.g.: new Kafka properties that are not reflected yet
          * in Camel configurations), the properties have to be prefixed with
-         * additionalProperties.., e.g.:
-         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties and the property enclosed in square brackets, like this example: camel.component.kafka.additional-propertiesdelivery.timeout.ms=15000. This is a multi-value option with prefix: additionalProperties.
+         * additionalProperties., e.g.:
+         * additionalProperties.transactional.id=12345&amp;additionalProperties.schema.registry.url=http://localhost:8811/avro. If the properties are set in the application.properties file, they must be prefixed with camel.component.kafka.additional-properties (camel.component.kafka-share.additional-properties for the Kafka Share component) followed by the property name enclosed in square brackets, for example the delivery.timeout.ms property in square brackets. This is a multi-value option with prefix: additionalProperties.
          * 
          * The option is a: <code>java.util.Map&lt;java.lang.String,
          * java.lang.Object&gt;</code> type.
@@ -4736,6 +4986,39 @@ public interface KafkaEndpointBuilderFactory {
             return this;
         }
         /**
+         * Close idle connections after the number of milliseconds specified by
+         * this config.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 540000
+         * Group: common
+         * 
+         * @param connectionMaxIdleMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder connectionMaxIdleMs(Integer connectionMaxIdleMs) {
+            doSetProperty("connectionMaxIdleMs", connectionMaxIdleMs);
+            return this;
+        }
+        /**
+         * Close idle connections after the number of milliseconds specified by
+         * this config.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 540000
+         * Group: common
+         * 
+         * @param connectionMaxIdleMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder connectionMaxIdleMs(String connectionMaxIdleMs) {
+            doSetProperty("connectionMaxIdleMs", connectionMaxIdleMs);
+            return this;
+        }
+        /**
          * To use a custom HeaderFilterStrategy to filter header to and from
          * Camel message.
          * 
@@ -4765,6 +5048,153 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointBuilder headerFilterStrategy(String headerFilterStrategy) {
             doSetProperty("headerFilterStrategy", headerFilterStrategy);
+            return this;
+        }
+        /**
+         * The period of time in milliseconds after which we force a refresh of
+         * metadata even if we haven't seen any partition leadership changes to
+         * proactively discover any new brokers or partitions.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 300000
+         * Group: common
+         * 
+         * @param metadataMaxAgeMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder metadataMaxAgeMs(Integer metadataMaxAgeMs) {
+            doSetProperty("metadataMaxAgeMs", metadataMaxAgeMs);
+            return this;
+        }
+        /**
+         * The period of time in milliseconds after which we force a refresh of
+         * metadata even if we haven't seen any partition leadership changes to
+         * proactively discover any new brokers or partitions.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 300000
+         * Group: common
+         * 
+         * @param metadataMaxAgeMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder metadataMaxAgeMs(String metadataMaxAgeMs) {
+            doSetProperty("metadataMaxAgeMs", metadataMaxAgeMs);
+            return this;
+        }
+        /**
+         * A list of classes to use as metrics reporters. Implementing the
+         * MetricReporter interface allows plugging in classes that will be
+         * notified of new metric creation. The JmxReporter is always included
+         * to register JMX statistics.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: common
+         * 
+         * @param metricReporters the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder metricReporters(String metricReporters) {
+            doSetProperty("metricReporters", metricReporters);
+            return this;
+        }
+        /**
+         * The window of time a metrics sample is computed over.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 30000
+         * Group: common
+         * 
+         * @param metricsSampleWindowMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder metricsSampleWindowMs(Integer metricsSampleWindowMs) {
+            doSetProperty("metricsSampleWindowMs", metricsSampleWindowMs);
+            return this;
+        }
+        /**
+         * The window of time a metrics sample is computed over.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 30000
+         * Group: common
+         * 
+         * @param metricsSampleWindowMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder metricsSampleWindowMs(String metricsSampleWindowMs) {
+            doSetProperty("metricsSampleWindowMs", metricsSampleWindowMs);
+            return this;
+        }
+        /**
+         * The number of samples maintained to compute metrics.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 2
+         * Group: common
+         * 
+         * @param noOfMetricsSample the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder noOfMetricsSample(Integer noOfMetricsSample) {
+            doSetProperty("noOfMetricsSample", noOfMetricsSample);
+            return this;
+        }
+        /**
+         * The number of samples maintained to compute metrics.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 2
+         * Group: common
+         * 
+         * @param noOfMetricsSample the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder noOfMetricsSample(String noOfMetricsSample) {
+            doSetProperty("noOfMetricsSample", noOfMetricsSample);
+            return this;
+        }
+        /**
+         * The size of the TCP receive buffer (SO_RCVBUF) to use when reading
+         * data.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 65536
+         * Group: common
+         * 
+         * @param receiveBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder receiveBufferBytes(Integer receiveBufferBytes) {
+            doSetProperty("receiveBufferBytes", receiveBufferBytes);
+            return this;
+        }
+        /**
+         * The size of the TCP receive buffer (SO_RCVBUF) to use when reading
+         * data.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 65536
+         * Group: common
+         * 
+         * @param receiveBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder receiveBufferBytes(String receiveBufferBytes) {
+            doSetProperty("receiveBufferBytes", receiveBufferBytes);
             return this;
         }
         /**
@@ -4804,6 +5234,43 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointBuilder reconnectBackoffMaxMs(String reconnectBackoffMaxMs) {
             doSetProperty("reconnectBackoffMaxMs", reconnectBackoffMaxMs);
+            return this;
+        }
+        /**
+         * The amount of time to wait before attempting to reconnect to a given
+         * host. This avoids repeatedly connecting to a host in a tight loop.
+         * This backoff applies to all requests sent by the consumer to the
+         * broker.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 50
+         * Group: common
+         * 
+         * @param reconnectBackoffMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder reconnectBackoffMs(Integer reconnectBackoffMs) {
+            doSetProperty("reconnectBackoffMs", reconnectBackoffMs);
+            return this;
+        }
+        /**
+         * The amount of time to wait before attempting to reconnect to a given
+         * host. This avoids repeatedly connecting to a host in a tight loop.
+         * This backoff applies to all requests sent by the consumer to the
+         * broker.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 50
+         * Group: common
+         * 
+         * @param reconnectBackoffMs the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder reconnectBackoffMs(String reconnectBackoffMs) {
+            doSetProperty("reconnectBackoffMs", reconnectBackoffMs);
             return this;
         }
         /**
@@ -4892,6 +5359,37 @@ public interface KafkaEndpointBuilderFactory {
          */
         default KafkaEndpointBuilder retryBackoffMs(String retryBackoffMs) {
             doSetProperty("retryBackoffMs", retryBackoffMs);
+            return this;
+        }
+        /**
+         * Socket write buffer size.
+         * 
+         * The option is a: <code>java.lang.Integer</code> type.
+         * 
+         * Default: 131072
+         * Group: common
+         * 
+         * @param sendBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder sendBufferBytes(Integer sendBufferBytes) {
+            doSetProperty("sendBufferBytes", sendBufferBytes);
+            return this;
+        }
+        /**
+         * Socket write buffer size.
+         * 
+         * The option will be converted to a <code>java.lang.Integer</code>
+         * type.
+         * 
+         * Default: 131072
+         * Group: common
+         * 
+         * @param sendBufferBytes the value to set
+         * @return the dsl builder
+         */
+        default KafkaEndpointBuilder sendBufferBytes(String sendBufferBytes) {
+            doSetProperty("sendBufferBytes", sendBufferBytes);
             return this;
         }
         /**
@@ -5728,7 +6226,7 @@ public interface KafkaEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final KafkaHeaderNameBuilder INSTANCE = new KafkaHeaderNameBuilder();
+        public static final KafkaHeaderNameBuilder INSTANCE = new KafkaHeaderNameBuilder();
 
         /**
          * Explicitly specify the partition.
@@ -5737,10 +6235,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: producer
          * 
-         * @return the name of the header {@code kafka.PARTITION_KEY}.
+         * @return the name of the header {@code KafkaPartitionKey}.
          */
         public String kafkaPartitionKey() {
-            return "kafka.PARTITION_KEY";
+            return "CamelKafkaPartitionKey";
         }
         /**
          * The partition where the message was stored.
@@ -5749,10 +6247,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: consumer
          * 
-         * @return the name of the header {@code kafka.PARTITION}.
+         * @return the name of the header {@code KafkaPartition}.
          */
         public String kafkaPartition() {
-            return "kafka.PARTITION";
+            return "CamelKafkaPartition";
         }
         /**
          * Producer: The key of the message in order to ensure that all related
@@ -5764,10 +6262,10 @@ public interface KafkaEndpointBuilderFactory {
          * Required: true
          * Group: common
          * 
-         * @return the name of the header {@code kafka.KEY}.
+         * @return the name of the header {@code KafkaKey}.
          */
         public String kafkaKey() {
-            return "kafka.KEY";
+            return "CamelKafkaKey";
         }
         /**
          * The topic from where the message originated.
@@ -5776,10 +6274,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: consumer
          * 
-         * @return the name of the header {@code kafka.TOPIC}.
+         * @return the name of the header {@code KafkaTopic}.
          */
         public String kafkaTopic() {
-            return "kafka.TOPIC";
+            return "CamelKafkaTopic";
         }
         /**
          * The topic to which send the message (override and takes precedence),
@@ -5789,10 +6287,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: producer
          * 
-         * @return the name of the header {@code kafka.OVERRIDE_TOPIC}.
+         * @return the name of the header {@code KafkaOverrideTopic}.
          */
         public String kafkaOverrideTopic() {
-            return "kafka.OVERRIDE_TOPIC";
+            return "CamelKafkaOverrideTopic";
         }
         /**
          * The offset of the message.
@@ -5801,10 +6299,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: consumer
          * 
-         * @return the name of the header {@code kafka.OFFSET}.
+         * @return the name of the header {@code KafkaOffset}.
          */
         public String kafkaOffset() {
-            return "kafka.OFFSET";
+            return "CamelKafkaOffset";
         }
         /**
          * The record headers.
@@ -5813,10 +6311,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: consumer
          * 
-         * @return the name of the header {@code kafka.HEADERS}.
+         * @return the name of the header {@code KafkaHeaders}.
          */
         public String kafkaHeaders() {
-            return "kafka.HEADERS";
+            return "CamelKafkaHeaders";
         }
         /**
          * Whether or not it's the last record before commit (only available if
@@ -5826,11 +6324,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: consumer
          * 
-         * @return the name of the header {@code
-         * kafka.LAST_RECORD_BEFORE_COMMIT}.
+         * @return the name of the header {@code KafkaLastRecordBeforeCommit}.
          */
         public String kafkaLastRecordBeforeCommit() {
-            return "kafka.LAST_RECORD_BEFORE_COMMIT";
+            return "CamelKafkaLastRecordBeforeCommit";
         }
         /**
          * Indicates the last record within the current poll request (only
@@ -5841,10 +6338,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: consumer
          * 
-         * @return the name of the header {@code kafka.LAST_POLL_RECORD}.
+         * @return the name of the header {@code KafkaLastPollRecord}.
          */
         public String kafkaLastPollRecord() {
-            return "kafka.LAST_POLL_RECORD";
+            return "CamelKafkaLastPollRecord";
         }
         /**
          * The timestamp of the message.
@@ -5853,10 +6350,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: consumer
          * 
-         * @return the name of the header {@code kafka.TIMESTAMP}.
+         * @return the name of the header {@code KafkaTimestamp}.
          */
         public String kafkaTimestamp() {
-            return "kafka.TIMESTAMP";
+            return "CamelKafkaTimestamp";
         }
         /**
          * The ProducerRecord also has an associated timestamp. If the user did
@@ -5867,10 +6364,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: producer
          * 
-         * @return the name of the header {@code kafka.OVERRIDE_TIMESTAMP}.
+         * @return the name of the header {@code KafkaOverrideTimestamp}.
          */
         public String kafkaOverrideTimestamp() {
-            return "kafka.OVERRIDE_TIMESTAMP";
+            return "CamelKafkaOverrideTimestamp";
         }
         /**
          * The metadata (only configured if recordMetadata endpoint parameter is
@@ -5880,10 +6377,10 @@ public interface KafkaEndpointBuilderFactory {
          * 
          * Group: producer
          * 
-         * @return the name of the header {@code kafka.RECORD_META}.
+         * @return the name of the header {@code KafkaRecordMeta}.
          */
         public String kafkaRecordMeta() {
-            return "kafka.RECORD_META";
+            return "CamelKafkaRecordMeta";
         }
         /**
          * Can be used for forcing manual offset commit when using Kafka

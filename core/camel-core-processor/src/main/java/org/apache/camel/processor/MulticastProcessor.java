@@ -52,6 +52,8 @@ import org.apache.camel.Route;
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.StreamCache;
 import org.apache.camel.Traceable;
+import org.apache.camel.processor.aggregate.ShareUnitOfWorkAggregationStrategy;
+import org.apache.camel.processor.aggregate.UseOriginalAggregationStrategy;
 import org.apache.camel.processor.errorhandler.ErrorHandlerSupport;
 import org.apache.camel.spi.AsyncProcessorAwaitManager;
 import org.apache.camel.spi.ErrorHandlerAware;
@@ -60,6 +62,7 @@ import org.apache.camel.spi.InternalProcessorFactory;
 import org.apache.camel.spi.ProcessorExchangeFactory;
 import org.apache.camel.spi.ReactiveExecutor;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.spi.UnitOfWork;
 import org.apache.camel.support.AsyncProcessorConverterHelper;
 import org.apache.camel.support.AsyncProcessorSupport;
@@ -87,7 +90,7 @@ import static org.apache.camel.util.ObjectHelper.notNull;
  * of the message exchange.
  */
 public class MulticastProcessor extends BaseProcessorSupport
-        implements Navigate<Processor>, Traceable, IdAware, RouteIdAware, ErrorHandlerAware {
+        implements Navigate<Processor>, Traceable, IdAware, RouteIdAware, StepIdAware, ErrorHandlerAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(MulticastProcessor.class);
 
@@ -170,6 +173,7 @@ public class MulticastProcessor extends BaseProcessorSupport
     private Processor errorHandler;
     private String id;
     private String routeId;
+    private String stepId;
     private final Collection<Processor> processors;
     private final AggregationStrategy aggregationStrategy;
     private final boolean parallelProcessing;
@@ -260,6 +264,16 @@ public class MulticastProcessor extends BaseProcessorSupport
     }
 
     @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
+    @Override
     public void setErrorHandler(Processor errorHandler) {
         this.errorHandler = errorHandler;
     }
@@ -308,6 +322,22 @@ public class MulticastProcessor extends BaseProcessorSupport
 
     @Override
     public boolean process(Exchange exchange, AsyncCallback callback) {
+        AggregationStrategy strategy = getAggregationStrategy();
+
+        // set original exchange if not already pre-configured
+        if (strategy instanceof UseOriginalAggregationStrategy original) {
+            // need to create a new private instance, as we can also have concurrency issue so we cannot store state
+            AggregationStrategy clone = original.newInstance(exchange);
+            if (isShareUnitOfWork()) {
+                clone = new ShareUnitOfWorkAggregationStrategy(clone);
+            }
+            setAggregationStrategyOnExchange(exchange, clone);
+        } else if (isShareUnitOfWork() && strategy != null
+        // wrap here (not in the reifier) so the UseOriginal instanceof check above sees the unwrapped strategy
+                && !(strategy instanceof ShareUnitOfWorkAggregationStrategy)) {
+            setAggregationStrategyOnExchange(exchange, new ShareUnitOfWorkAggregationStrategy(strategy));
+        }
+
         if (synchronous) {
             try {
                 // force synchronous processing using await manager
@@ -390,6 +420,11 @@ public class MulticastProcessor extends BaseProcessorSupport
             } catch (RejectedExecutionException e) {
                 if (runnable instanceof Rejectable rej) {
                     rej.reject();
+                } else {
+                    // a sub-exchange task (submitted via the completion service) is not rejectable,
+                    // so rethrow to let the multicast task fail the exchange instead of silently
+                    // dropping the sub-exchange (which would otherwise never complete)
+                    throw e;
                 }
             }
         } else if (transacted) {
@@ -461,51 +496,83 @@ public class MulticastProcessor extends BaseProcessorSupport
             Lock lock = this.lock;
             if (lock.tryLock()) {
                 try {
-                    Exchange exchange;
-                    while (!done.get() && (exchange = completion.poll()) != null) {
-                        doAggregate(result, exchange, original);
-                        if (nbAggregated.incrementAndGet() >= nbExchangeSent.get() && allSent.get()) {
-                            doDone(result.get(), true);
-                        }
-                    }
-                } catch (Exception e) {
-                    original.setException(e);
-                    // and do the done work
-                    doDone(null, false);
+                    aggregateCompleted();
                 } finally {
                     lock.unlock();
                 }
             }
         }
 
-        protected void timeout() {
+        /**
+         * Aggregates the completed exchanges, and is done when all the exchanges are sent and aggregated. Must be
+         * called while holding the lock.
+         */
+        private void aggregateCompleted() {
+            try {
+                Exchange exchange;
+                while (!done.get() && (exchange = completion.poll()) != null) {
+                    doAggregate(result, exchange, original);
+                    if (nbAggregated.incrementAndGet() >= nbExchangeSent.get() && allSent.get()) {
+                        doDone(result.get(), true);
+                    }
+                }
+            } catch (Exception e) {
+                doFailed(e);
+            }
+        }
+
+        /**
+         * There are no more pairs to send, even though the last pair sent was not known to be the last one (some
+         * iterators return true from hasNext() and then null from next()). In parallel mode the exchanges sent may
+         * still be in progress, so mark all as sent, and only be done when they are all aggregated (the transacted task
+         * handles the same case since CAMEL-21114).
+         */
+        private void doDoneNoMorePairs() {
             Lock lock = this.lock;
-            if (lock.tryLock()) {
-                try {
-                    while (nbAggregated.get() < nbExchangeSent.get()) {
-                        Exchange exchange = completion.pollUnordered();
-                        int index = exchange != null ? getExchangeIndex(exchange) : nbExchangeSent.get();
-                        while (nbAggregated.get() < index) {
-                            int idx = nbAggregated.getAndIncrement();
-                            AggregationStrategy strategy = getAggregationStrategy(null);
-                            if (strategy != null) {
-                                strategy.timeout(result.get() != null ? result.get() : original,
-                                        idx, nbExchangeSent.get(), timeout);
-                            }
-                        }
-                        if (exchange != null) {
-                            doAggregate(result, exchange, original);
-                            nbAggregated.incrementAndGet();
+            lock.lock();
+            try {
+                allSent.set(true);
+                // aggregate() gives up when another thread holds the lock, so aggregate what is completed
+                aggregateCompleted();
+                if (nbAggregated.get() >= nbExchangeSent.get()) {
+                    doDone(result.get(), true);
+                }
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        protected void timeout() {
+            // use lock() instead of tryLock() because timeout is a one-shot scheduled task
+            // if tryLock fails (lock held by aggregate), the timeout would be silently lost
+            // and the exchange would hang forever (CAMEL-24142)
+            Lock lock = this.lock;
+            lock.lock();
+            try {
+                if (done.get()) {
+                    return;
+                }
+                while (nbAggregated.get() < nbExchangeSent.get()) {
+                    Exchange exchange = completion.pollUnordered();
+                    int index = exchange != null ? getExchangeIndex(exchange) : nbExchangeSent.get();
+                    while (nbAggregated.get() < index) {
+                        int idx = nbAggregated.getAndIncrement();
+                        AggregationStrategy strategy = getAggregationStrategy(null);
+                        if (strategy != null) {
+                            strategy.timeout(result.get() != null ? result.get() : original,
+                                    idx, nbExchangeSent.get(), timeout);
                         }
                     }
-                    doTimeoutDone(result.get(), true);
-                } catch (Exception e) {
-                    original.setException(e);
-                    // and do the done work
-                    doTimeoutDone(null, false);
-                } finally {
-                    lock.unlock();
+                    if (exchange != null) {
+                        doAggregate(result, exchange, original);
+                        nbAggregated.incrementAndGet();
+                    }
                 }
+                doTimeoutDone(result.get(), true);
+            } catch (Exception e) {
+                doTimeoutFailed(e);
+            } finally {
+                lock.unlock();
             }
         }
 
@@ -517,24 +584,58 @@ public class MulticastProcessor extends BaseProcessorSupport
 
         protected void doDone(Exchange exchange, boolean forceExhaust) {
             if (done.compareAndSet(false, true)) {
-                // cancel timeout if we are done normally (we cannot cancel if called via onTimeout)
-                if (timeoutTask != null) {
-                    try {
-                        timeoutTask.cancel(true);
-                    } catch (Exception e) {
-                        // ignore
-                        LOG.debug("Cancel timeout task caused an exception. This exception is ignored.", e);
-                    }
-                }
+                cancelTimeoutTask();
                 MulticastProcessor.this.doDone(original, exchange, pairs, callback, false, forceExhaust);
+            }
+        }
+
+        /**
+         * Fails the original exchange with the given exception and does the done work, unless this task is already
+         * done. The exception is only set by the thread that completes the task, so an exchange that has already been
+         * completed (for example by the timeout), and handed back to the caller, is not changed afterwards.
+         */
+        protected void doFailed(Exception e) {
+            if (done.compareAndSet(false, true)) {
+                cancelTimeoutTask();
+                original.setException(e);
+                MulticastProcessor.this.doDone(original, null, pairs, callback, false, false);
+            } else {
+                logFailedAfterDone(e);
+            }
+        }
+
+        /**
+         * Same as {@link #doFailed(Exception)} but called from the timeout task, which must not cancel itself.
+         */
+        protected void doTimeoutFailed(Exception e) {
+            if (done.compareAndSet(false, true)) {
+                original.setException(e);
+                MulticastProcessor.this.doDone(original, null, pairs, callback, false, false);
+            } else {
+                logFailedAfterDone(e);
+            }
+        }
+
+        private void logFailedAfterDone(Exception e) {
+            LOG.debug("Exception occurred after the exchange was already completed, so it is not set on exchange: {}",
+                    original.getExchangeId(), e);
+        }
+
+        private void cancelTimeoutTask() {
+            // cancel timeout if we are done normally (we cannot cancel if called via onTimeout)
+            if (timeoutTask != null) {
+                try {
+                    timeoutTask.cancel(true);
+                } catch (Exception e) {
+                    // ignore
+                    LOG.debug("Cancel timeout task caused an exception. This exception is ignored.", e);
+                }
             }
         }
 
         @Override
         public void reject() {
-            original.setException(new RejectedExecutionException("Task rejected executing from ExecutorService"));
-            // and do the done work
-            doDone(null, false);
+            doFailed(new RejectedExecutionException("Task rejected executing from ExecutorService"));
         }
     }
 
@@ -560,7 +661,7 @@ public class MulticastProcessor extends BaseProcessorSupport
                 // Get next processor exchange pair to sent, skipping null ones
                 ProcessorExchangePair pair = getNextProcessorExchangePair();
                 if (pair == null) {
-                    doDone(result.get(), true);
+                    super.doDoneNoMorePairs();
                     return;
                 }
 
@@ -587,7 +688,7 @@ public class MulticastProcessor extends BaseProcessorSupport
                             msg = "Multicast processing failed for number " + index;
                         }
                         boolean continueProcessing = PipelineHelper.continueProcessing(exchange, msg, LOG);
-                        if (stopOnException && !continueProcessing) {
+                        if (!continueProcessing && !shouldContinueOnFailure(exchange, original, index)) {
                             if (exchange.getException() != null) {
                                 // wrap in exception to explain where it failed
                                 exchange.setException(new CamelExchangeException(
@@ -633,8 +734,7 @@ public class MulticastProcessor extends BaseProcessorSupport
                     schedule(this);
                 }
             } catch (Exception e) {
-                original.setException(e);
-                doDone(null, false);
+                doFailed(e);
             }
         }
 
@@ -667,8 +767,7 @@ public class MulticastProcessor extends BaseProcessorSupport
                 try {
                     next = doRun();
                 } catch (Exception e) {
-                    original.setException(e);
-                    doDone(null, false);
+                    doFailed(e);
                     return;
                 }
             }
@@ -723,7 +822,7 @@ public class MulticastProcessor extends BaseProcessorSupport
                 msg = "Multicast processing failed for number " + index;
             }
             boolean continueProcessing = PipelineHelper.continueProcessing(exchange, msg, LOG);
-            if (stopOnException && !continueProcessing) {
+            if (!continueProcessing && !shouldContinueOnFailure(exchange, original, index)) {
                 if (exchange.getException() != null) {
                     // wrap in exception to explain where it failed
                     exchange.setException(new CamelExchangeException(
@@ -757,6 +856,22 @@ public class MulticastProcessor extends BaseProcessorSupport
             LOG.trace("Run next: {}", next);
             return next;
         }
+    }
+
+    /**
+     * Determines whether processing should continue after a sub-exchange has failed.
+     * <p>
+     * The default implementation returns {@code false} when {@code stopOnException} is enabled (meaning processing
+     * should stop). Subclasses (e.g., Splitter) can override this to implement more sophisticated failure policies such
+     * as error threshold checking.
+     *
+     * @param  subExchange the failed sub-exchange
+     * @param  original    the original exchange
+     * @param  index       the index of the failed sub-exchange
+     * @return             {@code true} to continue processing despite the failure, {@code false} to stop
+     */
+    protected boolean shouldContinueOnFailure(Exchange subExchange, Exchange original, int index) {
+        return !stopOnException;
     }
 
     protected ScheduledFuture<?> schedule(Executor executor, Runnable runnable, long delay, TimeUnit unit) {
@@ -866,8 +981,10 @@ public class MulticastProcessor extends BaseProcessorSupport
             }
         }
 
-        if (processorExchangeFactory != null && pairs != null) {
+        if (processorExchangeFactory != null && pairs instanceof Collection) {
             // the exchanges on the pairs was created with a factory, so they should be released
+            // (only when the pairs are a collection, as iterating a streaming iterable would read, prepare and create
+            // exchanges for all the remaining parts, such as after stopOnException or a timeout)
             try {
                 for (ProcessorExchangePair pair : pairs) {
                     processorExchangeFactory.release(pair.getExchange());
@@ -978,6 +1095,10 @@ public class MulticastProcessor extends BaseProcessorSupport
             // copy exchange, and do not share the unit of work
             Exchange copy = processorExchangeFactory.createCorrelatedCopy(exchange, false);
             copy.getExchangeExtension().setTransacted(exchange.isTransacted());
+            if (isParallelProcessing()) {
+                // do not share JPA EntityManager in parallel mode as it is not thread-safe (CAMEL-22534)
+                copy.removeProperty(Exchange.JPA_ENTITY_MANAGER);
+            }
             // If we are in a transaction, set TRANSACTION_CONTEXT_DATA property for new exchanges to share txData
             // during the transaction.
             if (exchange.isTransacted() && copy.getProperty(Exchange.TRANSACTION_CONTEXT_DATA) == null) {

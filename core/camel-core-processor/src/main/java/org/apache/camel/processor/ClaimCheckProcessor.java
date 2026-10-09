@@ -26,6 +26,7 @@ import org.apache.camel.Expression;
 import org.apache.camel.spi.ClaimCheckRepository;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.LanguageSupport;
 import org.apache.camel.support.service.ServiceHelper;
@@ -41,13 +42,14 @@ import org.slf4j.LoggerFactory;
  * against concurrent and thread-safe issues. For off-memory persistent storage of data, then use any of the many Camel
  * components that support persistent storage, and do not use this Claim Check EIP implementation.
  */
-public class ClaimCheckProcessor extends BaseProcessorSupport implements IdAware, RouteIdAware, CamelContextAware {
+public class ClaimCheckProcessor extends BaseProcessorSupport implements IdAware, RouteIdAware, StepIdAware, CamelContextAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(ClaimCheckProcessor.class);
 
     private CamelContext camelContext;
     private String id;
     private String routeId;
+    private String stepId;
     private String operation;
     private AggregationStrategy aggregationStrategy;
     private String key;
@@ -82,6 +84,16 @@ public class ClaimCheckProcessor extends BaseProcessorSupport implements IdAware
     @Override
     public void setRouteId(String routeId) {
         this.routeId = routeId;
+    }
+
+    @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
     }
 
     public String getOperation() {
@@ -155,8 +167,7 @@ public class ClaimCheckProcessor extends BaseProcessorSupport implements IdAware
     }
 
     private static void operationPushHandler(Exchange exchange, String claimKey, ClaimCheckRepository repo) {
-        // copy exchange, and do not share the unit of work
-        Exchange copy = ExchangeHelper.createCorrelatedCopy(exchange, false);
+        Exchange copy = createClaimCheckCopy(exchange);
         LOG.debug("Push: {} -> {}", claimKey, copy);
         repo.push(copy);
     }
@@ -186,14 +197,27 @@ public class ClaimCheckProcessor extends BaseProcessorSupport implements IdAware
     }
 
     private static void operationSetHandler(Exchange exchange, String claimKey, ClaimCheckRepository repo) {
-
-        // copy exchange, and do not share the unit of work
-        Exchange copy = ExchangeHelper.createCorrelatedCopy(exchange, false);
+        Exchange copy = createClaimCheckCopy(exchange);
         boolean addedNew = repo.add(claimKey, copy);
         if (addedNew) {
             LOG.debug("Add: {} -> {}", claimKey, copy);
         } else {
             LOG.debug("Override: {} -> {}", claimKey, copy);
+        }
+    }
+
+    private static Exchange createClaimCheckCopy(Exchange exchange) {
+        // the stored copy must not carry the repository: it does not need it, and it must not replace the repository of
+        // the exchange when an aggregation strategy returns the stored copy as the result. So detach the repository
+        // while copying, instead of copying it (which would copy all its claim checks on every Set or Push)
+        Object repo = exchange.removeProperty(ExchangePropertyKey.CLAIM_CHECK_REPOSITORY);
+        try {
+            // copy exchange, and do not share the unit of work
+            return ExchangeHelper.createCorrelatedCopy(exchange, false);
+        } finally {
+            if (repo != null) {
+                exchange.setProperty(ExchangePropertyKey.CLAIM_CHECK_REPOSITORY, repo);
+            }
         }
     }
 

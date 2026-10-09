@@ -74,6 +74,9 @@ public class BlobProducer extends DefaultProducer {
             case listBlobs:
                 setResponse(exchange, getContainerOperations(exchange).listBlobs(exchange));
                 break;
+            case listBlobVersions:
+                setResponse(exchange, getContainerOperations(exchange).listBlobVersions(exchange));
+                break;
             // blob operations
             case getBlob:
                 setResponse(exchange, getBlobOperations(exchange).getBlob(exchange));
@@ -140,6 +143,18 @@ public class BlobProducer extends DefaultProducer {
                 break;
             case getBlobTags:
                 setResponse(exchange, getBlobOperations(exchange).getBlobTags(exchange));
+                break;
+            case setBlobLegalHold:
+                setResponse(exchange, getBlobOperations(exchange).setBlobLegalHold(exchange));
+                break;
+            case setBlobImmutabilityPolicy:
+                setResponse(exchange, getBlobOperations(exchange).setBlobImmutabilityPolicy(exchange));
+                break;
+            case undeleteBlob:
+                setResponse(exchange, getBlobOperations(exchange).undeleteBlob(exchange));
+                break;
+            case setBlobTier:
+                setResponse(exchange, getBlobOperations(exchange).setBlobTier(exchange));
                 break;
             default:
                 throw new IllegalArgumentException("Unsupported operation");

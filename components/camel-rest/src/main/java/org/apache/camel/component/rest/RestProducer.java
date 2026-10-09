@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.StringJoiner;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.camel.AsyncCallback;
 import org.apache.camel.AsyncProcessor;
@@ -43,6 +44,8 @@ import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.util.FileUtil;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.URISupport;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.apache.camel.util.ObjectHelper.isEmpty;
 import static org.apache.camel.util.ObjectHelper.isNotEmpty;
@@ -51,6 +54,17 @@ import static org.apache.camel.util.ObjectHelper.isNotEmpty;
  * Rest producer for calling remote REST services.
  */
 public class RestProducer extends DefaultAsyncProducer {
+
+    private static final Logger LOG = LoggerFactory.getLogger(RestProducer.class);
+
+    /**
+     * When each path parameter was last warned about: a misconfigured route says it once a minute, not per message, and
+     * not only once, as a storm of failures that follows would push a single warning out of sight (CAMEL-25373).
+     */
+    private final Map<String, Long> warnedParameters = new ConcurrentHashMap<>();
+
+    /** How often the warning about one path parameter is repeated while it stays unresolved; visible for tests. */
+    long warnIntervalMillis = 60_000;
 
     private final CamelContext camelContext;
     private final RestConfiguration configuration;
@@ -167,6 +181,22 @@ public class RestProducer extends DefaultAsyncProducer {
                     }
                 }
                 resolvedUriTemplate = uriTemplateBuilder.toString();
+
+                // the request is sent with the placeholder still in the path, and the service answers 404 for a
+                // path that holds a {name}, so say which parameter had no value (CAMEL-24986)
+                String unresolved = firstPlaceholder(resolvedUriTemplate);
+                if (unresolved != null && shouldWarn(unresolved)) {
+                    // a value kept as an exchange property is the usual mistake: the path is filled from headers and
+                    // variables only
+                    String property = exchange.getProperty(unresolved) != null
+                            ? " There is an exchange property " + unresolved + ", but a path parameter is read from a"
+                              + " header or a variable, not from a property: use setHeader."
+                            : "";
+                    LOG.warn("The path parameter {{}} of {} has no value: set the header {}, or an exchange variable"
+                             + " of that name, before the call.{} The request is sent with {{}} in the path, which the"
+                             + " service is unlikely to answer. This is logged at most once a minute per parameter.",
+                            unresolved, resolvedUriTemplate, unresolved, property, unresolved);
+                }
             }
         }
 
@@ -219,6 +249,40 @@ public class RestProducer extends DefaultAsyncProducer {
         if (isEmpty(exchange.getMessage().getHeader(RestConstants.ACCEPT)) && isNotEmpty(consumes)) {
             exchange.getMessage().setHeader(RestConstants.ACCEPT, consumes);
         }
+    }
+
+    /** Whether to warn about the parameter now: the first time, and again once the interval has passed. */
+    private boolean shouldWarn(String parameter) {
+        long now = System.currentTimeMillis();
+        Long last = warnedParameters.get(parameter);
+        if (last != null && now - last < warnIntervalMillis) {
+            return false;
+        }
+        // two threads may both pass the check above; only the one that updates the entry warns
+        return last == null
+                ? warnedParameters.putIfAbsent(parameter, now) == null
+                : warnedParameters.replace(parameter, last, now);
+    }
+
+    /**
+     * The name of the first {@code {name}} left in the template, or null when every one of them was resolved. Only a
+     * name counts, so a uri that holds braces for another reason is left alone (CAMEL-24986).
+     */
+    private static String firstPlaceholder(String uriTemplate) {
+        int start = uriTemplate.indexOf('{');
+        while (start >= 0) {
+            int end = uriTemplate.indexOf('}', start);
+            if (end < 0) {
+                return null;
+            }
+            String name = uriTemplate.substring(start + 1, end);
+            if (!name.isEmpty() && name.chars().allMatch(
+                    c -> Character.isLetterOrDigit(c) || c == '_' || c == '-' || c == '.')) {
+                return name;
+            }
+            start = uriTemplate.indexOf('{', end);
+        }
+        return null;
     }
 
     /**

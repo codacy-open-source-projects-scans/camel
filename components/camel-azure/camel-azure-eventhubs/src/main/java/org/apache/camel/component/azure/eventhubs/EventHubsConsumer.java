@@ -16,10 +16,13 @@
  */
 package org.apache.camel.component.azure.eventhubs;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 import com.azure.messaging.eventhubs.EventProcessorClient;
 import com.azure.messaging.eventhubs.models.ErrorContext;
@@ -28,7 +31,9 @@ import org.apache.camel.AsyncCallback;
 import org.apache.camel.Exchange;
 import org.apache.camel.Message;
 import org.apache.camel.Processor;
+import org.apache.camel.ShutdownRunningTask;
 import org.apache.camel.component.azure.eventhubs.client.EventHubsClientFactory;
+import org.apache.camel.spi.ShutdownAware;
 import org.apache.camel.spi.Synchronization;
 import org.apache.camel.support.DefaultConsumer;
 import org.slf4j.Logger;
@@ -37,22 +42,22 @@ import org.slf4j.LoggerFactory;
 import static org.apache.camel.component.azure.eventhubs.EventHubsConstants.COMPLETED_BY_SIZE;
 import static org.apache.camel.component.azure.eventhubs.EventHubsConstants.COMPLETED_BY_TIMEOUT;
 
-public class EventHubsConsumer extends DefaultConsumer {
+public class EventHubsConsumer extends DefaultConsumer implements ShutdownAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(EventHubsConsumer.class);
 
     // we use the EventProcessorClient as recommended by Azure docs to consume from all partitions
     private EventProcessorClient processorClient;
 
-    private final AtomicInteger processedEvents;
+    private final ReentrantLock lock = new ReentrantLock();
+    private final AtomicInteger pendingExchanges = new AtomicInteger();
+    private final Map<String, AtomicInteger> processedEventsByPartition = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledFuture<?>> scheduledTasksByPartition = new ConcurrentHashMap<>();
+    private final Map<String, EventHubsCheckpointUpdaterTask> checkpointTasksByPartition = new ConcurrentHashMap<>();
     private ScheduledExecutorService scheduledExecutorService;
-    private ScheduledFuture<?> lastScheduledTask;
-    private EventHubsCheckpointUpdaterTask lastTask;
 
     public EventHubsConsumer(final EventHubsEndpoint endpoint, final Processor processor) {
         super(endpoint, processor);
-
-        this.processedEvents = new AtomicInteger();
     }
 
     @Override
@@ -74,19 +79,48 @@ public class EventHubsConsumer extends DefaultConsumer {
     @Override
     protected void doStop() throws Exception {
         if (processorClient != null) {
-            // shutdown the client
+            // stop accepting new messages but keep the connection open
+            // so that in-flight exchanges can still complete
             processorClient.stop();
-            processorClient = null;
         }
 
-        // shutdown scheduled executor
+        processedEventsByPartition.clear();
+        scheduledTasksByPartition.clear();
+        checkpointTasksByPartition.clear();
+
+        // shutdown camel consumer
+        super.doStop();
+    }
+
+    @Override
+    protected void doShutdown() throws Exception {
+        processorClient = null;
+
+        // shutdown scheduled executor after all in-flight exchanges have completed
         if (scheduledExecutorService != null) {
             getEndpoint().getCamelContext().getExecutorServiceManager().shutdownGraceful(scheduledExecutorService);
             scheduledExecutorService = null;
         }
 
-        // shutdown camel consumer
-        super.doStop();
+        super.doShutdown();
+    }
+
+    @Override
+    public boolean deferShutdown(ShutdownRunningTask shutdownRunningTask) {
+        if (processorClient != null) {
+            processorClient.stop();
+        }
+        return true;
+    }
+
+    @Override
+    public int getPendingExchangesSize() {
+        return pendingExchanges.get();
+    }
+
+    @Override
+    public void prepareShutdown(boolean suspendOnly, boolean forced) {
+        // noop
     }
 
     public EventHubsConfiguration getConfiguration() {
@@ -98,15 +132,22 @@ public class EventHubsConsumer extends DefaultConsumer {
         return (EventHubsEndpoint) super.getEndpoint();
     }
 
-    private Exchange createAzureEventHubExchange(final EventContext eventContext) {
+    Exchange createAzureEventHubExchange(final EventContext eventContext) {
         final Exchange exchange = createExchange(true);
         final Message message = exchange.getIn();
 
         // set body as byte[] and let camel typeConverters do the job to convert
         message.setBody(eventContext.getEventData().getBody());
-        // set headers
-        message.setHeader(EventHubsConstants.PARTITION_ID, eventContext.getPartitionContext().getPartitionId());
-        message.setHeader(EventHubsConstants.PARTITION_KEY, eventContext.getEventData().getPartitionKey());
+        // set headers, and record the partition of the received event so an azure-eventhubs producer later in the
+        // route does not take these headers as a partition chosen by the route
+        final String partitionId = eventContext.getPartitionContext().getPartitionId();
+        final String partitionKey = eventContext.getEventData().getPartitionKey();
+        message.setHeader(EventHubsConstants.PARTITION_ID, partitionId);
+        exchange.setProperty(EventHubsConstants.RECEIVED_PARTITION_ID, partitionId);
+        if (partitionKey != null) {
+            message.setHeader(EventHubsConstants.PARTITION_KEY, partitionKey);
+            exchange.setProperty(EventHubsConstants.RECEIVED_PARTITION_KEY, partitionKey);
+        }
         message.setHeader(EventHubsConstants.OFFSET, eventContext.getEventData().getOffset());
         message.setHeader(EventHubsConstants.ENQUEUED_TIME, eventContext.getEventData().getEnqueuedTime());
         message.setHeader(EventHubsConstants.SEQUENCE_NUMBER, eventContext.getEventData().getSequenceNumber());
@@ -124,7 +165,9 @@ public class EventHubsConsumer extends DefaultConsumer {
         final Message message = exchange.getIn();
 
         // set headers
-        message.setHeader(EventHubsConstants.PARTITION_ID, errorContext.getPartitionContext().getPartitionId());
+        final String partitionId = errorContext.getPartitionContext().getPartitionId();
+        message.setHeader(EventHubsConstants.PARTITION_ID, partitionId);
+        exchange.setProperty(EventHubsConstants.RECEIVED_PARTITION_ID, partitionId);
 
         // set exception
         exchange.setException(errorContext.getThrowable());
@@ -133,20 +176,30 @@ public class EventHubsConsumer extends DefaultConsumer {
     }
 
     private void onEventListener(final EventContext eventContext) {
+        pendingExchanges.incrementAndGet();
+
         final Exchange exchange = createAzureEventHubExchange(eventContext);
 
         // add exchange callback
         exchange.getExchangeExtension().addOnCompletion(new Synchronization() {
             @Override
             public void onComplete(Exchange exchange) {
-                // we update the consumer offsets
-                processCommit(exchange, eventContext);
+                try {
+                    // we update the consumer offsets
+                    processCommit(exchange, eventContext);
+                } finally {
+                    pendingExchanges.decrementAndGet();
+                }
             }
 
             @Override
             public void onFailure(Exchange exchange) {
-                // we do nothing here
-                processRollback(exchange);
+                try {
+                    // we do nothing here
+                    processRollback(exchange);
+                } finally {
+                    pendingExchanges.decrementAndGet();
+                }
             }
         });
         // use default consumer callback
@@ -170,43 +223,57 @@ public class EventHubsConsumer extends DefaultConsumer {
      * @param exchange the exchange
      */
     private void processCommit(final Exchange exchange, final EventContext eventContext) {
-        if (lastTask == null || lastTask.isExpired()) {
-            lastTask = new EventHubsCheckpointUpdaterTask(eventContext, processedEvents);
-            // delegate the checkpoint update to a dedicated Thread
-            long timeout = getConfiguration().getCheckpointBatchTimeout();
-            lastTask.setScheduledTime(System.currentTimeMillis() + timeout);
-            lastScheduledTask = scheduledExecutorService.schedule(lastTask, timeout, TimeUnit.MILLISECONDS);
-        } else {
-            // updates the eventContext to use for the offset to be the most accurate
-            lastTask.setEventContext(eventContext);
-        }
-
+        lock.lock();
         try {
-            var cnt = processedEvents.incrementAndGet();
-            if (cnt == getConfiguration().getCheckpointBatchSize()) {
-                processedEvents.set(0);
-                exchange.getIn().setHeader(EventHubsConstants.CHECKPOINT_UPDATED_BY, COMPLETED_BY_SIZE);
-                LOG.debug("eventhub consumer batch size of reached");
-                if (lastScheduledTask != null) {
-                    lastScheduledTask.cancel(false);
-                }
-                eventContext.updateCheckpointAsync()
-                        .subscribe(unused -> LOG.debug("Processed one event..."),
-                                error -> LOG.debug("Error when updating Checkpoint: {}", error.getMessage()),
-                                () -> {
-                                    LOG.debug("Checkpoint updated.");
-                                });
-            } else if (lastTask != null && lastTask.isExpired()) {
-                exchange.getIn().setHeader(EventHubsConstants.CHECKPOINT_UPDATED_BY, COMPLETED_BY_TIMEOUT);
-                LOG.debug("eventhub consumer batch timeout reached");
+            final String partitionId = eventContext.getPartitionContext().getPartitionId();
+            final AtomicInteger processedEvents = processedEventsByPartition.computeIfAbsent(partitionId,
+                    ignored -> new AtomicInteger());
+            EventHubsCheckpointUpdaterTask checkpointTask = checkpointTasksByPartition.get(partitionId);
+            ScheduledFuture<?> scheduledTask = scheduledTasksByPartition.get(partitionId);
+
+            if (checkpointTask == null || checkpointTask.isExpired()) {
+                checkpointTask = new EventHubsCheckpointUpdaterTask(eventContext, processedEvents);
+                // delegate the checkpoint update to a dedicated Thread
+                long timeout = getConfiguration().getCheckpointBatchTimeout();
+                checkpointTask.setScheduledTime(System.currentTimeMillis() + timeout);
+                scheduledTask = scheduledExecutorService.schedule(checkpointTask, timeout, TimeUnit.MILLISECONDS);
+                checkpointTasksByPartition.put(partitionId, checkpointTask);
+                scheduledTasksByPartition.put(partitionId, scheduledTask);
             } else {
-                LOG.debug("neither eventhub consumer batch size of {}/{} nor batch timeout reached yet", cnt,
-                        getConfiguration().getCheckpointBatchSize());
+                // updates the eventContext to use for the offset to be the most accurate
+                checkpointTask.setEventContext(eventContext);
             }
-            // we assume that the scheduled task has done the update by its side
-        } catch (Exception ex) {
-            getExceptionHandler().handleException("Error occurred during updating the checkpoint. This exception is ignored.",
-                    exchange, ex);
+
+            try {
+                var cnt = processedEvents.incrementAndGet();
+                if (cnt == getConfiguration().getCheckpointBatchSize()) {
+                    processedEvents.set(0);
+                    exchange.getIn().setHeader(EventHubsConstants.CHECKPOINT_UPDATED_BY, COMPLETED_BY_SIZE);
+                    LOG.debug("eventhub consumer batch size of reached for partition {}", partitionId);
+                    if (scheduledTask != null) {
+                        scheduledTask.cancel(false);
+                    }
+                    eventContext.updateCheckpointAsync()
+                            .subscribe(unused -> LOG.debug("Processed one event..."),
+                                    error -> LOG.warn("Error when updating Checkpoint: {}", error.getMessage(), error),
+                                    () -> {
+                                        LOG.debug("Checkpoint updated.");
+                                    });
+                } else if (checkpointTask.isExpired()) {
+                    exchange.getIn().setHeader(EventHubsConstants.CHECKPOINT_UPDATED_BY, COMPLETED_BY_TIMEOUT);
+                    LOG.debug("eventhub consumer batch timeout reached for partition {}", partitionId);
+                } else {
+                    LOG.debug("neither eventhub consumer batch size of {}/{} nor batch timeout reached yet for partition {}",
+                            cnt, getConfiguration().getCheckpointBatchSize(), partitionId);
+                }
+                // we assume that the scheduled task has done the update by its side
+            } catch (Exception ex) {
+                getExceptionHandler().handleException(
+                        "Error occurred during updating the checkpoint. This exception is ignored.",
+                        exchange, ex);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 

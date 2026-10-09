@@ -20,6 +20,7 @@ import java.net.URI;
 import java.util.Map;
 
 import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.Logger;
 import org.apache.camel.CamelContext;
 import org.apache.camel.component.file.GenericFileEndpoint;
 import org.apache.camel.component.file.remote.RemoteFileComponent;
@@ -74,8 +75,10 @@ public class ScpComponent extends RemoteFileComponent<ScpFile> {
     }
 
     protected void initJsch() {
-        JSch.setConfig("StrictHostKeyChecking", "yes");
-        JSch.setLogger(new com.jcraft.jsch.Logger() {
+        // StrictHostKeyChecking is applied per session from ScpConfiguration in ScpOperations.createSession();
+        // a global JSch.setConfig("StrictHostKeyChecking", ...) here would always be overridden by that per-session
+        // value, so it is intentionally not set to avoid a misleading (and contradictory) global default.
+        JSch.setLogger(new Logger() {
             @Override
             public boolean isEnabled(int level) {
                 return level == FATAL || level == ERROR ? ScpComponent.this.log.isErrorEnabled()

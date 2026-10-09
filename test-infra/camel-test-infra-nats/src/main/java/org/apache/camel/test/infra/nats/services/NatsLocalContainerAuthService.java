@@ -20,6 +20,8 @@ import org.apache.camel.test.infra.nats.common.NatsProperties;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
+// Credentials are intentional test-only fixtures for testcontainer services — no security risk
+@SuppressWarnings("java:S2068")
 public class NatsLocalContainerAuthService extends NatsLocalContainerService implements NatsService {
     private static final String USERNAME = "admin";
     private static final String PASSWORD = "password";
@@ -29,6 +31,7 @@ public class NatsLocalContainerAuthService extends NatsLocalContainerService imp
 
         container
                 .waitingFor(Wait.forLogMessage(".*Server.*is.*ready.*", 1))
+                .waitingFor(Wait.forListeningPort())
                 .withCommand("--jetstream", "-DV", "--user", USERNAME, "--pass", PASSWORD);
 
         return container;

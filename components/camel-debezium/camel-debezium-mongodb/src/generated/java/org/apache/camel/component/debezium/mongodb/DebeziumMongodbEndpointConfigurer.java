@@ -76,6 +76,8 @@ public class DebeziumMongodbEndpointConfigurer extends PropertyConfigurerSupport
         case "internalKeyConverter": target.getConfiguration().setInternalKeyConverter(property(camelContext, java.lang.String.class, value)); return true;
         case "internalvalueconverter":
         case "internalValueConverter": target.getConfiguration().setInternalValueConverter(property(camelContext, java.lang.String.class, value)); return true;
+        case "legacysnapshotmaxthreads":
+        case "legacySnapshotMaxThreads": target.getConfiguration().setLegacySnapshotMaxThreads(property(camelContext, boolean.class, value)); return true;
         case "maxbatchsize":
         case "maxBatchSize": target.getConfiguration().setMaxBatchSize(property(camelContext, int.class, value)); return true;
         case "maxqueuesize":
@@ -188,6 +190,8 @@ public class DebeziumMongodbEndpointConfigurer extends PropertyConfigurerSupport
         case "snapshotModeCustomName": target.getConfiguration().setSnapshotModeCustomName(property(camelContext, java.lang.String.class, value)); return true;
         case "sourceinfostructmaker":
         case "sourceinfoStructMaker": target.getConfiguration().setSourceinfoStructMaker(property(camelContext, java.lang.String.class, value)); return true;
+        case "statisticsmetricsenabled":
+        case "statisticsMetricsEnabled": target.getConfiguration().setStatisticsMetricsEnabled(property(camelContext, boolean.class, value)); return true;
         case "streamingdelayms":
         case "streamingDelayMs": target.getConfiguration().setStreamingDelayMs(property(camelContext, java.time.Duration.class, value).toMillis()); return true;
         case "tombstonesondelete":
@@ -258,6 +262,8 @@ public class DebeziumMongodbEndpointConfigurer extends PropertyConfigurerSupport
         case "internalKeyConverter": return java.lang.String.class;
         case "internalvalueconverter":
         case "internalValueConverter": return java.lang.String.class;
+        case "legacysnapshotmaxthreads":
+        case "legacySnapshotMaxThreads": return boolean.class;
         case "maxbatchsize":
         case "maxBatchSize": return int.class;
         case "maxqueuesize":
@@ -370,6 +376,8 @@ public class DebeziumMongodbEndpointConfigurer extends PropertyConfigurerSupport
         case "snapshotModeCustomName": return java.lang.String.class;
         case "sourceinfostructmaker":
         case "sourceinfoStructMaker": return java.lang.String.class;
+        case "statisticsmetricsenabled":
+        case "statisticsMetricsEnabled": return boolean.class;
         case "streamingdelayms":
         case "streamingDelayMs": return long.class;
         case "tombstonesondelete":
@@ -441,6 +449,8 @@ public class DebeziumMongodbEndpointConfigurer extends PropertyConfigurerSupport
         case "internalKeyConverter": return target.getConfiguration().getInternalKeyConverter();
         case "internalvalueconverter":
         case "internalValueConverter": return target.getConfiguration().getInternalValueConverter();
+        case "legacysnapshotmaxthreads":
+        case "legacySnapshotMaxThreads": return target.getConfiguration().isLegacySnapshotMaxThreads();
         case "maxbatchsize":
         case "maxBatchSize": return target.getConfiguration().getMaxBatchSize();
         case "maxqueuesize":
@@ -553,6 +563,8 @@ public class DebeziumMongodbEndpointConfigurer extends PropertyConfigurerSupport
         case "snapshotModeCustomName": return target.getConfiguration().getSnapshotModeCustomName();
         case "sourceinfostructmaker":
         case "sourceinfoStructMaker": return target.getConfiguration().getSourceinfoStructMaker();
+        case "statisticsmetricsenabled":
+        case "statisticsMetricsEnabled": return target.getConfiguration().isStatisticsMetricsEnabled();
         case "streamingdelayms":
         case "streamingDelayMs": return target.getConfiguration().getStreamingDelayMs();
         case "tombstonesondelete":

@@ -91,6 +91,8 @@ public class MailComponentConfigurer extends PropertyConfigurerSupport implement
         case "lazyStartProducer": target.setLazyStartProducer(property(camelContext, boolean.class, value)); return true;
         case "mapmailmessage":
         case "mapMailMessage": getOrCreateConfiguration(target).setMapMailMessage(property(camelContext, boolean.class, value)); return true;
+        case "maxmultipartdepth":
+        case "maxMultipartDepth": getOrCreateConfiguration(target).setMaxMultipartDepth(property(camelContext, int.class, value)); return true;
         case "mimedecodeheaders":
         case "mimeDecodeHeaders": getOrCreateConfiguration(target).setMimeDecodeHeaders(property(camelContext, boolean.class, value)); return true;
         case "moveto":
@@ -109,8 +111,18 @@ public class MailComponentConfigurer extends PropertyConfigurerSupport implement
         case "unseen": getOrCreateConfiguration(target).setUnseen(property(camelContext, boolean.class, value)); return true;
         case "useglobalsslcontextparameters":
         case "useGlobalSslContextParameters": target.setUseGlobalSslContextParameters(property(camelContext, boolean.class, value)); return true;
+        case "useheaderfrom":
+        case "useHeaderFrom": getOrCreateConfiguration(target).setUseHeaderFrom(property(camelContext, boolean.class, value)); return true;
+        case "useheaderrecipients":
+        case "useHeaderRecipients": getOrCreateConfiguration(target).setUseHeaderRecipients(property(camelContext, boolean.class, value)); return true;
+        case "useheaderreplyto":
+        case "useHeaderReplyTo": getOrCreateConfiguration(target).setUseHeaderReplyTo(property(camelContext, boolean.class, value)); return true;
+        case "useheadersubject":
+        case "useHeaderSubject": getOrCreateConfiguration(target).setUseHeaderSubject(property(camelContext, boolean.class, value)); return true;
         case "useinlineattachments":
         case "useInlineAttachments": getOrCreateConfiguration(target).setUseInlineAttachments(property(camelContext, boolean.class, value)); return true;
+        case "usejavamailsessionpropertiesfromheaders":
+        case "useJavaMailSessionPropertiesFromHeaders": getOrCreateConfiguration(target).setUseJavaMailSessionPropertiesFromHeaders(property(camelContext, boolean.class, value)); return true;
         case "username": getOrCreateConfiguration(target).setUsername(property(camelContext, java.lang.String.class, value)); return true;
         default: return false;
         }
@@ -180,6 +192,8 @@ public class MailComponentConfigurer extends PropertyConfigurerSupport implement
         case "lazyStartProducer": return boolean.class;
         case "mapmailmessage":
         case "mapMailMessage": return boolean.class;
+        case "maxmultipartdepth":
+        case "maxMultipartDepth": return int.class;
         case "mimedecodeheaders":
         case "mimeDecodeHeaders": return boolean.class;
         case "moveto":
@@ -198,8 +212,18 @@ public class MailComponentConfigurer extends PropertyConfigurerSupport implement
         case "unseen": return boolean.class;
         case "useglobalsslcontextparameters":
         case "useGlobalSslContextParameters": return boolean.class;
+        case "useheaderfrom":
+        case "useHeaderFrom": return boolean.class;
+        case "useheaderrecipients":
+        case "useHeaderRecipients": return boolean.class;
+        case "useheaderreplyto":
+        case "useHeaderReplyTo": return boolean.class;
+        case "useheadersubject":
+        case "useHeaderSubject": return boolean.class;
         case "useinlineattachments":
         case "useInlineAttachments": return boolean.class;
+        case "usejavamailsessionpropertiesfromheaders":
+        case "useJavaMailSessionPropertiesFromHeaders": return boolean.class;
         case "username": return java.lang.String.class;
         default: return null;
         }
@@ -270,6 +294,8 @@ public class MailComponentConfigurer extends PropertyConfigurerSupport implement
         case "lazyStartProducer": return target.isLazyStartProducer();
         case "mapmailmessage":
         case "mapMailMessage": return getOrCreateConfiguration(target).isMapMailMessage();
+        case "maxmultipartdepth":
+        case "maxMultipartDepth": return getOrCreateConfiguration(target).getMaxMultipartDepth();
         case "mimedecodeheaders":
         case "mimeDecodeHeaders": return getOrCreateConfiguration(target).isMimeDecodeHeaders();
         case "moveto":
@@ -288,8 +314,18 @@ public class MailComponentConfigurer extends PropertyConfigurerSupport implement
         case "unseen": return getOrCreateConfiguration(target).isUnseen();
         case "useglobalsslcontextparameters":
         case "useGlobalSslContextParameters": return target.isUseGlobalSslContextParameters();
+        case "useheaderfrom":
+        case "useHeaderFrom": return getOrCreateConfiguration(target).isUseHeaderFrom();
+        case "useheaderrecipients":
+        case "useHeaderRecipients": return getOrCreateConfiguration(target).isUseHeaderRecipients();
+        case "useheaderreplyto":
+        case "useHeaderReplyTo": return getOrCreateConfiguration(target).isUseHeaderReplyTo();
+        case "useheadersubject":
+        case "useHeaderSubject": return getOrCreateConfiguration(target).isUseHeaderSubject();
         case "useinlineattachments":
         case "useInlineAttachments": return getOrCreateConfiguration(target).isUseInlineAttachments();
+        case "usejavamailsessionpropertiesfromheaders":
+        case "useJavaMailSessionPropertiesFromHeaders": return getOrCreateConfiguration(target).isUseJavaMailSessionPropertiesFromHeaders();
         case "username": return getOrCreateConfiguration(target).getUsername();
         default: return null;
         }

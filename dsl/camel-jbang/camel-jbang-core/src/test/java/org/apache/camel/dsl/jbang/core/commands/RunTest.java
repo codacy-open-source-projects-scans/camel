@@ -17,11 +17,42 @@
 
 package org.apache.camel.dsl.jbang.core.commands;
 
+import org.apache.camel.dsl.jbang.core.common.RuntimeType;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
 
-class RunTest {
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class RunTest extends CamelCommandBaseTestSupport {
+
+    @Test
+    public void shouldDefaultToJBangRuntime() throws Exception {
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "route.yaml");
+
+        assertThat(command.runtime).isEqualTo(RuntimeType.jbang);
+    }
+
+    @Test
+    public void shouldParseRuntimeOption() throws Exception {
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--runtime=main", "route.yaml");
+        assertThat(command.runtime).isEqualTo(RuntimeType.main);
+
+        command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--runtime=camel-main", "route.yaml");
+        assertThat(command.runtime).isEqualTo(RuntimeType.main);
+
+        command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--runtime=jbang", "route.yaml");
+        assertThat(command.runtime).isEqualTo(RuntimeType.jbang);
+
+        command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--runtime=spring-boot", "route.yaml");
+        assertThat(command.runtime).isEqualTo(RuntimeType.springBoot);
+    }
 
     @Test
     public void shouldParseJavaVersionOption() throws Exception {
@@ -53,5 +84,168 @@ class RunTest {
         CommandLine.populateCommand(command, "--java-version=21", "route.yaml");
 
         Assertions.assertEquals("21", command.javaVersion);
+    }
+
+    @Test
+    public void shouldListExamples() throws Exception {
+        Run command = new Run(new CamelJBangMain().withPrinter(printer));
+        command.example = "";
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        String output = printer.getOutput();
+        Assertions.assertTrue(output.contains("Examples: "));
+        Assertions.assertTrue(output.contains("circuit-breaker"));
+        Assertions.assertTrue(output.contains("groovy"));
+        Assertions.assertTrue(output.contains("routes"));
+    }
+
+    @Test
+    public void shouldRejectUnknownExample() throws Exception {
+        Run command = new Run(new CamelJBangMain().withPrinter(printer));
+        command.example = "nonexistent";
+        int exit = command.doCall();
+
+        Assertions.assertEquals(1, exit);
+    }
+
+    @Test
+    public void shouldListOneGroupInFull() throws Exception {
+        Run command = new Run(new CamelJBangMain().withPrinter(printer));
+        command.example = "route";
+        int exit = command.doCall();
+
+        Assertions.assertEquals(0, exit);
+        String output = printer.getOutput();
+        Assertions.assertTrue(output.contains("Route:"));
+        Assertions.assertTrue(output.contains("aggregator"));
+        Assertions.assertTrue(output.contains("eips: "));
+        Assertions.assertFalse(output.contains("timer-log"), "only the group asked for is listed");
+    }
+
+    @Test
+    public void shouldSuggestSimilarExample() throws Exception {
+        Run command = new Run(new CamelJBangMain().withPrinter(printer));
+        command.example = "fail-well/circuit-brake";
+        int exit = command.doCall();
+
+        Assertions.assertEquals(1, exit);
+        String output = printer.getOutput();
+        Assertions.assertTrue(output.contains("Did you mean"));
+    }
+
+    @Test
+    public void shouldParseExampleOption() throws Exception {
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--example=circuit-breaker");
+
+        Assertions.assertEquals("circuit-breaker", command.example);
+    }
+
+    @Test
+    public void shouldParseExampleListOption() throws Exception {
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--example");
+
+        Assertions.assertNotNull(command.example);
+    }
+
+    @Test
+    void jfrDisabledByDefaultBuildsNoJvmArgs() throws Exception {
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "route.yaml");
+
+        assertThat(command.jfrEnabled()).isFalse();
+        assertThat(command.buildJfrJvmArgs()).isNull();
+    }
+
+    @Test
+    void jfrFlagBuildsStartFlightRecordingArg() throws Exception {
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--jfr", "route.yaml");
+
+        assertThat(command.jfrEnabled()).isTrue();
+        assertThat(command.buildJfrJvmArgs())
+                .isEqualTo("-XX:StartFlightRecording=filename=CamelJBang.jfr "
+                           + "-Dcamel.main.startupRecorderRuntimeEnabled=true");
+    }
+
+    @Test
+    void jfrProfileImpliesJfrAndIsAppendedAsSettings() throws Exception {
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--jfr-profile=profile", "route.yaml");
+
+        assertThat(command.jfrEnabled()).isTrue();
+        assertThat(command.buildJfrJvmArgs())
+                .isEqualTo("-XX:StartFlightRecording=filename=CamelJBang.jfr,settings=profile "
+                           + "-Dcamel.main.startupRecorderRuntimeEnabled=true");
+    }
+
+    @Test
+    void explicitStartFlightRecordingInJvmArgsKeepsRuntimeRecorderEnabled() throws Exception {
+        // the explicit recording wins, but --jfr must still enable Camel runtime events in forked projects
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--jfr",
+                "--jvm-args=-XX:StartFlightRecording=filename=mine.jfr", "route.yaml");
+
+        assertThat(command.jfrEnabled()).isTrue();
+        assertThat(command.buildJfrJvmArgs())
+                .isEqualTo("-Dcamel.main.startupRecorderRuntimeEnabled=true");
+    }
+
+    @Test
+    void unknownJfrProfileFailsFastWithTheSupportedProfiles() throws Exception {
+        // running without a recording after the user asked for one would look like JFR simply produced nothing
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--jfr-profile=does-not-exist", "route.yaml");
+
+        assertThatThrownBy(command::startJfrRecording)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("does-not-exist")
+                .hasMessageContaining("default");
+    }
+
+    @Test
+    void jfrRecordingIsNotStartedWhenJfrIsOff() throws Exception {
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "route.yaml");
+
+        assertThat(command.startJfrRecording()).isNull();
+    }
+
+    @Test
+    void jfrFileNameUsesAppName() throws Exception {
+        Run command = new Run(new CamelJBangMain());
+        CommandLine.populateCommand(command, "--jfr", "--name=my-app", "route.yaml");
+
+        assertThat(command.jfrFileName()).isEqualTo("my-app.jfr");
+    }
+
+    @Test
+    void jfrFileNameFallsBackToCamelWhenNameIsNull() {
+        Run command = new Run(new CamelJBangMain());
+        command.name = null;
+
+        assertThat(command.jfrFileName()).isEqualTo("camel.jfr");
+    }
+
+    @Test
+    void mergeJvmArgsReturnsExistingWhenExtraIsNull() {
+        assertThat(Run.mergeJvmArgs("-Xmx256m", null)).isEqualTo("-Xmx256m");
+        assertThat(Run.mergeJvmArgs(null, null)).isNull();
+    }
+
+    @Test
+    void mergeJvmArgsReturnsExtraWhenExistingIsBlank() {
+        assertThat(Run.mergeJvmArgs(null, "-XX:StartFlightRecording=filename=camel.jfr"))
+                .isEqualTo("-XX:StartFlightRecording=filename=camel.jfr");
+        assertThat(Run.mergeJvmArgs("  ", "-XX:StartFlightRecording=filename=camel.jfr"))
+                .isEqualTo("-XX:StartFlightRecording=filename=camel.jfr");
+    }
+
+    @Test
+    void mergeJvmArgsConcatenatesBothWithSpace() {
+        assertThat(Run.mergeJvmArgs("-Xmx256m", "-XX:StartFlightRecording=filename=camel.jfr"))
+                .isEqualTo("-Xmx256m -XX:StartFlightRecording=filename=camel.jfr");
     }
 }

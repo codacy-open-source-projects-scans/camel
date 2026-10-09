@@ -16,8 +16,18 @@
  */
 package org.apache.camel;
 
+import org.jspecify.annotations.Nullable;
+
 /**
- * Represents the history of a Camel {@link Message} how it was routed by the Camel routing engine.
+ * A breadcrumb record that captures the route id and processing node an {@link Exchange} visited at a given point in
+ * time, together with the elapsed processing time at that node.
+ * <p/>
+ * History entries are accumulated in the exchange property {@link Exchange#MESSAGE_HISTORY} when message history is
+ * enabled on the {@link CamelContext}. They are primarily used for debugging, tracing, and performance analysis, and
+ * are surfaced via the Camel debugger and management or monitoring APIs.
+ *
+ * @see Exchange
+ * @see NamedNode
  */
 public interface MessageHistory {
 
@@ -63,7 +73,29 @@ public interface MessageHistory {
     /**
      * A read-only copy of the message at the point of this history (if this has been enabled).
      */
+    @Nullable
     Message getMessage();
+
+    /**
+     * The class of the message body when this node was reached (the type the body arrived with, before the node
+     * processed it): the canonical class name, the string {@code "null"} when the body was null, or null when not
+     * captured. Cheap to capture: the class, no conversion, no copy.
+     *
+     * @since 4.23
+     */
+    default @Nullable String getBodyType() {
+        return null;
+    }
+
+    /**
+     * The size in bytes of the message body when this node was reached, computed by the
+     * {@link org.apache.camel.spi.MessageSizeStrategy} when it is enabled: -1 when not captured or unknown.
+     *
+     * @since 4.23
+     */
+    default long getBodySize() {
+        return -1;
+    }
 
     /**
      * Used specially during debugging where some EIP nodes are not accepted for debugging and are essentially skipped.

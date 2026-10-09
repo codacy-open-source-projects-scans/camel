@@ -20,11 +20,13 @@ import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SNIServerName;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLServerSocketFactory;
 
 import org.slf4j.Logger;
@@ -40,21 +42,26 @@ public class SSLContextClientParameters extends BaseSSLContextParameters {
     /**
      * SNI hostnames to be used for SSL (Server Name Indicator)
      */
-    private final List<SNIServerName> sniHostNames = new ArrayList<>();
+    private final List<String> sniHostNames = new ArrayList<>();
 
     public void addAllSniHostNames(List<String> sniHostNames) {
-        for (String sniHostName : sniHostNames) {
-            this.sniHostNames.add(new SNIHostName(sniHostName));
-        }
+        Objects.requireNonNull(sniHostNames, "sniHostNames");
+        this.sniHostNames.addAll(sniHostNames);
     }
 
     public void setSniHostName(String sniHostName) {
-        this.sniHostNames.add(new SNIHostName(sniHostName));
+        Objects.requireNonNull(sniHostName, "sniHostName");
+        this.sniHostNames.add(sniHostName);
     }
 
     @Override
     protected List<SNIServerName> getSNIHostNames() {
-        return sniHostNames;
+        // the host names may use property placeholders
+        List<SNIServerName> answer = new ArrayList<>(sniHostNames.size());
+        for (String name : sniHostNames) {
+            answer.add(new SNIHostName(parsePropertyValue(name)));
+        }
+        return answer;
     }
 
     @Override
@@ -74,15 +81,24 @@ public class SSLContextClientParameters extends BaseSSLContextParameters {
     }
 
     /**
-     * This implementation returns the empty list as the enabled cipher suites and protocols are not client and server
-     * side specific in an {@code SSLEngine}. Consequently, overriding them here would be a bit odd as the client side
-     * specific configuration shouldn't really override a shared client/server configuration option.
+     * This implementation only configures the SNI host names, as the enabled cipher suites and protocols are not client
+     * and server side specific in an {@code SSLEngine}. Consequently, overriding them here would be a bit odd as the
+     * client side specific configuration shouldn't really override a shared client/server configuration option.
      */
     @Override
     protected List<Configurer<SSLEngine>> getSSLEngineConfigurers(SSLContext context) {
-        // NOTE: if the super class gets additional shared configuration options beyond
-        // cipher suites and protocols, this method needs to address that.
-        return Collections.emptyList();
+        final List<SNIServerName> names = getSNIHostNames();
+        if (names.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // the server names are only used by an engine in client mode
+        Configurer<SSLEngine> sniConfigurer = engine -> {
+            SSLParameters params = engine.getSSLParameters();
+            params.setServerNames(names);
+            engine.setSSLParameters(params);
+            return engine;
+        };
+        return Collections.singletonList(sniConfigurer);
     }
 
     /**

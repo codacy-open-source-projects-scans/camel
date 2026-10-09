@@ -43,6 +43,7 @@ import io.swagger.v3.parser.core.models.SwaggerParseResult;
  * Since Camel 4.6, the recommended approach is contract-first: referencing the OpenAPI spec directly at runtime via
  * rest:openApi. These tools help validate, scaffold, and provide mock guidance for that workflow.
  */
+@McpSecured
 @ApplicationScoped
 public class OpenApiTools {
 
@@ -135,10 +136,12 @@ public class OpenApiTools {
     public ScaffoldResult camel_openapi_scaffold(
             @ToolArg(description = "OpenAPI 3.x specification content (JSON or YAML string)") String spec,
             @ToolArg(description = "Filename of the OpenAPI spec file as it will be referenced at runtime "
-                                   + "(default: 'openapi.json')") String specFilename,
+                                   + "(default: 'openapi.json')",
+                     required = false) String specFilename,
             @ToolArg(description = "Behavior when a route is missing for an operationId: "
                                    + "'fail' (default, throw error), 'ignore' (skip silently), "
-                                   + "or 'mock' (return mock responses)") String missingOperation) {
+                                   + "or 'mock' (return mock responses)",
+                     required = false) String missingOperation) {
 
         OpenAPI openAPI = parseSpec(spec);
 
@@ -176,18 +179,24 @@ public class OpenApiTools {
             if (stub.contentType() != null) {
                 yaml.append("        - setHeader:\n");
                 yaml.append("            name: Content-Type\n");
-                yaml.append("            constant: ").append(stub.contentType()).append("\n");
+                yaml.append("            expression:\n");
+                yaml.append("              constant:\n");
+                yaml.append("                expression: ").append(stub.contentType()).append("\n");
             }
 
             // Set response code if we know it
             if (stub.responseCode() != null) {
                 yaml.append("        - setHeader:\n");
                 yaml.append("            name: CamelHttpResponseCode\n");
-                yaml.append("            constant: ").append(stub.responseCode()).append("\n");
+                yaml.append("            expression:\n");
+                yaml.append("              constant:\n");
+                yaml.append("                expression: ").append(stub.responseCode()).append("\n");
             }
 
             yaml.append("        - setBody:\n");
-            yaml.append("            constant: \"TODO: implement ").append(stub.operationId()).append("\"\n");
+            yaml.append("            expression:\n");
+            yaml.append("              constant:\n");
+            yaml.append("                expression: \"TODO: implement ").append(stub.operationId()).append("\"\n");
         }
 
         return new ScaffoldResult(yaml.toString(), stubs.size(), filename, mode, apiTitle);
@@ -200,7 +209,8 @@ public class OpenApiTools {
     public MockGuidanceResult camel_openapi_mock_guidance(
             @ToolArg(description = "OpenAPI 3.x specification content (JSON or YAML string)") String spec,
             @ToolArg(description = "The missingOperation mode to get guidance for: "
-                                   + "'mock' (default), 'fail', or 'ignore'") String mode) {
+                                   + "'mock' (default), 'fail', or 'ignore'",
+                     required = false) String mode) {
 
         OpenAPI openAPI = parseSpec(spec);
 

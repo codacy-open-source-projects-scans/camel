@@ -280,6 +280,26 @@ public class DefaultNettyHttpBinding implements NettyHttpBinding, Cloneable {
 
     }
 
+    /**
+     * Converts a String body with the charset that the content type of the message declares, so the bytes match the
+     * Content-Type header. Returns <tt>null</tt> when the body is not a String or no supported charset is declared, and
+     * the body is then converted with the type converter (the charset of the exchange).
+     */
+    private static ByteBuf toByteBufWithContentTypeCharset(Message message, Object body) {
+        if (body instanceof String str) {
+            String charset = NettyHttpHelper.getCharsetFromContentType(MessageHelper.getContentType(message));
+            if (charset != null) {
+                try {
+                    return NettyConverter.toByteBuffer(str.getBytes(Charset.forName(charset)));
+                } catch (IllegalArgumentException e) {
+                    // unsupported or illegal charset name: keep the conversion with the exchange charset
+                    LOG.debug("Cannot use charset {} of the content type: {}", charset, e.getMessage());
+                }
+            }
+        }
+        return null;
+    }
+
     private static String stripPath(NettyHttpConfiguration configuration, URI uri) {
         String path = uri.getRawPath();
         if (configuration.getPath() != null) {
@@ -302,7 +322,7 @@ public class DefaultNettyHttpBinding implements NettyHttpBinding, Cloneable {
     protected void copyCamelHeaders(Map<String, Object> headers, Exchange exchange) {
         exchange.getIn().getHeaders().keySet()
                 .stream()
-                .filter(key -> key.startsWith("Camel"))
+                .filter(key -> StringHelper.startsWithIgnoreCase(key, "Camel"))
                 .forEach(key -> headers.put(key, exchange.getIn().getHeaders().get(key)));
 
     }
@@ -340,7 +360,7 @@ public class DefaultNettyHttpBinding implements NettyHttpBinding, Cloneable {
     protected String shouldUrlDecodeHeader(
             NettyHttpConfiguration configuration, String headerName, Object value, Charset charset) {
         // do not decode Content-Type
-        if (NettyHttpConstants.CONTENT_TYPE.equals(headerName)) {
+        if (NettyHttpConstants.CONTENT_TYPE.equalsIgnoreCase(headerName)) {
             return value.toString();
         } else if (configuration.isUrlDecodeHeaders()) {
             return URLDecoder.decode(value.toString(), charset);
@@ -493,8 +513,12 @@ public class DefaultNettyHttpBinding implements NettyHttpBinding, Cloneable {
             if (body instanceof ByteBuf byteBuf) {
                 buffer = byteBuf;
             } else {
-                // try to convert to buffer first
-                buffer = message.getBody(ByteBuf.class);
+                // a String body is written in the charset of the content type
+                buffer = toByteBufWithContentTypeCharset(message, body);
+                if (buffer == null) {
+                    // try to convert to buffer first
+                    buffer = message.getBody(ByteBuf.class);
+                }
                 if (buffer == null) {
                     // fallback to byte array as last resort
                     byte[] data = message.getBody(byte[].class);
@@ -652,8 +676,12 @@ public class DefaultNettyHttpBinding implements NettyHttpBinding, Cloneable {
                 if (body instanceof ByteBuf byteBuf) {
                     buffer = byteBuf;
                 } else {
-                    // try to convert to buffer first
-                    buffer = message.getBody(ByteBuf.class);
+                    // a String body is written in the charset of the content type
+                    buffer = toByteBufWithContentTypeCharset(message, body);
+                    if (buffer == null) {
+                        // try to convert to buffer first
+                        buffer = message.getBody(ByteBuf.class);
+                    }
                     if (buffer == null) {
                         // fallback to byte array as last resort
                         byte[] data = message.getMandatoryBody(byte[].class);

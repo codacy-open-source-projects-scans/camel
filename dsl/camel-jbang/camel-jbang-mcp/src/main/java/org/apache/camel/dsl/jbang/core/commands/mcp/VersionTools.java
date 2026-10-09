@@ -35,6 +35,7 @@ import org.apache.camel.util.json.Jsoner;
 /**
  * MCP Tools for querying available Camel versions using Quarkus MCP Server.
  */
+@McpSecured
 @ApplicationScoped
 public class VersionTools {
 
@@ -45,10 +46,10 @@ public class VersionTools {
           description = "List available Camel versions for a specific runtime (main, spring-boot, quarkus). " +
                         "Returns version information including release date, JDK requirements, and LTS status.")
     public VersionListResult camel_version_list(
-            @ToolArg(description = "Runtime type: main, spring-boot, or quarkus (default: main)") String runtime,
-            @ToolArg(description = "Only show LTS (Long Term Support) releases (default: false)") Boolean lts,
-            @ToolArg(description = "Minimum Camel version to include (e.g., 4.0)") String fromVersion,
-            @ToolArg(description = "Maximum number of versions to return (default: 10)") Integer limit) {
+            @ToolArg(description = ToolArgDocs.RUNTIME, required = false) String runtime,
+            @ToolArg(description = "Only show LTS (Long Term Support) releases (default: false)", required = false) Boolean lts,
+            @ToolArg(description = "Minimum Camel version to include (e.g., 4.0)", required = false) String fromVersion,
+            @ToolArg(description = "Maximum number of versions to return (default: 10)", required = false) Integer limit) {
 
         try {
             StringPrinter printer = new StringPrinter();
@@ -60,8 +61,6 @@ public class VersionTools {
             versionList.lts = lts != null && lts;
             versionList.fromVersion = fromVersion != null ? fromVersion : "4.0";
             versionList.sort = "-version"; // newest first
-            versionList.download = true;
-            versionList.fresh = false;
 
             int exitCode = versionList.doCall();
             if (exitCode != 0) {

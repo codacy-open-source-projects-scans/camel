@@ -22,6 +22,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mail.Mailbox.MailboxUser;
 import org.apache.camel.component.mail.Mailbox.Protocol;
 import org.apache.camel.test.junit6.CamelTestSupport;
+import org.apache.camel.test.junit6.TestSupport;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,15 +31,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Unit test for recipients using | in email address
  */
 public class MailRecipientsPipeIssueTest extends CamelTestSupport {
-    private static final MailboxUser you = Mailbox.getOrCreateUser("you", "secret");
+    private static final MailboxUser you = Mailbox.getOrCreateUser("MailRecipientsPipeIssueTest-you", "secret");
     private static final MailboxUser camelPipes = Mailbox.getOrCreateUser("camel|pipes@riders.org", "camelPipes", "secret");
     private static final MailboxUser easyPipes = Mailbox.getOrCreateUser("easyPipes@riders.org", "easyPipes", "secret");
 
     @Test
     public void testMultiRecipients() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(you, camelPipes, easyPipes);
 
-        sendBody("direct:a", "Camel does really rock");
+        TestSupport.sendBody(template, "direct:a", "Camel does really rock");
 
         Mailbox inbox = camelPipes.getInbox();
         Message msg = inbox.get(0);

@@ -257,6 +257,24 @@ public interface AzureServicebusComponentBuilderFactory {
             return this;
         }
     
+        
+        /**
+         * Sets the maximum number of concurrent sessions to process at any
+         * given time. Only applies when sessionEnabled is true.
+         * 
+         * The option is a: &lt;code&gt;int&lt;/code&gt; type.
+         * 
+         * Default: 1
+         * Group: consumer
+         * 
+         * @param maxConcurrentSessions the value to set
+         * @return the dsl builder
+         */
+        default AzureServicebusComponentBuilder maxConcurrentSessions(int maxConcurrentSessions) {
+            doSetProperty("maxConcurrentSessions", maxConcurrentSessions);
+            return this;
+        }
+    
         /**
          * Sets the prefetch count of the receiver. For both PEEK_LOCK PEEK_LOCK
          * and RECEIVE_AND_DELETE RECEIVE_AND_DELETE receive modes the default
@@ -514,7 +532,11 @@ public interface AzureServicebusComponentBuilderFactory {
     
         /**
          * Sets the connection string for a Service Bus namespace or a specific
-         * Service Bus resource.
+         * Service Bus resource. Connection strings commonly contain characters
+         * with a special meaning in URIs (the SharedAccessKey is a Base64 value
+         * that may contain plus, slash or equals characters): when configuring
+         * the connection string directly in an endpoint URI, wrap the value
+         * with RAW() so it is not URI-decoded.
          * 
          * The option is a: &lt;code&gt;java.lang.String&lt;/code&gt; type.
          * 
@@ -533,7 +555,7 @@ public interface AzureServicebusComponentBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option is a:
-         * &lt;code&gt;org.apache.camel.component.azure.servicebus.CredentialType&lt;/code&gt; type.
+         * &lt;code&gt;org.apache.camel.component.azure.common.CredentialType&lt;/code&gt; type.
          * 
          * Default: CONNECTION_STRING
          * Group: security
@@ -541,7 +563,7 @@ public interface AzureServicebusComponentBuilderFactory {
          * @param credentialType the value to set
          * @return the dsl builder
          */
-        default AzureServicebusComponentBuilder credentialType(org.apache.camel.component.azure.servicebus.CredentialType credentialType) {
+        default AzureServicebusComponentBuilder credentialType(org.apache.camel.component.azure.common.CredentialType credentialType) {
             doSetProperty("credentialType", credentialType);
             return this;
         }
@@ -609,6 +631,7 @@ public interface AzureServicebusComponentBuilderFactory {
             case "enableDeadLettering": getOrCreateConfiguration((ServiceBusComponent) component).setEnableDeadLettering((boolean) value); return true;
             case "maxAutoLockRenewDuration": getOrCreateConfiguration((ServiceBusComponent) component).setMaxAutoLockRenewDuration((long) value); return true;
             case "maxConcurrentCalls": getOrCreateConfiguration((ServiceBusComponent) component).setMaxConcurrentCalls((int) value); return true;
+            case "maxConcurrentSessions": getOrCreateConfiguration((ServiceBusComponent) component).setMaxConcurrentSessions((int) value); return true;
             case "prefetchCount": getOrCreateConfiguration((ServiceBusComponent) component).setPrefetchCount((int) value); return true;
             case "processorClient": getOrCreateConfiguration((ServiceBusComponent) component).setProcessorClient((com.azure.messaging.servicebus.ServiceBusProcessorClient) value); return true;
             case "serviceBusReceiveMode": getOrCreateConfiguration((ServiceBusComponent) component).setServiceBusReceiveMode((com.azure.messaging.servicebus.models.ServiceBusReceiveMode) value); return true;
@@ -624,7 +647,7 @@ public interface AzureServicebusComponentBuilderFactory {
             case "sessionId": getOrCreateConfiguration((ServiceBusComponent) component).setSessionId((java.lang.String) value); return true;
             case "autowiredEnabled": ((ServiceBusComponent) component).setAutowiredEnabled((boolean) value); return true;
             case "connectionString": getOrCreateConfiguration((ServiceBusComponent) component).setConnectionString((java.lang.String) value); return true;
-            case "credentialType": getOrCreateConfiguration((ServiceBusComponent) component).setCredentialType((org.apache.camel.component.azure.servicebus.CredentialType) value); return true;
+            case "credentialType": getOrCreateConfiguration((ServiceBusComponent) component).setCredentialType((org.apache.camel.component.azure.common.CredentialType) value); return true;
             case "fullyQualifiedNamespace": getOrCreateConfiguration((ServiceBusComponent) component).setFullyQualifiedNamespace((java.lang.String) value); return true;
             case "tokenCredential": getOrCreateConfiguration((ServiceBusComponent) component).setTokenCredential((com.azure.core.credential.TokenCredential) value); return true;
             default: return false;

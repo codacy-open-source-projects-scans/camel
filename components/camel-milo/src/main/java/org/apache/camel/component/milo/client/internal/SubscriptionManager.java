@@ -54,13 +54,12 @@ import org.eclipse.milo.opcua.sdk.client.identity.UsernameProvider;
 import org.eclipse.milo.opcua.sdk.client.subscriptions.OpcUaMonitoredItem;
 import org.eclipse.milo.opcua.sdk.client.subscriptions.OpcUaSubscription;
 import org.eclipse.milo.opcua.stack.core.AttributeId;
-import org.eclipse.milo.opcua.stack.core.Identifiers;
+import org.eclipse.milo.opcua.stack.core.NodeIds;
 import org.eclipse.milo.opcua.stack.core.StatusCodes;
 import org.eclipse.milo.opcua.stack.core.UaException;
 import org.eclipse.milo.opcua.stack.core.types.builtin.ByteString;
 import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
 import org.eclipse.milo.opcua.stack.core.types.builtin.ExpandedNodeId;
-import org.eclipse.milo.opcua.stack.core.types.builtin.ExtensionObject;
 import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
 import org.eclipse.milo.opcua.stack.core.types.builtin.QualifiedName;
 import org.eclipse.milo.opcua.stack.core.types.builtin.StatusCode;
@@ -123,11 +122,14 @@ public class SubscriptionManager {
 
         private final Consumer<DataValue> valueConsumer;
         private MonitorFilterConfiguration monitorFilterConfiguration;
+        private final Integer queueSize;
 
-        Subscription(ExpandedNodeId nodeId, final Double samplingInterval, final Consumer<DataValue> valueConsumer,
+        Subscription(ExpandedNodeId nodeId, final Double samplingInterval, Integer queueSize,
+                     final Consumer<DataValue> valueConsumer,
                      final MonitorFilterConfiguration monitorFilterConfiguration) {
             this.nodeId = nodeId;
             this.samplingInterval = samplingInterval;
+            this.queueSize = queueSize;
             this.valueConsumer = valueConsumer;
             this.monitorFilterConfiguration = monitorFilterConfiguration;
         }
@@ -140,17 +142,21 @@ public class SubscriptionManager {
             return this.samplingInterval;
         }
 
+        public Integer getQueueSize() {
+            return this.queueSize;
+        }
+
         public Consumer<DataValue> getValueConsumer() {
             return this.valueConsumer;
         }
 
-        public ExtensionObject createMonitoringFilter(OpcUaClient client) {
+        public MonitoringFilter createMonitoringFilter() {
             if (Objects.isNull(this.monitorFilterConfiguration)
                     || Objects.isNull(this.monitorFilterConfiguration.getMonitorFilterType())) {
                 return null;
             }
             final MonitoringFilter monitorFilter = this.monitorFilterConfiguration.createMonitoringFilter();
-            return ExtensionObject.encode(client.getStaticEncodingContext(), monitorFilter);
+            return monitorFilter;
         }
     }
 
@@ -191,6 +197,16 @@ public class SubscriptionManager {
                 } else {
                     final ReadValueId itemId = new ReadValueId(node, AttributeId.Value.uid(), null, QualifiedName.NULL_VALUE);
                     final OpcUaMonitoredItem item = new OpcUaMonitoredItem(itemId, MonitoringMode.Reporting);
+                    if (null != s.getSamplingInterval()) {
+                        item.setSamplingInterval(s.getSamplingInterval());
+                    }
+                    if (null != s.getQueueSize()) {
+                        item.setQueueSize(UInteger.valueOf(s.getQueueSize()));
+                    }
+                    MonitoringFilter filter = s.createMonitoringFilter();
+                    if (filter != null) {
+                        item.setFilter(filter);
+                    }
                     items.add(item);
                     // Keep track of which subscription this item belongs to
                     itemToClientHandle.put(item, entry.getKey());
@@ -279,7 +295,7 @@ public class SubscriptionManager {
             //                    = this.client.readValue(0, TimestampsToReturn.Neither, Identifiers.Server_NamespaceArray);
             CompletableFuture<DataValue> future = this.client
                     .readValuesAsync(0, TimestampsToReturn.Neither,
-                            Collections.singletonList(Identifiers.Server_NamespaceArray))
+                            Collections.singletonList(NodeIds.Server_NamespaceArray))
                     .thenApply(r -> r.get(0));
 
             return future.thenApply(value -> {
@@ -573,7 +589,7 @@ public class SubscriptionManager {
                                 .collect(Collectors.toList());
 
                         return completedFuture(nodeIds.stream().map(nodeId -> new BrowseDescription(
-                                nodeId, direction, Identifiers.References, includeSubTypes, uint(nodeClasses),
+                                nodeId, direction, NodeIds.References, includeSubTypes, uint(nodeClasses),
                                 uint(BrowseResultMask.All.getValue()))).collect(Collectors.toList()));
                     })
 
@@ -599,6 +615,20 @@ public class SubscriptionManager {
         this.reconnectTimeout = reconnectTimeout;
 
         connect();
+    }
+
+    /**
+     * Returns the milo {@link OpcUaClient} of the currently established connection, if any.
+     *
+     * @return the active client, or {@code null} if there is no current connection
+     */
+    public OpcUaClient getOpcUaClient() {
+        lock.lock();
+        try {
+            return this.connected != null ? this.connected.client : null;
+        } finally {
+            lock.unlock();
+        }
     }
 
     private void handleConnectionFailure(final Throwable e) {
@@ -680,18 +710,17 @@ public class SubscriptionManager {
     private Connected performConnect() throws Exception {
 
         // eval endpoint
-
         String discoveryUri = getEndpointDiscoveryUri();
 
         final URI uri = URI.create(getEndpointDiscoveryUri());
 
-        // milo library doesn't allow user info as a part of the uri, it has to
-        // be
-        // removed before sending to milo
+        // Extracting/removing user:password string from the full URL is error-prone with special characters,
+        // because of that the discovery URL is rebuilt from URI parts.
+        discoveryUri
+                = new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(), uri.getQuery(), uri.getFragment())
+                        .toString();
         final String user = uri.getUserInfo();
-        if (user != null && !user.isEmpty()) {
-            discoveryUri = discoveryUri.replaceFirst(user + "@", "");
-        }
+
         LOG.debug("Discovering endpoints from: {}", discoveryUri);
 
         final EndpointDescription endpoint = DiscoveryClient.getEndpoints(discoveryUri).thenApply(endpoints -> {
@@ -714,14 +743,21 @@ public class SubscriptionManager {
         // set identity providers
         final List<IdentityProvider> providers = new LinkedList<>();
 
-        if (user != null && !user.isEmpty()) {
+        // prefer explicit username/password parameters over URI-embedded credentials
+        // to avoid issues with special characters in the URI
+        final String explicitUsername = this.configuration.getUsername();
+        final String explicitPassword = this.configuration.getPassword();
+        if (explicitUsername != null && !explicitUsername.isEmpty()) {
+            LOG.debug("Enable username/password provider (explicit parameter): {}", explicitUsername);
+            providers.add(new UsernameProvider(explicitUsername, explicitPassword != null ? explicitPassword : ""));
+        } else if (user != null && !user.isEmpty()) {
             final String[] creds = user.split(":", 2);
             if (creds != null) {
                 if (creds.length == 2) {
                     LOG.debug("Enable username/password provider: {}", creds[0]);
                 }
 
-                providers.add(new UsernameProvider(creds[0], creds[1]));
+                providers.add(new UsernameProvider(creds[0], creds.length == 2 ? creds[1] : ""));
             }
         }
 
@@ -741,11 +777,14 @@ public class SubscriptionManager {
                     }
                 });
 
-        client.connect();
-
         try {
+
+            // connect is called inside this try block to ensure that disconnect is called on exceptions
+            client.connect();
+
             // Create subscription synchronously - the create() method blocks until complete
             OpcUaSubscription subscription = new OpcUaSubscription(client);
+            subscription.setPublishingInterval(this.configuration.getRequestedPublishingInterval());
             subscription.setSubscriptionListener(new SubscriptionListenerImpl());
             subscription.create();
 
@@ -917,11 +956,13 @@ public class SubscriptionManager {
     }
 
     public UInteger registerItem(
-            final ExpandedNodeId nodeId, final Double samplingInterval, final Consumer<DataValue> valueConsumer,
+            final ExpandedNodeId nodeId, final Double samplingInterval, Integer queueSize,
+            final Consumer<DataValue> valueConsumer,
             final MonitorFilterConfiguration monitorFilterConfiguration) {
 
         final UInteger clientHandle = Unsigned.uint(this.clientHandleCounter.incrementAndGet());
-        final Subscription subscription = new Subscription(nodeId, samplingInterval, valueConsumer, monitorFilterConfiguration);
+        final Subscription subscription
+                = new Subscription(nodeId, samplingInterval, queueSize, valueConsumer, monitorFilterConfiguration);
 
         lock.lock();
         try {

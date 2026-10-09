@@ -24,7 +24,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -32,9 +35,11 @@ import java.util.Properties;
 import java.util.Set;
 
 import org.apache.camel.catalog.CamelCatalog;
+import org.apache.camel.dsl.jbang.core.common.CamelJBangConstants;
 import org.apache.camel.dsl.jbang.core.common.CatalogLoader;
 import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
 import org.apache.camel.dsl.jbang.core.common.PathUtils;
+import org.apache.camel.dsl.jbang.core.common.RuntimeType;
 import org.apache.camel.dsl.jbang.core.common.RuntimeUtil;
 import org.apache.camel.dsl.jbang.core.common.TemplateHelper;
 import org.apache.camel.dsl.jbang.core.common.VersionHelper;
@@ -55,18 +60,28 @@ class ExportSpringBoot extends Export {
 
     @Override
     public Integer export() throws Exception {
-        String[] ids = gav.split(":");
-        if (ids.length != 3) {
+        try {
+            MavenGav.parseStrictGav(gav);
+        } catch (IllegalArgumentException e) {
             printer().printErr("--gav must be in syntax: groupId:artifactId:version");
             return 1;
         }
+        if (parentPom != null) {
+            try {
+                MavenGav.parseStrictGav(parentPom);
+            } catch (IllegalArgumentException e) {
+                printer().printErr("--parent-pom must be in syntax: groupId:artifactId:version");
+                return 1;
+            }
+        }
+        String[] ids = gav.split(":");
 
         exportBaseDir = exportBaseDir != null ? exportBaseDir : Path.of(".");
         Path profile = exportBaseDir.resolve("application.properties");
 
         // the settings file has information what to export
         Path settings = CommandLineHelper.getWorkDir().resolve(Run.RUN_SETTINGS_FILE);
-        if (fresh || !files.isEmpty() || !Files.exists(settings)) {
+        if (mavenResolver.fresh() || !files.isEmpty() || !Files.exists(settings)) {
             // allow to automatic build
             printer().println("Generating fresh run data");
             int silent = runSilently(ignoreLoadingError, lazyBean, verbose);
@@ -112,6 +127,7 @@ class ExportSpringBoot extends Export {
         // copy local lib JARs
         copyLocalLibDependencies(deps);
         // copy from settings to profile
+        Map<String, String> devProfile = new LinkedHashMap<>();
         copySettingsAndProfile(settings, profile, srcResourcesDir, prop -> {
             if (!hasModeline(settings)) {
                 prop.remove("camel.main.modeline");
@@ -139,23 +155,42 @@ class ExportSpringBoot extends Export {
             }
             if (hawtio) {
                 // spring boot needs these options configured to support hawtio
-                String s = prop.getProperty("management.endpoints.web.exposure.include");
-                if (s == null) {
-                    s = "hawtio,jolokia";
-                } else {
-                    s = s + ",hawtio,jolokia";
-                }
-                prop.setProperty("management.endpoints.web.exposure.include", s);
+                prop.setProperty("management.endpoints.web.exposure.include",
+                        exposeActuatorEndpoints(prop.getProperty("management.endpoints.web.exposure.include"),
+                                "hawtio", "jolokia"));
                 prop.setProperty("spring.jmx.enabled", "true");
                 prop.setProperty("hawtio.authenticationEnabled", "false");
             }
+            // developer console (--console) is the camel actuator endpoint (/actuator/camel)
+            if (settingsFlag(settings, CamelJBangConstants.CONSOLE)) {
+                addConsoleProperties(prop, devProfile, Map.of("camel.main.devConsoleEnabled", "true"));
+                // the camel endpoint must be exposed, keeping what is already exposed as the profile replaces the
+                // value. With --observe the starter exposes health and prometheus as its default, which an explicit
+                // list would replace, so keep them too (the console is then at /observe/camel)
+                String exposed = prop.getProperty("management.endpoints.web.exposure.include");
+                if (exposed == null && observe) {
+                    exposed = "health,prometheus";
+                }
+                exposed = exposeActuatorEndpoints(exposed, "camel");
+                if (isConsoleInApplicationProperties()) {
+                    prop.put("management.endpoints.web.exposure.include", exposed);
+                } else {
+                    devProfile.put("management.endpoints.web.exposure.include", exposed);
+                }
+            }
             return prop;
         });
+        writeDevProfileProperties(srcResourcesDir, devProfile);
         createMavenPom(settings, profile, buildDir.resolve("pom.xml"), deps);
         if (mavenWrapper) {
             copyMavenWrapper();
         }
-        copyDockerFiles(BUILD_DIR);
+        if (camelWrapper) {
+            copyCamelWrapper();
+        }
+        if (docker) {
+            copyDockerFiles(BUILD_DIR);
+        }
         String appJar = "target" + File.separator + ids[1] + "-" + ids[2] + ".jar";
         copyReadme(BUILD_DIR, appJar);
         if (cleanExportDir || !exportDir.equals(".")) {
@@ -171,6 +206,7 @@ class ExportSpringBoot extends Export {
         }
         // copy to export dir and remove work dir
         PathUtils.copyDirectory(buildDir, Paths.get(exportDir));
+        createDeferredSymlinks(buildDir, Paths.get(exportDir));
         PathUtils.deleteDirectory(buildDir);
 
         return 0;
@@ -181,10 +217,11 @@ class ExportSpringBoot extends Export {
 
         Properties prop = new CamelCaseOrderedProperties();
         RuntimeUtil.loadProperties(prop, settings);
-        String sbVersion = camelSpringBootVersion != null ? camelSpringBootVersion : camelVersion;
+        String sbVersion = camelSpringBootVersion != null
+                ? camelSpringBootVersion : (camelVersion == null ? RuntimeType.main.version() : camelVersion);
         String repos = getMavenRepositories(settings, prop, sbVersion);
 
-        CamelCatalog catalog = CatalogLoader.loadSpringBootCatalog(repos, sbVersion, download);
+        CamelCatalog catalog = CatalogLoader.loadSpringBootCatalog(repos, sbVersion, mavenResolver.download());
         if (ObjectHelper.isEmpty(camelVersion)) {
             camelVersion = catalog.getLoadedVersion();
         }
@@ -222,6 +259,8 @@ class ExportSpringBoot extends Export {
         model.put("BuildProperties", formatBuildProperties());
         model.put("Repositories", buildRepositoryList(repos));
         model.put("Dependencies", depList);
+        model.put("JibMavenPluginVersion", jibMavenPluginVersion(settings, prop));
+        enrichParentPom(model);
 
         String context = TemplateHelper.processTemplate(pomTemplateName, model);
         IOHelper.writeText(context, Files.newOutputStream(pom));
@@ -345,14 +384,14 @@ class ExportSpringBoot extends Export {
      * Legacy method for backward compatibility with catalog-provided templates.
      */
     private static String legacyMavenRepositoriesAsPomXml(String repos) {
+        List<Map<String, Object>> repoList = buildRepositoryList(repos);
         StringBuilder sb = new StringBuilder();
-        int i = 1;
         sb.append("    <repositories>\n");
-        for (String repo : repos.split(",")) {
+        for (Map<String, Object> r : repoList) {
             sb.append("        <repository>\n");
-            sb.append("            <id>custom").append(i++).append("</id>\n");
-            sb.append("            <url>").append(repo).append("</url>\n");
-            if (repo.contains("snapshots")) {
+            sb.append("            <id>").append(r.get("id")).append("</id>\n");
+            sb.append("            <url>").append(r.get("url")).append("</url>\n");
+            if (Boolean.TRUE.equals(r.get("isSnapshot"))) {
                 sb.append("            <releases>\n");
                 sb.append("                <enabled>false</enabled>\n");
                 sb.append("            </releases>\n");
@@ -364,11 +403,11 @@ class ExportSpringBoot extends Export {
         }
         sb.append("    </repositories>\n");
         sb.append("    <pluginRepositories>\n");
-        for (String repo : repos.split(",")) {
+        for (Map<String, Object> r : repoList) {
             sb.append("        <pluginRepository>\n");
-            sb.append("            <id>custom").append(i++).append("</id>\n");
-            sb.append("            <url>").append(repo).append("</url>\n");
-            if (repo.contains("snapshots")) {
+            sb.append("            <id>plugin-").append(r.get("id")).append("</id>\n");
+            sb.append("            <url>").append(r.get("url")).append("</url>\n");
+            if (Boolean.TRUE.equals(r.get("isSnapshot"))) {
                 sb.append("            <releases>\n");
                 sb.append("                <enabled>false</enabled>\n");
                 sb.append("            </releases>\n");
@@ -380,6 +419,11 @@ class ExportSpringBoot extends Export {
         }
         sb.append("    </pluginRepositories>\n");
         return sb.toString();
+    }
+
+    @Override
+    protected String getDockerfileTemplateName() {
+        return "Dockerfile-spring-boot";
     }
 
     @Override
@@ -396,10 +440,37 @@ class ExportSpringBoot extends Export {
         }
         if (hawtio) {
             answer.add("mvn:org.apache.camel:camel-management");
-            answer.add("mvn:io.hawt:hawtio-springboot:" + hawtioVersion);
+            String hawtioArtifact = springBootVersion.startsWith("4.") ? "hawtio-springboot4" : "hawtio-springboot";
+            answer.add("mvn:io.hawt:" + hawtioArtifact + ":" + hawtioVersion);
+        }
+        if (settingsFlag(settings, CamelJBangConstants.CONSOLE)) {
+            // developer console (--console) as actuator endpoint (camel-console-starter)
+            answer.add("mvn:org.apache.camel:camel-console");
+            answer.add("mvn:org.apache.camel:camel-management");
         }
 
         return answer;
+    }
+
+    /**
+     * The value of {@code management.endpoints.web.exposure.include} with the given actuator endpoint ids added to the
+     * ids that are already exposed (without duplicates).
+     */
+    static String exposeActuatorEndpoints(String exposed, String... ids) {
+        Set<String> answer = new LinkedHashSet<>();
+        if (exposed != null) {
+            if (exposed.contains("*")) {
+                // all endpoints are exposed already
+                return exposed;
+            }
+            for (String id : exposed.split(",")) {
+                if (!id.isBlank()) {
+                    answer.add(id.trim());
+                }
+            }
+        }
+        answer.addAll(Arrays.asList(ids));
+        return String.join(",", answer);
     }
 
     private void createMainClassSource(Path srcJavaDir, String packageName, String mainClassname) throws Exception {

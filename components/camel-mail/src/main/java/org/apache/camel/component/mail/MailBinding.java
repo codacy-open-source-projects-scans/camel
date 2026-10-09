@@ -39,6 +39,7 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
 import jakarta.mail.Part;
 import jakarta.mail.internet.AddressException;
+import jakarta.mail.internet.ContentType;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
@@ -73,6 +74,8 @@ import static org.apache.camel.component.mail.MailConstants.MAIL_HANDLE_DUPLICAT
 public class MailBinding {
 
     private static final Logger LOG = LoggerFactory.getLogger(MailBinding.class);
+
+    private int maxMultipartDepth = MailConstants.MAIL_DEFAULT_MAX_MULTIPART_DEPTH;
     private final HeaderFilterStrategy headerFilterStrategy;
     private ContentTypeResolver contentTypeResolver;
     private boolean decodeFilename;
@@ -126,11 +129,19 @@ public class MailBinding {
         this.failOnDuplicateAttachment = failOnDuplicateAttachment;
     }
 
+    public int getMaxMultipartDepth() {
+        return maxMultipartDepth;
+    }
+
+    public void setMaxMultipartDepth(int maxMultipartDepth) {
+        this.maxMultipartDepth = maxMultipartDepth;
+    }
+
     public void populateMailMessage(MailEndpoint endpoint, MimeMessage mimeMessage, Exchange exchange)
             throws MessagingException, IOException {
 
         // camel message headers takes precedence over endpoint configuration
-        if (hasRecipientHeaders(exchange)) {
+        if (endpoint.getConfiguration().isUseHeaderRecipients() && hasRecipientHeaders(exchange)) {
             setRecipientFromCamelMessage(mimeMessage, endpoint.getConfiguration(), exchange);
         } else {
             // fallback to endpoint configuration
@@ -138,11 +149,16 @@ public class MailBinding {
         }
 
         // set the replyTo if it was passed in as an option in the uri. Note: if it is in both the URI
-        // and headers the headers win.
-        String replyTo = exchange.getIn().getHeader(MailConstants.MAIL_REPLY_TO, String.class);
+        // and headers, the headers win UNLESS useHeaderReplyTo is set to false.
+        String replyTo = null;
+        if (endpoint.getConfiguration().isUseHeaderReplyTo()) {
+            replyTo = exchange.getIn().getHeader(MailConstants.MAIL_REPLY_TO, String.class);
+        }
+
         if (replyTo == null) {
             replyTo = endpoint.getConfiguration().getReplyTo();
         }
+
         if (replyTo != null) {
             List<InternetAddress> replyToAddresses = new ArrayList<>();
             for (String reply : splitRecipients(replyTo)) {
@@ -158,7 +174,7 @@ public class MailBinding {
         }
 
         // set the subject if it was passed in as an option in the uri. Note: if it is in both the URI
-        // and headers the headers win.
+        // and headers the headers win UNLESS useHeaderSubject is set to false.
         String subject = endpoint.getConfiguration().getSubject();
         if (subject != null) {
             mimeMessage.setSubject(subject, ExchangeHelper.getCharsetName(exchange, false));
@@ -358,6 +374,20 @@ public class MailBinding {
 
     protected void extractAttachmentsFromMultipart(Multipart mp, Map<String, Attachment> map)
             throws MessagingException, IOException {
+        extractAttachmentsFromMultipart(mp, map, 0);
+    }
+
+    private void extractAttachmentsFromMultipart(Multipart mp, Map<String, Attachment> map, int depth)
+            throws MessagingException, IOException {
+
+        if (depth > maxMultipartDepth) {
+            // A single message must not be able to exhaust the stack: without a bound, a deeply nested
+            // multipart throws StackOverflowError before the message is processed, and the poll aborts
+            // on every subsequent attempt until the message is removed out of band.
+            LOG.warn("Ignoring multipart nested deeper than {} levels while extracting attachments",
+                    maxMultipartDepth);
+            return;
+        }
 
         for (int i = 0; i < mp.getCount(); i++) {
             Part part = mp.getBodyPart(i);
@@ -365,7 +395,7 @@ public class MailBinding {
 
             if (part.isMimeType("multipart/*")) {
                 LOG.trace("Part #{}: is mimetype: multipart/*", i);
-                extractAttachmentsFromMultipart((Multipart) part.getContent(), map);
+                extractAttachmentsFromMultipart((Multipart) part.getContent(), map, depth + 1);
                 continue;
             }
 
@@ -548,21 +578,34 @@ public class MailBinding {
                 if (headerFilterStrategy != null
                         && !headerFilterStrategy.applyFilterToCamelHeaders(headerName, headerValue, exchange)) {
                     if (headerName.equalsIgnoreCase("subject")) {
-                        mimeMessage.setSubject(asString(exchange, headerValue), determineCharSet(configuration, exchange));
+                        if (configuration.isUseHeaderSubject()) {
+                            mimeMessage.setSubject(asString(exchange, headerValue), determineCharSet(configuration, exchange));
+                        }
                         continue;
                     }
                     if (headerName.equalsIgnoreCase("from")) {
-                        mimeMessage.setFrom(asEncodedInternetAddress(asString(exchange, headerValue),
-                                determineCharSet(configuration, exchange)));
+                        if (configuration.isUseHeaderFrom()) {
+                            mimeMessage.setFrom(asEncodedInternetAddress(asString(exchange, headerValue),
+                                    determineCharSet(configuration, exchange)));
+                        }
                         continue;
                     }
                     if (headerName.equalsIgnoreCase("sender")) {
-                        mimeMessage.setSender(asEncodedInternetAddress(asString(exchange, headerValue),
-                                determineCharSet(configuration, exchange)));
+                        if (configuration.isUseHeaderFrom()) {   // reuses the same flag — from covers sender
+                            mimeMessage.setSender(asEncodedInternetAddress(asString(exchange, headerValue),
+                                    determineCharSet(configuration, exchange)));
+                        }
                         continue;
                     }
                     if (isRecipientHeader(headerName)) {
                         // skip any recipients as they are handled specially
+                        continue;
+                    }
+
+                    if (headerName.equalsIgnoreCase(MailConstants.MAIL_REPLY_TO)) {
+                        if (configuration.isUseHeaderReplyTo()) {
+                            mimeMessage.setHeader(StringHelper.removeCRLF(headerName), asString(exchange, headerValue));
+                        }
                         continue;
                     }
 
@@ -706,8 +749,12 @@ public class MailBinding {
                         LOG.trace("Attachment #{}: Using content type resolver: {} resolved content type as: {}", i,
                                 contentTypeResolver, contentType);
                         if (contentType != null) {
-                            String value = contentType + "; name=" + attachmentFilename;
-                            messageBodyPart.setHeader("Content-Type", value);
+                            // The file name comes from the message being relayed, so it must go out as a
+                            // parameter value rather than be concatenated into the header. ParameterList
+                            // quotes and escapes anything that would otherwise change the header's structure.
+                            ContentType parsed = new ContentType(contentType);
+                            parsed.setParameter("name", attachmentFilename);
+                            messageBodyPart.setHeader("Content-Type", parsed.toString());
                             LOG.trace("Attachment #{}: ContentType: {}", i, messageBodyPart.getContentType());
                         }
                     }
@@ -910,7 +957,7 @@ public class MailBinding {
 
     protected static String getAlternativeBody(MailConfiguration configuration, Exchange exchange) {
         String alternativeBodyHeader = configuration.getAlternativeBodyHeader();
-        return exchange.getIn().getHeader(alternativeBodyHeader, java.lang.String.class);
+        return exchange.getIn().getHeader(alternativeBodyHeader, String.class);
     }
 
     /**

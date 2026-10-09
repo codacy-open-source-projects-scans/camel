@@ -20,30 +20,36 @@ import jakarta.jms.ConnectionFactory;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.component.jms.JmsTestHelper;
 import org.apache.camel.test.infra.ibmmq.common.ConnectionFactoryHelper;
 import org.apache.camel.test.infra.ibmmq.services.IbmMQService;
 import org.apache.camel.test.infra.ibmmq.services.IbmMQServiceFactory;
 import org.apache.camel.test.junit6.CamelTestSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
+import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static org.apache.camel.component.jms.JmsComponent.jmsComponentAutoAcknowledge;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Flaky on GitHub Actions")
-public class JmsReplyToIbmMQTest extends CamelTestSupport {
+@DisabledIfSystemProperty(named = "ci.env.name", matches = "github.com",
+                          disabledReason = "The IBM MQ image on icr.io is not reliably pullable from GitHub Actions")
+@DisabledOnOs(architectures = { "aarch64", "aarch_64" }, disabledReason = "IBM MQ has no Linux ARM64 native image")
+class JmsReplyToIbmMQTest extends CamelTestSupport {
 
     @RegisterExtension
-    public static IbmMQService service = IbmMQServiceFactory.createService();
+    static IbmMQService service = IbmMQServiceFactory.createSingletonService();
 
     @Test
-    public void testCustomJMSReplyToInOut() {
+    void testCustomJMSReplyToInOut() {
+        JmsTestHelper.waitForJmsConsumerRoutes(context, "request");
+
         template.sendBody("jms:queue:DEV.QUEUE.1", "What is your name?");
 
         String reply
-                = consumer.receiveBody("jms:queue:DEV.QUEUE.2", 5000, String.class);
-        assertEquals("My name is Camel", reply);
+                = consumer.receiveBody("jms:queue:DEV.QUEUE.2", 20000, String.class);
+        assertThat(reply).isEqualTo("My name is Camel");
     }
 
     @Override
@@ -52,6 +58,7 @@ public class JmsReplyToIbmMQTest extends CamelTestSupport {
             @Override
             public void configure() {
                 from("jms:queue:DEV.QUEUE.1?replyTo=queue:DEV.QUEUE.2")
+                        .routeId("request")
                         .to("log:hello")
                         .transform(constant("My name is Camel"));
             }

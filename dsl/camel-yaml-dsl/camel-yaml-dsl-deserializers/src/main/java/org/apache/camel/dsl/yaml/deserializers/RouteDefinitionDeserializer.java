@@ -24,10 +24,12 @@ import org.apache.camel.model.ErrorHandlerDefinition;
 import org.apache.camel.model.FromDefinition;
 import org.apache.camel.model.InputTypeDefinition;
 import org.apache.camel.model.OutputTypeDefinition;
+import org.apache.camel.model.PropertyDefinition;
 import org.apache.camel.model.RouteDefinition;
 import org.apache.camel.spi.annotations.YamlIn;
 import org.apache.camel.spi.annotations.YamlProperty;
 import org.apache.camel.spi.annotations.YamlType;
+import org.apache.camel.util.StringHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.snakeyaml.engine.v2.nodes.MappingNode;
@@ -54,6 +56,8 @@ import org.snakeyaml.engine.v2.nodes.NodeTuple;
                   @YamlProperty(name = "messageHistory", type = "boolean"),
                   @YamlProperty(name = "logMask", type = "boolean"),
                   @YamlProperty(name = "trace", type = "boolean"),
+                  @YamlProperty(name = "delayer", type = "string",
+                                description = "Whether to slow down processing messages by a given delay in msec."),
                   @YamlProperty(name = "errorHandlerRef", type = "string"),
                   @YamlProperty(name = "errorHandler", type = "object:org.apache.camel.model.ErrorHandlerDefinition"),
                   @YamlProperty(name = "shutdownRoute", type = "enum:Default,Defer",
@@ -64,6 +68,8 @@ import org.snakeyaml.engine.v2.nodes.NodeTuple;
                                 description = "To control how to shut down the route."),
                   @YamlProperty(name = "inputType", type = "object:org.apache.camel.model.InputTypeDefinition"),
                   @YamlProperty(name = "outputType", type = "object:org.apache.camel.model.OutputTypeDefinition"),
+                  @YamlProperty(name = "routeProperty", type = "array:org.apache.camel.model.PropertyDefinition",
+                                description = "To set metadata as properties on the route."),
                   @YamlProperty(name = "from", type = "object:org.apache.camel.model.FromDefinition", required = true)
           })
 public class RouteDefinitionDeserializer extends YamlDeserializerBase<RouteDefinition> {
@@ -89,7 +95,7 @@ public class RouteDefinitionDeserializer extends YamlDeserializerBase<RouteDefin
 
             setDeserializationContext(val, dc);
 
-            key = org.apache.camel.util.StringHelper.dashToCamelCase(key);
+            key = StringHelper.dashToCamelCase(key);
             switch (key) {
                 case "id":
                     target.setId(asText(val));
@@ -144,6 +150,9 @@ public class RouteDefinitionDeserializer extends YamlDeserializerBase<RouteDefin
                 case "trace":
                     target.setTrace(asText(val));
                     break;
+                case "delayer":
+                    target.setDelayer(asText(val));
+                    break;
                 case "errorHandlerRef":
                     target.setErrorHandlerRef(asText(val));
                     break;
@@ -155,6 +164,9 @@ public class RouteDefinitionDeserializer extends YamlDeserializerBase<RouteDefin
                     break;
                 case "outputType":
                     target.setOutputType(asType(val, OutputTypeDefinition.class));
+                    break;
+                case "routeProperty":
+                    target.setRouteProperties(asFlatList(val, PropertyDefinition.class));
                     break;
                 case "from":
                     val.setProperty(RouteDefinition.class.getName(), target);

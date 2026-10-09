@@ -18,20 +18,16 @@ package org.apache.camel.component.openai;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import com.openai.models.chat.completions.ChatCompletionMessageToolCall;
 import com.openai.models.chat.completions.ChatCompletionToolMessageParam;
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
-import io.modelcontextprotocol.client.McpSyncClient;
-import io.modelcontextprotocol.spec.McpSchema;
 import org.apache.camel.Exchange;
 import org.apache.camel.support.DefaultProducer;
+import org.apache.camel.support.service.ServiceHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,7 +55,8 @@ import org.slf4j.LoggerFactory;
 public class OpenAIToolExecutionProducer extends DefaultProducer {
 
     private static final Logger LOG = LoggerFactory.getLogger(OpenAIToolExecutionProducer.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private McpToolCallExecutor toolCallExecutor;
 
     public OpenAIToolExecutionProducer(OpenAIEndpoint endpoint) {
         super(endpoint);
@@ -71,7 +68,29 @@ public class OpenAIToolExecutionProducer extends DefaultProducer {
     }
 
     @Override
+    protected void doStart() throws Exception {
+        toolCallExecutor = new McpToolCallExecutor(getEndpoint());
+        ServiceHelper.startService(toolCallExecutor);
+        super.doStart();
+    }
+
+    @Override
+    protected void doStop() throws Exception {
+        ServiceHelper.stopService(toolCallExecutor);
+        super.doStop();
+    }
+
+    @Override
     public void process(Exchange exchange) throws Exception {
+        try {
+            processInternal(exchange);
+        } catch (Exception e) {
+            OpenAIGenAiProducerSupport.applyErrorMetadata(exchange, e);
+            throw e;
+        }
+    }
+
+    private void processInternal(Exchange exchange) throws Exception {
         // Get the full ChatCompletion response (stored by storeFullResponse=true on chat-completion)
         ChatCompletion response = exchange.getProperty(OpenAIConstants.RESPONSE, ChatCompletion.class);
         if (response == null) {
@@ -123,65 +142,25 @@ public class OpenAIToolExecutionProducer extends DefaultProducer {
                         .toolCalls(toolCalls)
                         .build()));
 
-        // Execute each tool call via MCP and add tool result messages
-        Map<String, McpSyncClient> toolClientMap = getEndpoint().getToolClientMap();
-        if (toolClientMap == null || toolClientMap.isEmpty()) {
+        // Execute each tool call via MCP or route tools and add tool result messages
+        McpToolState toolState = getEndpoint().getMcpToolState();
+        if (toolState.toolClientMap().isEmpty() && toolState.routeTools().isEmpty()) {
             throw new IllegalStateException(
-                    "No MCP tool clients configured on the endpoint. Configure mcpServer.* parameters.");
+                    "No tools configured on the endpoint. Configure mcpServer.* parameters and/or the tags option.");
         }
 
-        int executedCount = 0;
-        for (ChatCompletionMessageToolCall toolCall : toolCalls) {
-            String toolName = toolCall.asFunction().function().name();
-            String argsJson = toolCall.asFunction().function().arguments();
-            String toolCallId = toolCall.asFunction().id();
-
-            McpSyncClient mcpClient = toolClientMap.get(toolName);
-            if (mcpClient == null) {
-                throw new IllegalStateException(
-                        "Tool '" + toolName + "' not found in any configured MCP server");
-            }
-
-            Map<String, Object> argsMap = OBJECT_MAPPER.readValue(argsJson, Map.class);
-            String resultContent;
-
-            try {
-                McpSchema.CallToolResult toolResult
-                        = getEndpoint().callTool(mcpClient, toolName, argsMap);
-
-                if (Boolean.TRUE.equals(toolResult.isError())) {
-                    resultContent = "Error: " + extractTextContent(toolResult.content());
-                    LOG.warn("MCP tool '{}' returned error: {}", toolName, resultContent);
-                } else {
-                    resultContent = extractTextContent(toolResult.content());
-                }
-            } catch (Exception e) {
-                LOG.warn("MCP tool '{}' execution failed: {}", toolName, e.getMessage(), e);
-                resultContent = "Error: Tool execution failed: " + e.getMessage();
-            }
-
+        List<McpToolCallExecutor.ToolResult> results = toolCallExecutor.execute(toolCalls, exchange);
+        for (McpToolCallExecutor.ToolResult result : results) {
             history.add(ChatCompletionMessageParam.ofTool(
                     ChatCompletionToolMessageParam.builder()
-                            .toolCallId(toolCallId)
-                            .content(resultContent)
+                            .toolCallId(result.toolCallId())
+                            .content(result.content())
                             .build()));
-            executedCount++;
         }
 
         // Update conversation history and clear body for the next chat-completion call
-        exchange.setProperty(historyProperty, history);
+        exchange.setProperty(historyProperty, OpenAIConversationHistoryTrimmer.trim(history, config));
         exchange.getMessage().setBody(null);
-        exchange.getMessage().setHeader(OpenAIConstants.TOOL_ITERATIONS, executedCount);
-    }
-
-    private String extractTextContent(List<McpSchema.Content> contents) {
-        if (contents == null || contents.isEmpty()) {
-            return "";
-        }
-        return contents.stream()
-                .filter(McpSchema.TextContent.class::isInstance)
-                .map(McpSchema.TextContent.class::cast)
-                .map(McpSchema.TextContent::text)
-                .collect(Collectors.joining());
+        exchange.getMessage().setHeader(OpenAIConstants.TOOL_ITERATIONS, results.size());
     }
 }

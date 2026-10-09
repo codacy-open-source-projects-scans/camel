@@ -38,12 +38,17 @@ public final class MojoHelper {
     public static List<Path> getComponentPath(Path dir) {
         switch (dir.getFileName().toString()) {
             case "camel-ai":
-                return Arrays.asList(dir.resolve("camel-chatscript"), dir.resolve("camel-djl"),
+                return Arrays.asList(dir.resolve("camel-a2a"), dir.resolve("camel-ai-observability"),
+                        dir.resolve("camel-ai-resource"), dir.resolve("camel-ai-tool"),
+                        dir.resolve("camel-chatscript"), dir.resolve("camel-djl"),
                         dir.resolve("camel-huggingface"),
+                        dir.resolve("camel-semantic"), dir.resolve("camel-typesafe-ai"), dir.resolve("camel-wolf-defender"),
                         dir.resolve("camel-langchain4j-agent"), dir.resolve("camel-langchain4j-chat"),
                         dir.resolve("camel-langchain4j-embeddings"), dir.resolve("camel-langchain4j-embeddingstore"),
+                        dir.resolve("camel-langchain4j-ingest"),
                         dir.resolve("camel-langchain4j-tokenizer"), dir.resolve("camel-langchain4j-tools"),
                         dir.resolve("camel-langchain4j-web-search"),
+                        dir.resolve("camel-mcp-server"),
                         dir.resolve("camel-qdrant"), dir.resolve("camel-milvus"), dir.resolve("camel-neo4j"),
                         dir.resolve("camel-openai"),
                         dir.resolve("camel-pgvector"), dir.resolve("camel-pinecone"), dir.resolve("camel-kserve"),
@@ -71,6 +76,9 @@ public final class MojoHelper {
                 return Collections.singletonList(dir.resolve("camel-fhir-component"));
             case "camel-infinispan":
                 return Arrays.asList(dir.resolve("camel-infinispan"), dir.resolve("camel-infinispan-embedded"));
+            case "camel-state-store":
+                return Arrays.asList(dir.resolve("camel-state-store"), dir.resolve("camel-state-store-caffeine"),
+                        dir.resolve("camel-state-store-redis"), dir.resolve("camel-state-store-infinispan"));
             case "camel-azure":
                 return Arrays.asList(dir.resolve("camel-azure-eventhubs"), dir.resolve("camel-azure-storage-blob"),
                         dir.resolve("camel-azure-storage-datalake"), dir.resolve("camel-azure-cosmosdb"),
@@ -105,7 +113,6 @@ public final class MojoHelper {
                         dir.resolve("camel-spring-ai").resolve("camel-spring-ai-chat"),
                         dir.resolve("camel-spring-ai").resolve("camel-spring-ai-embeddings"),
                         dir.resolve("camel-spring-ai").resolve("camel-spring-ai-image"),
-                        dir.resolve("camel-spring-ai").resolve("camel-spring-ai-tools"),
                         dir.resolve("camel-spring-ai").resolve("camel-spring-ai-vector-store"));
             case "camel-test":
                 return Arrays.asList(dir.resolve("camel-test-junit5"),
@@ -132,7 +139,7 @@ public final class MojoHelper {
                         dir.resolve("camel-aws2-sqs"), dir.resolve("camel-aws2-step-functions"),
                         dir.resolve("camel-aws2-sts"),
                         dir.resolve("camel-aws2-timestream"), dir.resolve("camel-aws2-translate"),
-                        dir.resolve("camel-aws-xray"), dir.resolve("camel-aws-secrets-manager"),
+                        dir.resolve("camel-aws-secrets-manager"),
                         dir.resolve("camel-aws-cloudtrail"), dir.resolve("camel-aws-config"),
                         dir.resolve("camel-aws-bedrock"),
                         dir.resolve("camel-aws2-textract"), dir.resolve("camel-aws2-transcribe"),
@@ -141,6 +148,15 @@ public final class MojoHelper {
                 return Arrays.asList(dir.resolve("camel-vertx"),
                         dir.resolve("camel-vertx-http"),
                         dir.resolve("camel-vertx-websocket"));
+            case "camel-alibaba":
+                return Arrays.asList(dir.resolve("camel-alibaba-oss"),
+                        dir.resolve("camel-alibaba-mns"),
+                        dir.resolve("camel-alibaba-fc"),
+                        dir.resolve("camel-alibaba-sms"),
+                        dir.resolve("camel-alibaba-kms"),
+                        dir.resolve("camel-alibaba-eventbridge"),
+                        dir.resolve("camel-alibaba-sls"),
+                        dir.resolve("camel-alibaba-ots"));
             case "camel-huawei":
                 return Arrays.asList(dir.resolve("camel-huaweicloud-frs"),
                         dir.resolve("camel-huaweicloud-dms"),
@@ -162,6 +178,8 @@ public final class MojoHelper {
                 return Collections.singletonList(dir.resolve("camel-knative-component"));
             case "camel-yaml-dsl":
                 return Collections.singletonList(dir.resolve("camel-yaml-dsl"));
+            case "camel-jbang":
+                return Collections.singletonList(dir.resolve("camel-jbang-console"));
             default:
                 return Collections.singletonList(dir);
         }

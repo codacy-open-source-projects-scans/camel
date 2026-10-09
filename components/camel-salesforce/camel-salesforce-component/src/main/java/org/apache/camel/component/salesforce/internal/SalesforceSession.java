@@ -37,6 +37,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import javax.security.auth.DestroyFailedException;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.CamelContext;
 import org.apache.camel.component.salesforce.AuthenticationType;
@@ -89,7 +91,7 @@ public class SalesforceSession extends ServiceSupport {
 
     private final CamelContext camelContext;
     private final AtomicBoolean loggingIn = new AtomicBoolean();
-    private CountDownLatch latch = new CountDownLatch(1);
+    private volatile CountDownLatch latch = new CountDownLatch(1);
 
     public SalesforceSession(CamelContext camelContext, SalesforceHttpClient httpClient, long timeout,
                              SalesforceLoginConfig config) {
@@ -111,11 +113,7 @@ public class SalesforceSession extends ServiceSupport {
         // if another thread is logging in, we will just wait until it's successful
         if (!loggingIn.compareAndSet(false, true)) {
             LOG.debug("waiting on login from another thread");
-            // TODO: This is janky
             try {
-                while (latch == null) {
-                    Thread.sleep(100);
-                }
                 latch.await();
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
@@ -293,7 +291,7 @@ public class SalesforceSession extends ServiceSupport {
             // Clean the private key from memory
             try {
                 key.destroy();
-            } catch (javax.security.auth.DestroyFailedException ex) {
+            } catch (DestroyFailedException ex) {
                 LOG.debug("Error destroying private key: {}", ex.getMessage());
             }
         } catch (IOException | GeneralSecurityException e) {

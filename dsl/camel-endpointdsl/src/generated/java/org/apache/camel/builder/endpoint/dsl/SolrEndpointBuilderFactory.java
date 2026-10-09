@@ -377,6 +377,42 @@ public interface SolrEndpointBuilderFactory {
             return this;
         }
         /**
+         * To configure security using SSLContextParameters. When configured,
+         * this takes precedence over the certificatePath option. This allows
+         * configuring named groups, signature schemes, cipher suites, and
+         * protocols for the TLS connection.
+         * 
+         * The option is a:
+         * <code>org.apache.camel.support.jsse.SSLContextParameters</code> type.
+         * 
+         * Group: security
+         * 
+         * @param sslContextParameters the value to set
+         * @return the dsl builder
+         */
+        default SolrEndpointBuilder sslContextParameters(org.apache.camel.support.jsse.SSLContextParameters sslContextParameters) {
+            doSetProperty("sslContextParameters", sslContextParameters);
+            return this;
+        }
+        /**
+         * To configure security using SSLContextParameters. When configured,
+         * this takes precedence over the certificatePath option. This allows
+         * configuring named groups, signature schemes, cipher suites, and
+         * protocols for the TLS connection.
+         * 
+         * The option will be converted to a
+         * <code>org.apache.camel.support.jsse.SSLContextParameters</code> type.
+         * 
+         * Group: security
+         * 
+         * @param sslContextParameters the value to set
+         * @return the dsl builder
+         */
+        default SolrEndpointBuilder sslContextParameters(String sslContextParameters) {
+            doSetProperty("sslContextParameters", sslContextParameters);
+            return this;
+        }
+        /**
          * Basic authenticate user.
          * 
          * The option is a: <code>java.lang.String</code> type.
@@ -570,7 +606,7 @@ public interface SolrEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final SolrHeaderNameBuilder INSTANCE = new SolrHeaderNameBuilder();
+        public static final SolrHeaderNameBuilder INSTANCE = new SolrHeaderNameBuilder();
 
         /**
          * The operation to perform.
@@ -682,6 +718,32 @@ public interface SolrEndpointBuilderFactory {
          */
         public String contentType() {
             return "Content-Type";
+        }
+        /**
+         * The prefix of the headers that carry the fields of the document to
+         * insert: the header CamelSolrField.id holds the id field.
+         * 
+         * The option is a: {@code Object} type.
+         * 
+         * Group: producer
+         * 
+         * @return the name of the header {@code SolrField.}.
+         */
+        public String solrfield() {
+            return "CamelSolrField.";
+        }
+        /**
+         * The prefix of the headers that carry extra request parameters: the
+         * header CamelSolrParam.commit holds the commit parameter.
+         * 
+         * The option is a: {@code String} type.
+         * 
+         * Group: producer
+         * 
+         * @return the name of the header {@code SolrParam.}.
+         */
+        public String solrparam() {
+            return "CamelSolrParam.";
         }
     }
     static SolrEndpointBuilder endpointBuilder(String componentName, String path) {

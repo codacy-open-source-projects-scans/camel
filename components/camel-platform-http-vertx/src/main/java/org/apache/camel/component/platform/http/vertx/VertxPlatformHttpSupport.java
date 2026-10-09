@@ -18,6 +18,8 @@ package org.apache.camel.component.platform.http.vertx;
 
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.List;
@@ -33,7 +35,6 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.net.SocketAddress;
-import io.vertx.core.streams.Pump;
 import io.vertx.ext.web.RoutingContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.Message;
@@ -44,6 +45,7 @@ import org.apache.camel.support.ExceptionHelper;
 import org.apache.camel.support.MessageHelper;
 import org.apache.camel.support.ObjectHelper;
 import org.apache.camel.support.http.HttpUtil;
+import org.apache.camel.util.IOHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -187,7 +189,13 @@ public final class VertxPlatformHttpSupport {
                 ctx.end();
                 promise.complete();
             } else if (body instanceof String string) {
-                ctx.end(string);
+                // write the text in the charset declared by the response Content-Type (vert.x writes a String as UTF-8)
+                String charset = responseCharset(ctx);
+                if (charset != null) {
+                    ctx.end(Buffer.buffer(string, charset));
+                } else {
+                    ctx.end(string);
+                }
                 promise.complete();
             } else if (body instanceof InputStream inputstream) {
                 writeResponseAs(promise, ctx, inputstream);
@@ -204,6 +212,26 @@ public final class VertxPlatformHttpSupport {
         }
 
         return promise.future();
+    }
+
+    /**
+     * The charset declared by the response Content-Type header, or null when there is no Content-Type header, it
+     * declares no charset, or the charset is not supported.
+     */
+    private static String responseCharset(RoutingContext ctx) {
+        String contentType = ctx.response().headers().get("Content-Type");
+        if (contentType == null) {
+            return null;
+        }
+        String charset = IOHelper.getCharsetNameFromContentType(contentType);
+        if (charset == null || charset.isEmpty()) {
+            return null;
+        }
+        try {
+            return Charset.isSupported(charset) ? charset : null;
+        } catch (IllegalCharsetNameException e) {
+            return null;
+        }
     }
 
     private static void writeResponseAsFallback(Promise<Void> promise, Exchange camelExchange, Object body, RoutingContext ctx)
@@ -237,22 +265,29 @@ public final class VertxPlatformHttpSupport {
         Vertx vertx = ctx.vertx();
         Context context = vertx.getOrCreateContext();
 
+        // For SSE streams, flush each chunk immediately instead of greedily filling the buffer
+        String contentType = response.headers().get("Content-Type");
+        boolean eagerFlush = contentType != null && contentType.startsWith("text/event-stream");
+
         // Process the InputStream async to avoid blocking the Vert.x event loop on large responses
-        AsyncInputStream asyncInputStream = new AsyncInputStream(vertx, context, is);
-        asyncInputStream.exceptionHandler(promise::fail);
-        asyncInputStream.endHandler(event -> endHandler(promise, response, asyncInputStream));
-
-        // Pump the InputStream content into the HTTP response WriteStream
-        Pump pump = Pump.pump(asyncInputStream, response);
-        context.runOnContext(event -> pump.start());
-    }
-
-    private static void endHandler(Promise<Void> promise, HttpServerResponse response, AsyncInputStream asyncInputStream) {
-        response.end().onComplete(result -> onComplete(promise, asyncInputStream));
-    }
-
-    private static void onComplete(Promise<Void> promise, AsyncInputStream asyncInputStream) {
-        asyncInputStream.close(closeResult -> promise.complete());
+        AsyncInputStream asyncInputStream = new AsyncInputStream(vertx, context, is, eagerFlush);
+        context.runOnContext(event -> asyncInputStream.pipe()
+                .endOnFailure(false)
+                .to(response)
+                .onComplete(result -> asyncInputStream.close(closeResult -> {
+                    if (result.failed()) {
+                        Throwable cause = result.cause();
+                        if (cause == asyncInputStream.getReadFailure()) {
+                            promise.fail(cause);
+                        } else {
+                            // The InputStream did not fail, so writing to the response did. That happens when the
+                            // client has gone away, possibly before the response has been flagged as closed.
+                            promise.fail(new ResponseWriteException(cause));
+                        }
+                    } else {
+                        promise.complete();
+                    }
+                })));
     }
 
     static void populateCamelHeaders(
@@ -268,9 +303,11 @@ public final class VertxPlatformHttpSupport {
             applyHeaderFilterStrategy(ctx, headersMap, exchange, headerFilterStrategy, request);
         }
 
-        // Path parameters
+        // Path parameters: the value from the path wins over an incoming header of that name. A path parameter is
+        // single-valued and part of the route's contract, so appending would turn ${header.sku} into a list and a
+        // correct value would fail (CAMEL-24910); a query parameter may repeat and is still appended.
         for (Map.Entry<String, String> en : ctx.pathParams().entrySet()) {
-            appendEntry(headersMap, en.getKey(), en.getValue());
+            headersMap.put(en.getKey(), en.getValue());
         }
 
         SocketAddress localAddress = request.localAddress();

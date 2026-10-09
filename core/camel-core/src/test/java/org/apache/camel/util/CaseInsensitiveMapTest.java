@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.camel.ExchangeConstantProvider;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -253,6 +254,78 @@ public class CaseInsensitiveMapTest {
         assertTrue(keys.contains("baz"));
         assertTrue(keys.contains("Baz"));
         assertTrue(keys.contains("BAZ"));
+    }
+
+    @Test
+    public void testKeySetRemoveWithDifferentCase() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("X-Trace", "abc");
+        map.put("Accept", "text/plain");
+
+        assertTrue(map.keySet().remove("x-trace"));
+        assertFalse(map.containsKey("X-Trace"));
+        assertEquals(List.of("Accept"), new ArrayList<>(map.keySet()));
+
+        assertFalse(map.keySet().remove("x-trace"));
+        assertFalse(map.keySet().remove("x-other"));
+        assertEquals(1, map.size());
+    }
+
+    @Test
+    public void testKeySetRemoveAllWithDifferentCase() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("X-Trace", "abc");
+        map.put("X-TENANT", "t1");
+        map.put("Accept", "text/plain");
+
+        // fewer elements than the map
+        assertTrue(map.keySet().removeAll(List.of("x-trace", "x-tenant")));
+        assertEquals(List.of("Accept"), new ArrayList<>(map.keySet()));
+        assertFalse(map.keySet().removeAll(List.of("x-trace", "x-tenant")));
+
+        // more elements than the map: the result must not depend on the sizes
+        map.put("X-Trace", "abc");
+        map.put("X-TENANT", "t1");
+        assertTrue(map.keySet().removeAll(List.of("x-trace", "x-tenant", "x-other", "x-more")));
+        assertEquals(List.of("Accept"), new ArrayList<>(map.keySet()));
+        assertEquals("text/plain", map.get("accept"));
+    }
+
+    @Test
+    public void testKeySetRetainAllWithDifferentCase() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("X-Trace", "abc");
+        map.put("X-TENANT", "t1");
+        map.put("Accept", "text/plain");
+
+        assertTrue(map.keySet().retainAll(List.of("accept", "x-tenant", "x-other")));
+        assertEquals(List.of("X-TENANT", "Accept"), new ArrayList<>(map.keySet()));
+        assertFalse(map.keySet().retainAll(Set.of("ACCEPT", "X-Tenant")));
+        assertEquals(2, map.size());
+
+        assertTrue(map.keySet().retainAll(List.of()));
+        assertTrue(map.isEmpty());
+    }
+
+    @Test
+    public void testKeySetIteratorRemove() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("X-Trace", "abc");
+        map.put("X-Tenant", "t1");
+        map.put("Accept", "text/plain");
+
+        Iterator<String> it = map.keySet().iterator();
+        assertEquals("X-Trace", it.next());
+        assertEquals("X-Tenant", it.next());
+        it.remove();
+        assertThrows(IllegalStateException.class, it::remove);
+        assertEquals("Accept", it.next());
+        assertFalse(it.hasNext());
+
+        assertEquals(List.of("X-Trace", "Accept"), new ArrayList<>(map.keySet()));
+
+        assertTrue(map.keySet().removeIf(k -> k.startsWith("X-")));
+        assertEquals(List.of("Accept"), new ArrayList<>(map.keySet()));
     }
 
     @Test
@@ -500,6 +573,244 @@ public class CaseInsensitiveMapTest {
         assertEquals(456, map.get("Bar"));
         assertEquals("cheese", map.get("cAKe"));
         service.shutdownNow();
+    }
+
+    @Test
+    public void testInsertionOrder() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("Zebra", 1);
+        map.put("apple", 2);
+        map.put("Mango", 3);
+
+        Iterator<Map.Entry<String, Object>> it = map.entrySet().iterator();
+        Map.Entry<String, Object> e1 = it.next();
+        Map.Entry<String, Object> e2 = it.next();
+        Map.Entry<String, Object> e3 = it.next();
+        assertFalse(it.hasNext());
+
+        assertEquals("Zebra", e1.getKey());
+        assertEquals(1, e1.getValue());
+        assertEquals("apple", e2.getKey());
+        assertEquals(2, e2.getValue());
+        assertEquals("Mango", e3.getKey());
+        assertEquals(3, e3.getValue());
+    }
+
+    @Test
+    public void testIteratorRemove() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("Foo", "cheese");
+        map.put("Bar", "cake");
+        map.put("Baz", "beer");
+
+        Iterator<Map.Entry<String, Object>> it = map.entrySet().iterator();
+        it.next(); // Foo
+        Map.Entry<String, Object> bar = it.next();
+        assertEquals("Bar", bar.getKey());
+        it.remove();
+
+        assertEquals(2, map.size());
+        assertFalse(map.containsKey("Bar"));
+        assertTrue(map.containsKey("Foo"));
+        assertTrue(map.containsKey("Baz"));
+    }
+
+    @Test
+    public void testEntrySetRemove() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("Foo", "cheese");
+        map.put("Bar", "cake");
+
+        // case-insensitive key match + value match → removes
+        boolean removed = map.entrySet().remove(Map.entry("foo", "cheese"));
+        assertTrue(removed);
+        assertEquals(1, map.size());
+        assertFalse(map.containsKey("Foo"));
+
+        // wrong value → does not remove
+        boolean notRemoved = map.entrySet().remove(Map.entry("bar", "wrong"));
+        assertFalse(notRemoved);
+        assertEquals(1, map.size());
+    }
+
+    @Test
+    public void testEntrySetValue() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("Foo", "cheese");
+
+        Map.Entry<String, Object> entry = map.entrySet().iterator().next();
+        assertEquals("cheese", entry.getValue());
+
+        Object old = entry.setValue("cake");
+        assertEquals("cheese", old);
+        assertEquals("cake", entry.getValue());
+        assertEquals("cake", map.get("Foo"));
+    }
+
+    @Test
+    public void testRemoveThenReput() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("Foo", "cheese");
+        map.remove("foo");
+        assertTrue(map.isEmpty());
+
+        map.put("FOO", "cake");
+        assertEquals(1, map.size());
+        assertEquals("cake", map.get("foo"));
+
+        // new key case should be used since old entry was removed
+        Map<String, Object> copy = new HashMap<>(map);
+        assertTrue(copy.containsKey("FOO"));
+        assertFalse(copy.containsKey("Foo"));
+    }
+
+    @Test
+    public void testResize() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        for (int i = 0; i < 200; i++) {
+            map.put("key" + i, i);
+        }
+        assertEquals(200, map.size());
+
+        for (int i = 0; i < 200; i++) {
+            assertTrue(map.containsKey("KEY" + i));
+            assertEquals(i, map.get("key" + i));
+        }
+
+        // remove half and verify
+        for (int i = 0; i < 100; i++) {
+            map.remove("Key" + i);
+        }
+        assertEquals(100, map.size());
+
+        for (int i = 100; i < 200; i++) {
+            assertEquals(i, map.get("KEY" + i));
+        }
+    }
+
+    @Test
+    public void testContainsValue() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("foo", "cheese");
+        map.put("bar", null);
+
+        assertTrue(map.containsValue("cheese"));
+        assertTrue(map.containsValue(null));
+        assertFalse(map.containsValue("missing"));
+    }
+
+    @Test
+    public void testNullValue() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("foo", null);
+
+        assertEquals(1, map.size());
+        assertTrue(map.containsKey("FOO"));
+        assertNull(map.get("foo"));
+
+        // distinguish null value from missing key
+        assertTrue(map.containsKey("foo"));
+        assertFalse(map.containsKey("bar"));
+    }
+
+    @Test
+    public void testClearAndReuse() {
+        Map<String, Object> map = new CaseInsensitiveMap();
+        map.put("Foo", "cheese");
+        map.put("Bar", "cake");
+        assertEquals(2, map.size());
+
+        map.clear();
+        assertEquals(0, map.size());
+        assertTrue(map.isEmpty());
+        assertFalse(map.containsKey("Foo"));
+
+        // reuse after clear
+        map.put("Baz", "beer");
+        assertEquals(1, map.size());
+        assertEquals("beer", map.get("BAZ"));
+    }
+
+    @Test
+    public void testKnownKeyDeduplication() {
+        // Register known keys
+        CaseInsensitiveMap.registerKnownKeys(List.of("CamelCharsetName", "CamelExchangeId", "breadcrumbId"));
+        try {
+            Map<String, Object> map = new CaseInsensitiveMap();
+
+            // simulate deserialized key (new String to guarantee a different object)
+            String deserializedKey = new String("CamelCharsetName");
+            map.put(deserializedKey, "UTF-8");
+
+            // the stored key should be the canonical reference, not the deserialized copy
+            Map.Entry<String, Object> entry = map.entrySet().iterator().next();
+            assertSame("CamelCharsetName", entry.getKey());
+            assertNotSame(deserializedKey, entry.getKey());
+
+            // a key with a different case is not replaced by the canonical key, as the map preserves the key case
+            Map<String, Object> map2 = new CaseInsensitiveMap();
+            String lowerCaseKey = "camelcharsetname";
+            map2.put(lowerCaseKey, "UTF-8");
+            Map.Entry<String, Object> entry2 = map2.entrySet().iterator().next();
+            assertSame(lowerCaseKey, entry2.getKey());
+            assertEquals("UTF-8", map2.get("CamelCharsetName"));
+
+            // non-registered key is stored as-is
+            String custom = new String("CustomHeader");
+            map.put(custom, "value");
+            for (Map.Entry<String, Object> e : map.entrySet()) {
+                if (e.getValue().equals("value")) {
+                    assertSame(custom, e.getKey());
+                }
+            }
+        } finally {
+            CaseInsensitiveMap.registerKnownKeys(ExchangeConstantProvider.values());
+        }
+    }
+
+    @Test
+    public void testKnownKeyKeepsKeyCase() {
+        CaseInsensitiveMap.registerKnownKeys(List.of("Content-Type", "CamelFileName"));
+        try {
+            Map<String, Object> map = new CaseInsensitiveMap();
+            map.put("content-type", "text/plain");
+            map.put("camelfilename", "a.txt");
+            map.put(new String("Content-Length"), "12");
+
+            assertEquals(List.of("content-type", "camelfilename", "Content-Length"), new ArrayList<>(map.keySet()));
+            List<String> entryKeys = new ArrayList<>();
+            for (Map.Entry<String, Object> e : map.entrySet()) {
+                entryKeys.add(e.getKey());
+            }
+            assertEquals(List.of("content-type", "camelfilename", "Content-Length"), entryKeys);
+
+            // lookups are still case-insensitive
+            assertEquals("text/plain", map.get("Content-Type"));
+            assertEquals("text/plain", map.get("CONTENT-TYPE"));
+            assertEquals("a.txt", map.get("CamelFileName"));
+            assertTrue(map.containsKey("Content-Type"));
+
+            // the first put decides the case: a later put with another case only replaces the value
+            map.put("Content-Type", "application/json");
+            assertEquals(1, map.keySet().stream().filter("content-type"::equalsIgnoreCase).count());
+            assertTrue(map.containsKey("content-type"));
+            assertEquals("content-type", map.keySet().iterator().next());
+            assertEquals("application/json", map.get("content-type"));
+
+            // an equal key still shares the canonical instance
+            Map<String, Object> map2 = new CaseInsensitiveMap();
+            String key = new String("Content-Type");
+            map2.put(key, "text/plain");
+            String stored = map2.keySet().iterator().next();
+            assertSame("Content-Type", stored);
+            assertNotSame(key, stored);
+
+            // also when copied from another map
+            Map<String, Object> copy = new CaseInsensitiveMap(map);
+            assertEquals(List.of("content-type", "camelfilename", "Content-Length"), new ArrayList<>(copy.keySet()));
+        } finally {
+            CaseInsensitiveMap.registerKnownKeys(ExchangeConstantProvider.values());
+        }
     }
 
     @Disabled("Manual test")

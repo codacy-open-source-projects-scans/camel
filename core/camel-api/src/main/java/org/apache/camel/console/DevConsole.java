@@ -21,6 +21,8 @@ import java.util.Map;
 
 /**
  * Developer Console
+ *
+ * @since 3.15
  */
 public interface DevConsole {
 
@@ -59,6 +61,19 @@ public interface DevConsole {
      * @return           true if supported, false if not
      */
     boolean supportMediaType(MediaType mediaType);
+
+    /**
+     * Whether this console is read-only (safe, and does not change any runtime state).
+     * <p/>
+     * Consoles that mutate state (such as starting/stopping a route, sending a message, or triggering a heap dump) must
+     * override this method to return {@code false}.
+     *
+     * @return true if read-only (the default), false if invoking this console changes runtime state.
+     * @since  4.23
+     */
+    default boolean isReadOnly() {
+        return true;
+    }
 
     /**
      * Invokes and gets the output from this console.

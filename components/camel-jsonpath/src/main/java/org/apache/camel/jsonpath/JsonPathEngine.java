@@ -152,18 +152,6 @@ public class JsonPathEngine {
                     }
                 }
                 return list;
-            } else if (answer instanceof Map) {
-                Map<Object, Object> map = (Map<Object, Object>) answer;
-                for (Map.Entry<Object, Object> entry : map.entrySet()) {
-                    Object value = entry.getValue();
-                    if (adapter != null) {
-                        String json = adapter.writeAsString(value, exchange);
-                        if (json != null) {
-                            map.put(entry.getKey(), json);
-                        }
-                    }
-                }
-                return map;
             } else {
                 String json = adapter.writeAsString(answer, exchange);
                 if (json != null) {
@@ -188,9 +176,15 @@ public class JsonPathEngine {
             LOG.trace("JSonPath: {} is read as generic file: {}", path, json);
             GenericFile<?> genericFile = (GenericFile<?>) json;
             if (genericFile.getCharset() != null) {
-                // special treatment for generic file with charset
-                InputStream inputStream = new FileInputStream((File) genericFile.getFile());
-                return JsonPath.using(configuration).parse(inputStream, genericFile.getCharset()).read(path);
+                // special treatment for generic file with charset: a remote file (such as from the ftp consumer) is
+                // not a java.io.File, and its content is the body of the generic file
+                InputStream inputStream = genericFile.getFile() instanceof File file
+                        ? new FileInputStream(file)
+                        : exchange.getContext().getTypeConverter().tryConvertTo(InputStream.class, exchange, genericFile);
+                if (inputStream != null) {
+                    // json-path closes the stream
+                    return JsonPath.using(configuration).parse(inputStream, genericFile.getCharset()).read(path);
+                }
             }
         }
 
@@ -228,11 +222,28 @@ public class JsonPathEngine {
         }
 
         // okay it was not then lets throw a failure
-        if (source != null) {
-            throw new CamelExchangeException("Cannot read " + source + " as supported JSON value", exchange);
-        } else {
-            throw new CamelExchangeException("Cannot read message body as supported JSON value", exchange);
+        // a null source is the message body as well: the deprecated single-argument constructor leaves it unset
+        final boolean fromBody = source == null || "body".equals(source.toString());
+        final String input = fromBody ? "body" : source.toString();
+        if (json == null) {
+            // a timer alone, or a jsonpath step placed before the file was read: nothing to evaluate
+            if (fromBody) {
+                throw new CamelExchangeException(
+                        "The jsonpath expression got no message body to evaluate (the body is null): a route reached"
+                                                 + " with direct: has the body of its caller, so when the caller has none, read the data"
+                                                 + " first - setBody with constant: resource:file:data.json for a known file, or poll:,"
+                                                 + " pollEnrich or a from: consumer for one that is not",
+                        exchange);
+            }
+            throw new CamelExchangeException(
+                    "The jsonpath expression got no input from " + input + " to evaluate (it is null): set it before the"
+                                             + " step, or leave source unset to use the message body",
+                    exchange);
         }
+        throw new CamelExchangeException(
+                "Cannot read " + input + " as supported JSON value (" + (fromBody ? "the body" : "it")
+                                         + " has type: " + ObjectHelper.classCanonicalName(json) + ")",
+                exchange);
     }
 
     private Object readWithInputStream(String path, Exchange exchange) throws IOException {

@@ -30,8 +30,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Unit test for CAMEL-1249
  */
 public class MailUsingOwnComponentTest extends CamelTestSupport {
-    private static final MailboxUser james = Mailbox.getOrCreateUser("james", "secret");
-    private static final MailboxUser davsclaus = Mailbox.getOrCreateUser("davsclaus", "secret");
+    private static final MailboxUser james = Mailbox.getOrCreateUser("MailUsingOwnComponentTest-james", "secret");
+    private static final MailboxUser davsclaus = Mailbox.getOrCreateUser("MailUsingOwnComponentTest-davsclaus", "secret");
 
     @Override
     protected CamelContext createCamelContext() throws Exception {
@@ -55,9 +55,9 @@ public class MailUsingOwnComponentTest extends CamelTestSupport {
 
     @Test
     public void testUsingOwnMailComponent() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(james, davsclaus);
 
-        template.sendBodyAndHeader("mailbox:localhost", "Hello Mailbox", "to", davsclaus.getEmail());
+        template.sendBodyAndHeader("mailbox:localhost?useHeaderRecipients=true", "Hello Mailbox", "to", davsclaus.getEmail());
 
         Mailbox box = davsclaus.getInbox();
         Message msg = box.get(0);

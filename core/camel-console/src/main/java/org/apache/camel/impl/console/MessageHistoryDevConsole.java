@@ -26,6 +26,7 @@ import org.apache.camel.Route;
 import org.apache.camel.spi.BacklogTracer;
 import org.apache.camel.spi.BacklogTracerEventMessage;
 import org.apache.camel.spi.Configurer;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.Resource;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.console.AbstractDevConsole;
@@ -33,13 +34,21 @@ import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.StringHelper;
 import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 import org.apache.camel.util.json.Jsoner;
 
 @DevConsole(name = "message-history", displayName = "Message History", description = "History of latest completed exchange")
 @Configurer(extended = true)
 public class MessageHistoryDevConsole extends AbstractDevConsole {
 
+    @Metadata(label = "query", description = "Number of source code lines around the location to include",
+              javaType = "java.lang.Integer", defaultValue = "5")
     public static final String CODE_LIMIT = "codeLimit";
+
+    public record Response(
+            @Metadata(description = "The CamelContext name (only present when a backlog tracer is available)") String name,
+            @Metadata(description = "The latest completed message trace entries, as opaque JSON objects (only present when a backlog tracer is available)") List<Map<String, Object>> traces) {
+    }
 
     public MessageHistoryDevConsole() {
         super("camel", "message-history", "Message History", "History of latest completed exchange");
@@ -60,42 +69,43 @@ public class MessageHistoryDevConsole extends AbstractDevConsole {
         return sb.toString();
     }
 
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        JsonObject root = new JsonObject();
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        int codeLimit = optionInt(options, CODE_LIMIT, 5);
 
-        String codeLimit = (String) options.getOrDefault(CODE_LIMIT, "5");
+        String name = null;
+        List<Map<String, Object>> traces = null;
 
         BacklogTracer tracer = getCamelContext().getCamelContextExtension().getContextPlugin(BacklogTracer.class);
         if (tracer != null) {
-            JsonArray arr = new JsonArray();
+            traces = new ArrayList<>();
 
             Collection<BacklogTracerEventMessage> queue = tracer.getLatestMessageHistory();
             for (BacklogTracerEventMessage t : queue) {
                 JsonObject to = (JsonObject) t.asJSon();
 
                 // enrich with source code +/- lines around location
-                int limit = Integer.parseInt(codeLimit);
+                int limit = codeLimit;
                 if (limit > 0) {
                     String rid = to.getString("routeId");
                     String loc = to.getString("location");
                     if (rid != null) {
-                        List<JsonObject> code = enrichSourceCode(rid, loc, limit);
+                        JsonArray code = enrichSourceCode(rid, loc, limit);
                         if (code != null && !code.isEmpty()) {
                             to.put("code", code);
                         }
                     }
                 }
 
-                arr.add(to);
+                traces.add(to);
             }
-            root.put("name", getCamelContext().getName());
-            root.put("traces", arr);
+            name = getCamelContext().getName();
         }
 
-        return root;
+        Response response = new Response(name, traces);
+        return JsonRecordSupport.toJsonObject(response);
     }
 
-    private List<JsonObject> enrichSourceCode(String routeId, String location, int lines) {
+    private JsonArray enrichSourceCode(String routeId, String location, int lines) {
         Route route = getCamelContext().getRoute(routeId);
         if (route == null) {
             return null;
@@ -105,7 +115,7 @@ public class MessageHistoryDevConsole extends AbstractDevConsole {
             return null;
         }
 
-        List<JsonObject> code = new ArrayList<>();
+        JsonArray code = new JsonArray();
 
         location = StringHelper.afterLast(location, ":");
         int line = 0;

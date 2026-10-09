@@ -25,8 +25,23 @@ public class BedrockAgentRuntimeEndpointConfigurer extends PropertyConfigurerSup
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "accesskey":
         case "accessKey": target.getConfiguration().setAccessKey(property(camelContext, java.lang.String.class, value)); return true;
+        case "agentaliasid":
+        case "agentAliasId": target.getConfiguration().setAgentAliasId(property(camelContext, java.lang.String.class, value)); return true;
+        case "agentid":
+        case "agentId": target.getConfiguration().setAgentId(property(camelContext, java.lang.String.class, value)); return true;
+        case "bedrockagentruntimeasyncclient":
+        case "bedrockAgentRuntimeAsyncClient": target.getConfiguration().setBedrockAgentRuntimeAsyncClient(property(camelContext, software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeAsyncClient.class, value)); return true;
         case "bedrockagentruntimeclient":
         case "bedrockAgentRuntimeClient": target.getConfiguration().setBedrockAgentRuntimeClient(property(camelContext, software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient.class, value)); return true;
+        case "enabletrace":
+        case "enableTrace": target.getConfiguration().setEnableTrace(property(camelContext, boolean.class, value)); return true;
+        case "flowaliasidentifier":
+        case "flowAliasIdentifier": target.getConfiguration().setFlowAliasIdentifier(property(camelContext, java.lang.String.class, value)); return true;
+        case "flowidentifier":
+        case "flowIdentifier": target.getConfiguration().setFlowIdentifier(property(camelContext, java.lang.String.class, value)); return true;
+        case "foundationmodel":
+        case "foundationModel": target.getConfiguration().setFoundationModel(property(camelContext, java.lang.String.class, value)); return true;
+        case "instruction": target.getConfiguration().setInstruction(property(camelContext, java.lang.String.class, value)); return true;
         case "knowledgebaseid":
         case "knowledgeBaseId": target.getConfiguration().setKnowledgeBaseId(property(camelContext, java.lang.String.class, value)); return true;
         case "lazystartproducer":
@@ -49,8 +64,12 @@ public class BedrockAgentRuntimeEndpointConfigurer extends PropertyConfigurerSup
         case "region": target.getConfiguration().setRegion(property(camelContext, java.lang.String.class, value)); return true;
         case "secretkey":
         case "secretKey": target.getConfiguration().setSecretKey(property(camelContext, java.lang.String.class, value)); return true;
+        case "sessionid":
+        case "sessionId": target.getConfiguration().setSessionId(property(camelContext, java.lang.String.class, value)); return true;
         case "sessiontoken":
         case "sessionToken": target.getConfiguration().setSessionToken(property(camelContext, java.lang.String.class, value)); return true;
+        case "streamoutputmode":
+        case "streamOutputMode": target.getConfiguration().setStreamOutputMode(property(camelContext, java.lang.String.class, value)); return true;
         case "trustallcertificates":
         case "trustAllCertificates": target.getConfiguration().setTrustAllCertificates(property(camelContext, boolean.class, value)); return true;
         case "uriendpointoverride":
@@ -67,7 +86,7 @@ public class BedrockAgentRuntimeEndpointConfigurer extends PropertyConfigurerSup
 
     @Override
     public String[] getAutowiredNames() {
-        return new String[]{"bedrockAgentRuntimeClient"};
+        return new String[]{"bedrockAgentRuntimeAsyncClient", "bedrockAgentRuntimeClient"};
     }
 
     @Override
@@ -75,8 +94,23 @@ public class BedrockAgentRuntimeEndpointConfigurer extends PropertyConfigurerSup
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "accesskey":
         case "accessKey": return java.lang.String.class;
+        case "agentaliasid":
+        case "agentAliasId": return java.lang.String.class;
+        case "agentid":
+        case "agentId": return java.lang.String.class;
+        case "bedrockagentruntimeasyncclient":
+        case "bedrockAgentRuntimeAsyncClient": return software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeAsyncClient.class;
         case "bedrockagentruntimeclient":
         case "bedrockAgentRuntimeClient": return software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient.class;
+        case "enabletrace":
+        case "enableTrace": return boolean.class;
+        case "flowaliasidentifier":
+        case "flowAliasIdentifier": return java.lang.String.class;
+        case "flowidentifier":
+        case "flowIdentifier": return java.lang.String.class;
+        case "foundationmodel":
+        case "foundationModel": return java.lang.String.class;
+        case "instruction": return java.lang.String.class;
         case "knowledgebaseid":
         case "knowledgeBaseId": return java.lang.String.class;
         case "lazystartproducer":
@@ -99,8 +133,12 @@ public class BedrockAgentRuntimeEndpointConfigurer extends PropertyConfigurerSup
         case "region": return java.lang.String.class;
         case "secretkey":
         case "secretKey": return java.lang.String.class;
+        case "sessionid":
+        case "sessionId": return java.lang.String.class;
         case "sessiontoken":
         case "sessionToken": return java.lang.String.class;
+        case "streamoutputmode":
+        case "streamOutputMode": return java.lang.String.class;
         case "trustallcertificates":
         case "trustAllCertificates": return boolean.class;
         case "uriendpointoverride":
@@ -121,8 +159,23 @@ public class BedrockAgentRuntimeEndpointConfigurer extends PropertyConfigurerSup
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "accesskey":
         case "accessKey": return target.getConfiguration().getAccessKey();
+        case "agentaliasid":
+        case "agentAliasId": return target.getConfiguration().getAgentAliasId();
+        case "agentid":
+        case "agentId": return target.getConfiguration().getAgentId();
+        case "bedrockagentruntimeasyncclient":
+        case "bedrockAgentRuntimeAsyncClient": return target.getConfiguration().getBedrockAgentRuntimeAsyncClient();
         case "bedrockagentruntimeclient":
         case "bedrockAgentRuntimeClient": return target.getConfiguration().getBedrockAgentRuntimeClient();
+        case "enabletrace":
+        case "enableTrace": return target.getConfiguration().isEnableTrace();
+        case "flowaliasidentifier":
+        case "flowAliasIdentifier": return target.getConfiguration().getFlowAliasIdentifier();
+        case "flowidentifier":
+        case "flowIdentifier": return target.getConfiguration().getFlowIdentifier();
+        case "foundationmodel":
+        case "foundationModel": return target.getConfiguration().getFoundationModel();
+        case "instruction": return target.getConfiguration().getInstruction();
         case "knowledgebaseid":
         case "knowledgeBaseId": return target.getConfiguration().getKnowledgeBaseId();
         case "lazystartproducer":
@@ -145,8 +198,12 @@ public class BedrockAgentRuntimeEndpointConfigurer extends PropertyConfigurerSup
         case "region": return target.getConfiguration().getRegion();
         case "secretkey":
         case "secretKey": return target.getConfiguration().getSecretKey();
+        case "sessionid":
+        case "sessionId": return target.getConfiguration().getSessionId();
         case "sessiontoken":
         case "sessionToken": return target.getConfiguration().getSessionToken();
+        case "streamoutputmode":
+        case "streamOutputMode": return target.getConfiguration().getStreamOutputMode();
         case "trustallcertificates":
         case "trustAllCertificates": return target.getConfiguration().isTrustAllCertificates();
         case "uriendpointoverride":

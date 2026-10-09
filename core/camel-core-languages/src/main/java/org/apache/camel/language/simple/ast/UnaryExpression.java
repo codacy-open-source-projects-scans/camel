@@ -16,13 +16,17 @@
  */
 package org.apache.camel.language.simple.ast;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelExchangeException;
 import org.apache.camel.Exchange;
 import org.apache.camel.Expression;
 import org.apache.camel.NoTypeConversionAvailableException;
+import org.apache.camel.Predicate;
 import org.apache.camel.RuntimeCamelException;
-import org.apache.camel.language.simple.BaseSimpleParser;
+import org.apache.camel.language.simple.SimplePredicateExpression;
 import org.apache.camel.language.simple.types.SimpleParserException;
 import org.apache.camel.language.simple.types.SimpleToken;
 import org.apache.camel.language.simple.types.UnaryOperatorType;
@@ -59,6 +63,13 @@ public class UnaryExpression extends BaseSimpleNode {
         this.left = left;
     }
 
+    /**
+     * NOT is written before what it negates, so the node it works upon comes from the right (CAMEL-24984).
+     */
+    public void acceptRight(SimpleNode right) {
+        this.left = right;
+    }
+
     public UnaryOperatorType getOperator() {
         return operator;
     }
@@ -74,33 +85,71 @@ public class UnaryExpression extends BaseSimpleNode {
         final Expression leftExp = left.createExpression(camelContext, expression);
 
         if (operator == UnaryOperatorType.INC) {
-            return createIncExpression(camelContext, leftExp);
+            return createIncDecExpression(camelContext, leftExp, 1);
         } else if (operator == UnaryOperatorType.DEC) {
-            return createDecExpression(camelContext, leftExp);
+            return createIncDecExpression(camelContext, leftExp, -1);
+        } else if (operator == UnaryOperatorType.NOT) {
+            return createNotExpression(camelContext, leftExp);
         }
 
         throw new SimpleParserException("Unknown unary operator " + operator, token.getIndex());
     }
 
-    private Expression createIncExpression(CamelContext camelContext, final Expression leftExp) {
+    private Expression createNotExpression(CamelContext camelContext, final Expression exp) {
+        // Preserve the value-based rule for existing functions: ${body} is true and a missing header is false
+        // (CAMEL-24984). Only functions opting in explicitly use their predicate contract under negation.
+        final Predicate predicate = exp instanceof SimplePredicateExpression p
+                ? p : exchange -> ObjectHelper.evaluateValuePredicate(exp.evaluate(exchange, Object.class));
+        return new Expression() {
+            @Override
+            public void init(CamelContext context) {
+                exp.init(context);
+            }
+
+            @Override
+            public <T> T evaluate(Exchange exchange, Class<T> type) {
+                boolean matches = predicate.matches(exchange);
+                return camelContext.getTypeConverter().convertTo(type, exchange, !matches);
+            }
+
+            @Override
+            public String toString() {
+                return "!" + left;
+            }
+        };
+    }
+
+    private Expression createIncDecExpression(CamelContext camelContext, final Expression leftExp, final int delta) {
         return new Expression() {
             @Override
             public <T> T evaluate(Exchange exchange, Class<T> type) {
-                Number num = leftExp.evaluate(exchange, Number.class);
+                // evaluate only once as the left hand side may have side effects
+                Object value = leftExp.evaluate(exchange, Object.class);
+                Number num = value instanceof Number n
+                        ? n : camelContext.getTypeConverter().convertTo(Number.class, exchange, value);
                 if (num != null) {
-                    long val = num.longValue();
-                    val++;
+                    // keep decimals such as 1.5++ is 2.5
+                    Number result;
+                    if (num instanceof BigDecimal bd) {
+                        result = bd.add(BigDecimal.valueOf(delta));
+                    } else if (num instanceof BigInteger bi) {
+                        result = bi.add(BigInteger.valueOf(delta));
+                    } else if (num instanceof Double || num instanceof Float) {
+                        result = num.doubleValue() + delta;
+                    } else {
+                        result = num.longValue() + delta;
+                    }
 
                     // convert value back to same type as input as we want to preserve type
-                    Object left = leftExp.evaluate(exchange, Object.class);
+                    Object answer;
                     try {
-                        left = camelContext.getTypeConverter().mandatoryConvertTo(left.getClass(), exchange, val);
+                        answer = camelContext.getTypeConverter().mandatoryConvertTo(value.getClass(), exchange, result);
                     } catch (NoTypeConversionAvailableException e) {
                         throw RuntimeCamelException.wrapRuntimeCamelException(e);
                     }
 
                     // and return the result
-                    return camelContext.getTypeConverter().convertTo(type, left);
+                    return camelContext.getTypeConverter().convertTo(type, answer);
                 }
                 // cannot convert the expression as a number
                 Exception cause = new CamelExchangeException("Cannot evaluate " + leftExp + " as a number", exchange);
@@ -114,54 +163,4 @@ public class UnaryExpression extends BaseSimpleNode {
         };
     }
 
-    private Expression createDecExpression(CamelContext camelContext, final Expression leftExp) {
-        return new Expression() {
-            @Override
-            public <T> T evaluate(Exchange exchange, Class<T> type) {
-                Number num = leftExp.evaluate(exchange, Number.class);
-                if (num != null) {
-                    long val = num.longValue();
-                    val--;
-
-                    // convert value back to same type as input as we want to preserve type
-                    Object left = leftExp.evaluate(exchange, Object.class);
-                    try {
-                        left = camelContext.getTypeConverter().mandatoryConvertTo(left.getClass(), exchange, val);
-                    } catch (NoTypeConversionAvailableException e) {
-                        throw RuntimeCamelException.wrapRuntimeCamelException(e);
-                    }
-
-                    // and return the result
-                    return camelContext.getTypeConverter().convertTo(type, left);
-                }
-                // cannot convert the expression as a number
-                Exception cause = new CamelExchangeException("Cannot evaluate " + leftExp + " as a number", exchange);
-                throw RuntimeCamelException.wrapRuntimeCamelException(cause);
-            }
-
-            @Override
-            public String toString() {
-                return left + operator.toString();
-            }
-        };
-    }
-
-    @Override
-    public String createCode(CamelContext camelContext, String expression) throws SimpleParserException {
-        return BaseSimpleParser.CODE_START + doCreateCode(camelContext, expression) + BaseSimpleParser.CODE_END;
-    }
-
-    private String doCreateCode(CamelContext camelContext, String expression) throws SimpleParserException {
-        ObjectHelper.notNull(left, "left node", this);
-
-        final String number = left.createCode(camelContext, expression);
-
-        if (operator == UnaryOperatorType.INC) {
-            return "increment(exchange, " + number + ")";
-        } else if (operator == UnaryOperatorType.DEC) {
-            return "decrement(exchange, " + number + ")";
-        }
-
-        throw new SimpleParserException("Unknown unary operator " + operator, token.getIndex());
-    }
 }

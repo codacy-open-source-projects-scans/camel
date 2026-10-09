@@ -227,6 +227,38 @@ public interface KnativeEndpointBuilderFactory {
             return this;
         }
         /**
+         * If enabled and an Exchange failed processing on the consumer side the
+         * response's body won't contain the exception's stack trace.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: true
+         * Group: consumer
+         * 
+         * @param muteException the value to set
+         * @return the dsl builder
+         */
+        default KnativeEndpointConsumerBuilder muteException(boolean muteException) {
+            doSetProperty("muteException", muteException);
+            return this;
+        }
+        /**
+         * If enabled and an Exchange failed processing on the consumer side the
+         * response's body won't contain the exception's stack trace.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: true
+         * Group: consumer
+         * 
+         * @param muteException the value to set
+         * @return the dsl builder
+         */
+        default KnativeEndpointConsumerBuilder muteException(String muteException) {
+            doSetProperty("muteException", muteException);
+            return this;
+        }
+        /**
          * Transforms the reply into a cloud event that will be processed by the
          * caller. When listening to events from a Knative Broker, if this flag
          * is enabled, replies will be published to the same Broker where the
@@ -1024,6 +1056,19 @@ public interface KnativeEndpointBuilderFactory {
          * Since: 3.15
          * Maven coordinates: org.apache.camel:camel-knative
          * 
+         * @return the dsl builder for the headers' name.
+         */
+        default KnativeHeaderNameBuilder knative() {
+            return KnativeHeaderNameBuilder.INSTANCE;
+        }
+        /**
+         * Knative (camel-knative)
+         * Send and receive events from Knative.
+         * 
+         * Category: cloud
+         * Since: 3.15
+         * Maven coordinates: org.apache.camel:camel-knative
+         * 
          * Syntax: <code>knative:type/typeId</code>
          * 
          * Path parameter: type
@@ -1067,6 +1112,116 @@ public interface KnativeEndpointBuilderFactory {
             return KnativeEndpointBuilderFactory.endpointBuilder(componentName, path);
         }
 
+    }
+    /**
+     * The builder of headers' name for the Knative component.
+     */
+    public static class KnativeHeaderNameBuilder {
+        /**
+         * The internal instance of the builder used to access to all the
+         * methods representing the name of headers.
+         */
+        public static final KnativeHeaderNameBuilder INSTANCE = new KnativeHeaderNameBuilder();
+
+        /**
+         * The event ID. The producer uses the exchange ID when not set.
+         * 
+         * The option is a: {@code String} type.
+         * 
+         * Group: common
+         * 
+         * @return the name of the header {@code CloudEventID}.
+         */
+        public String cloudEventID() {
+            return "CamelCloudEventID";
+        }
+        /**
+         * The event source. The producer uses the route ID when not set.
+         * 
+         * The option is a: {@code String} type.
+         * 
+         * Group: common
+         * 
+         * @return the name of the header {@code CloudEventSource}.
+         */
+        public String cloudEventSource() {
+            return "CamelCloudEventSource";
+        }
+        /**
+         * The CloudEvents specification version. The producer uses the
+         * configured version when not set.
+         * 
+         * The option is a: {@code String} type.
+         * 
+         * Group: common
+         * 
+         * @return the name of the header {@code CloudEventVersion}.
+         */
+        public String cloudEventVersion() {
+            return "CamelCloudEventVersion";
+        }
+        /**
+         * The event type. On a knative event endpoint with a type ID in the
+         * URI, the type ID takes precedence over this header.
+         * 
+         * The option is a: {@code String} type.
+         * 
+         * Group: common
+         * 
+         * @return the name of the header {@code CloudEventType}.
+         */
+        public String cloudEventType() {
+            return "CamelCloudEventType";
+        }
+        /**
+         * The content type of the event data.
+         * 
+         * The option is a: {@code String} type.
+         * 
+         * Group: common
+         * 
+         * @return the name of the header {@code CloudEventDataContentType}.
+         */
+        public String cloudEventDataContentType() {
+            return "CamelCloudEventDataContentType";
+        }
+        /**
+         * The URI of the schema that the event data adheres to.
+         * 
+         * The option is a: {@code String} type.
+         * 
+         * Group: common
+         * 
+         * @return the name of the header {@code CloudEventSchemaURL}.
+         */
+        public String cloudEventSchemaURL() {
+            return "CamelCloudEventSchemaURL";
+        }
+        /**
+         * The subject of the event in the context of the event source.
+         * 
+         * The option is a: {@code String} type.
+         * 
+         * Group: common
+         * 
+         * @return the name of the header {@code CloudEventSubject}.
+         */
+        public String cloudEventSubject() {
+            return "CamelCloudEventSubject";
+        }
+        /**
+         * The time the event occurred. The producer uses the exchange creation
+         * time when not set.
+         * 
+         * The option is a: {@code String} type.
+         * 
+         * Group: common
+         * 
+         * @return the name of the header {@code CloudEventTime}.
+         */
+        public String cloudEventTime() {
+            return "CamelCloudEventTime";
+        }
     }
     static KnativeEndpointBuilder endpointBuilder(String componentName, String path) {
         class KnativeEndpointBuilderImpl extends AbstractEndpointBuilder implements KnativeEndpointBuilder, AdvancedKnativeEndpointBuilder {

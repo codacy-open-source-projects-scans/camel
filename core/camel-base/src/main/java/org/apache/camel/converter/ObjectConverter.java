@@ -16,6 +16,7 @@
  */
 package org.apache.camel.converter;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Iterator;
 
@@ -133,8 +134,8 @@ public final class ObjectConverter {
         if (value.length != 1) {
             throw new IllegalArgumentException("byte[] must have exactly a length of 1: " + value.length);
         }
-        byte b = value[0];
-        return (char) b;
+        // a byte is signed, so mask to avoid sign extension of values above 127
+        return (char) (value[0] & 0xFF);
     }
 
     @Converter(order = 14)
@@ -233,12 +234,15 @@ public final class ObjectConverter {
             return new BigInteger(str);
         }
 
-        Long num = null;
-        if (value instanceof Number number) {
-            num = number.longValue();
-        }
-        if (num != null) {
-            return BigInteger.valueOf(num);
+        if (value instanceof BigInteger bi) {
+            return bi;
+        } else if (value instanceof BigDecimal bd) {
+            return bd.toBigInteger();
+        } else if (value instanceof Double || value instanceof Float) {
+            // use big decimal to not lose precision for values larger than a long
+            return new BigDecimal(((Number) value).doubleValue()).toBigInteger();
+        } else if (value instanceof Number number) {
+            return BigInteger.valueOf(number.longValue());
         } else {
             return null;
         }
@@ -329,14 +333,14 @@ public final class ObjectConverter {
     @Converter(order = 39)
     public static Number toNumber(String text) {
         // what kind of numeric is it
-        boolean dot = text.indexOf('.') != -1;
-        if (dot) {
+        boolean decimal = text.indexOf('.') != -1 || text.indexOf('e') != -1 || text.indexOf('E') != -1;
+        if (decimal) {
             return Double.parseDouble(text);
         } else {
             // its either a long or integer value (lets just avoid bytes)
             long lon = Long.parseLong(text);
-            if (lon < Integer.MAX_VALUE) {
-                return Integer.valueOf(text);
+            if (lon >= Integer.MIN_VALUE && lon <= Integer.MAX_VALUE) {
+                return (int) lon;
             } else {
                 return lon;
             }
@@ -347,6 +351,32 @@ public final class ObjectConverter {
     public static Number toNumber(byte[] value, Exchange exchange) {
         String str = new String(value, ExchangeHelper.getCharset(exchange));
         return toNumber(str);
+    }
+
+    /**
+     * Returns the converted value, or null if the value is null
+     */
+    @Converter(order = 41, allowNull = true)
+    public static BigDecimal toBigDecimal(Object value) {
+        if (org.apache.camel.util.ObjectHelper.isNaN(value)) {
+            return null;
+        }
+        if (value instanceof String str) {
+            return new BigDecimal(str);
+        }
+
+        if (value instanceof BigDecimal bd) {
+            return bd;
+        } else if (value instanceof BigInteger bi) {
+            return new BigDecimal(bi);
+        } else if (value instanceof Double || value instanceof Float) {
+            // use the decimal text of the value, as the binary value of 0.1 is not exactly 0.1
+            return new BigDecimal(value.toString());
+        } else if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.longValue());
+        } else {
+            return null;
+        }
     }
 
 }

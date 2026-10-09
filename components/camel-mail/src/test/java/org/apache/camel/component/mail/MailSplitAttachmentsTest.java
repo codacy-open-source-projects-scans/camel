@@ -43,7 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Tests the {@link SplitAttachmentsExpression}.
  */
 public class MailSplitAttachmentsTest extends CamelTestSupport {
-    private static final MailboxUser james = Mailbox.getOrCreateUser("james", "secret");
+    private static final MailboxUser james = Mailbox.getOrCreateUser("MailSplitAttachmentsTest-james", "secret");
 
     private Endpoint endpoint;
     private SplitAttachmentsExpression splitAttachmentsExpression;
@@ -51,7 +51,7 @@ public class MailSplitAttachmentsTest extends CamelTestSupport {
 
     @BeforeEach
     public void clearMailBox() {
-        Mailbox.clearAll();
+        Mailbox.clearAll(james);
     }
 
     @BeforeEach

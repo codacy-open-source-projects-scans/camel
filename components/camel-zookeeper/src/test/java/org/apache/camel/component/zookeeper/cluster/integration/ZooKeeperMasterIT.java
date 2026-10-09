@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public final class ZooKeeperMasterIT {
     @RegisterExtension
-    static ZooKeeperService service = ZooKeeperServiceFactory.createService();
+    static ZooKeeperService service = ZooKeeperServiceFactory.createSingletonService();
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ZooKeeperMasterIT.class);
     private static final List<String> CLIENTS = IntStream.range(0, 3).mapToObj(Integer::toString).toList();
@@ -78,7 +78,7 @@ public final class ZooKeeperMasterIT {
             ZooKeeperClusterService service = new ZooKeeperClusterService();
             service.setId("node-" + id);
             service.setNodes(connectString);
-            service.setBasePath("/camel/master");
+            service.setBasePath("/camel-ZooKeeperMasterIT/master");
 
             context.disableJMX();
             context.getCamelContextExtension().setName("context-" + id);

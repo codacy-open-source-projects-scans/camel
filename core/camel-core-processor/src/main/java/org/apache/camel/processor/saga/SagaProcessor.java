@@ -17,9 +17,9 @@
 package org.apache.camel.processor.saga;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import org.apache.camel.AsyncCallback;
-import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import org.apache.camel.Traceable;
@@ -29,21 +29,23 @@ import org.apache.camel.saga.CamelSagaService;
 import org.apache.camel.saga.CamelSagaStep;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.RouteIdAware;
-import org.apache.camel.support.service.ServiceHelper;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.util.ObjectHelper;
 
 /**
  * Processor for handling sagas.
  */
-public abstract class SagaProcessor extends BaseDelegateProcessorSupport implements Traceable, IdAware, RouteIdAware {
+public abstract class SagaProcessor extends BaseDelegateProcessorSupport
+        implements Traceable, IdAware, RouteIdAware, StepIdAware {
 
     protected final CamelSagaService sagaService;
     protected final CamelSagaStep step;
     protected final SagaCompletionMode completionMode;
     private String id;
     private String routeId;
+    private String stepId;
 
-    protected SagaProcessor(CamelContext camelContext, Processor childProcessor, CamelSagaService sagaService,
+    protected SagaProcessor(Processor childProcessor, CamelSagaService sagaService,
                             SagaCompletionMode completionMode, CamelSagaStep step) {
         super(ObjectHelper.notNull(childProcessor, "childProcessor"));
         this.sagaService = ObjectHelper.notNull(sagaService, "sagaService");
@@ -52,7 +54,7 @@ public abstract class SagaProcessor extends BaseDelegateProcessorSupport impleme
     }
 
     protected CompletableFuture<CamelSagaCoordinator> getCurrentSagaCoordinator(Exchange exchange) {
-        String currentSaga = exchange.getIn().getHeader(Exchange.SAGA_LONG_RUNNING_ACTION, String.class);
+        String currentSaga = getCurrentSagaId(exchange);
         if (currentSaga != null) {
             return sagaService.getSaga(currentSaga);
         }
@@ -60,12 +62,46 @@ public abstract class SagaProcessor extends BaseDelegateProcessorSupport impleme
         return CompletableFuture.completedFuture(null);
     }
 
+    /**
+     * Checks that the saga of the exchange, if any, is still known by the saga service. The in-memory saga service
+     * removes a saga once it is completed or compensated (for example after a timeout), and then a step of that saga
+     * must fail, instead of starting a new saga or running outside of a saga.
+     *
+     * @param  exchange              the exchange
+     * @param  coordinator           the coordinator of the saga found for the exchange, or <tt>null</tt> if none
+     * @throws IllegalStateException if the exchange belongs to a saga that is no longer active
+     */
+    protected void checkSagaIsActive(Exchange exchange, CamelSagaCoordinator coordinator) {
+        if (coordinator == null) {
+            String currentSaga = getCurrentSagaId(exchange);
+            if (currentSaga != null) {
+                throw new IllegalStateException("Cannot begin: saga " + currentSaga + " is not active or not known");
+            }
+        }
+    }
+
+    private String getCurrentSagaId(Exchange exchange) {
+        // try internal state first (survives removeHeaders("*"))
+        String currentSaga = exchange.getExchangeExtension().getSagaLongRunningAction();
+        if (currentSaga == null && sagaService.isLongRunningActionHeaderSupported()) {
+            // fall back to header for interoperability (e.g., LRA protocol), but only for a service that takes part
+            // in such a protocol. Long-Running-Action is outside the Camel namespace that consumers filter, and the
+            // id is written back onto responses, so consulting it where no external coordinator exists would let a
+            // message pick which saga its exchange joins.
+            currentSaga = exchange.getIn().getHeader(Exchange.SAGA_LONG_RUNNING_ACTION, String.class);
+        }
+        return currentSaga;
+    }
+
     protected void setCurrentSagaCoordinator(Exchange exchange, CamelSagaCoordinator coordinator) {
         if (coordinator != null) {
-            exchange.getIn().setHeader(Exchange.SAGA_LONG_RUNNING_ACTION, coordinator.getId());
+            String id = coordinator.getId();
+            exchange.getIn().setHeader(Exchange.SAGA_LONG_RUNNING_ACTION, id);
+            exchange.getExchangeExtension().setSagaLongRunningAction(id);
         } else {
             exchange.getIn().removeHeader(Exchange.SAGA_LONG_RUNNING_ACTION);
             exchange.getMessage().removeHeader(Exchange.SAGA_LONG_RUNNING_ACTION);
+            exchange.getExchangeExtension().setSagaLongRunningAction(null);
         }
     }
 
@@ -75,19 +111,30 @@ public abstract class SagaProcessor extends BaseDelegateProcessorSupport impleme
         if (this.completionMode == SagaCompletionMode.AUTO) {
             if (exchange.getException() != null) {
                 if (coordinator != null) {
-                    coordinator.compensate(exchange).whenComplete((done, ex) -> ifNotException(ex, exchange, callback, () -> {
-                        setCurrentSagaCoordinator(exchange, previousCoordinator);
-                        callback.done(false);
-                    }));
+                    final Exception cause = exchange.getException();
+                    coordinator.compensate(exchange).whenComplete((done, ex) -> {
+                        if (ex != null) {
+                            // keep the exception that caused the compensation, and attach the compensation failure to it.
+                            // This adds to the exception instance thrown by the route: if a route throws a shared
+                            // instance, its suppressed exceptions grow with every failed compensation
+                            cause.addSuppressed(unwrap(ex));
+                            exchange.setException(cause);
+                            callback.done(false);
+                        } else {
+                            setCurrentSagaCoordinator(exchange, previousCoordinator);
+                            callback.done(false);
+                        }
+                    });
                 } else {
                     // No coordinator available, so no saga available.
                     callback.done(false);
                 }
             } else {
-                coordinator.complete(exchange).whenComplete((done, ex) -> ifNotException(ex, exchange, callback, () -> {
-                    setCurrentSagaCoordinator(exchange, previousCoordinator);
-                    callback.done(false);
-                }));
+                coordinator.complete(exchange)
+                        .whenComplete((done, ex) -> ifNotException(ex != null ? unwrap(ex) : null, exchange, callback, () -> {
+                            setCurrentSagaCoordinator(exchange, previousCoordinator);
+                            callback.done(false);
+                        }));
             }
         } else if (this.completionMode == SagaCompletionMode.MANUAL) {
             // Completion will be handled manually by the user
@@ -95,6 +142,14 @@ public abstract class SagaProcessor extends BaseDelegateProcessorSupport impleme
         } else {
             throw new IllegalStateException("Unsupported completion mode: " + this.completionMode);
         }
+    }
+
+    /**
+     * The failure of a dependent stage of a {@link CompletableFuture} is wrapped in a {@link CompletionException}: the
+     * exchange gets the actual failure.
+     */
+    private static Throwable unwrap(Throwable ex) {
+        return ex instanceof CompletionException && ex.getCause() != null ? ex.getCause() : ex;
     }
 
     public CamelSagaService getSagaService() {
@@ -122,8 +177,18 @@ public abstract class SagaProcessor extends BaseDelegateProcessorSupport impleme
     }
 
     @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
+    @Override
     public String toString() {
-        return "id";
+        return id;
     }
 
     @Override
@@ -146,19 +211,13 @@ public abstract class SagaProcessor extends BaseDelegateProcessorSupport impleme
                 callback.done(false);
             }
         } else {
-            code.run();
+            try {
+                code.run();
+            } catch (Exception e) {
+                exchange.setException(e);
+                callback.done(false);
+            }
         }
     }
 
-    @Override
-    protected void doStart() throws Exception {
-        super.doStart();
-        ServiceHelper.startService(sagaService);
-    }
-
-    @Override
-    protected void doStop() throws Exception {
-        super.doStop();
-        ServiceHelper.stopService(sagaService);
-    }
 }

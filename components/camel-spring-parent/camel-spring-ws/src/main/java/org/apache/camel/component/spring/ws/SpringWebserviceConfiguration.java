@@ -24,6 +24,7 @@ import org.apache.camel.component.spring.ws.bean.CamelSpringWSEndpointMapping;
 import org.apache.camel.component.spring.ws.filter.MessageFilter;
 import org.apache.camel.component.spring.ws.type.EndpointMappingKey;
 import org.apache.camel.component.spring.ws.type.EndpointMappingType;
+import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriParams;
 import org.apache.camel.spi.UriPath;
@@ -49,6 +50,9 @@ public class SpringWebserviceConfiguration {
 
     @UriParam(label = "common")
     private MessageIdStrategy messageIdStrategy;
+
+    @UriParam(label = "common")
+    private HeaderFilterStrategy headerFilterStrategy = new SpringWebserviceHeaderFilterStrategy();
 
     /* Producer configuration */
     @UriParam(label = "producer")
@@ -420,6 +424,19 @@ public class SpringWebserviceConfiguration {
         this.messageIdStrategy = messageIdStrategy;
     }
 
+    public HeaderFilterStrategy getHeaderFilterStrategy() {
+        return headerFilterStrategy;
+    }
+
+    /**
+     * To use a custom HeaderFilterStrategy to filter headers mapped to and from the Camel message. By default the
+     * internal {@code Camel} and {@code camel} header namespace (case-insensitive) is filtered out from inbound SOAP
+     * headers, and the default message filter does not write it into outbound SOAP headers.
+     */
+    public void setHeaderFilterStrategy(HeaderFilterStrategy headerFilterStrategy) {
+        this.headerFilterStrategy = headerFilterStrategy;
+    }
+
     public boolean isAllowResponseHeaderOverride() {
         return allowResponseHeaderOverride;
     }
@@ -427,7 +444,9 @@ public class SpringWebserviceConfiguration {
     /**
      * Option to override soap response header in in/out exchange with header info from the actual service layer. If the
      * invoked service appends or rewrites the soap header this option when set to true, allows the modified soap header
-     * to be overwritten in in/out message headers
+     * to be overwritten in in/out message headers. The names of the soap response header attributes and elements are
+     * filtered using the headerFilterStrategy, which by default filters out the internal {@code Camel} and
+     * {@code camel} header namespace (case-insensitive).
      */
     public void setAllowResponseHeaderOverride(boolean allowResponseHeaderOverride) {
         this.allowResponseHeaderOverride = allowResponseHeaderOverride;

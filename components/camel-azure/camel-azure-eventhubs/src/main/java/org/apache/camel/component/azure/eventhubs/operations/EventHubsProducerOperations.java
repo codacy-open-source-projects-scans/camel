@@ -30,6 +30,7 @@ import org.apache.camel.Message;
 import org.apache.camel.TypeConverter;
 import org.apache.camel.component.azure.eventhubs.EventHubsConfiguration;
 import org.apache.camel.component.azure.eventhubs.EventHubsConfigurationOptionsProxy;
+import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.util.ObjectHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,12 +42,15 @@ public class EventHubsProducerOperations {
 
     private final EventHubProducerAsyncClient producerAsyncClient;
     private final EventHubsConfigurationOptionsProxy configurationOptionsProxy;
+    private final HeaderFilterStrategy headerFilterStrategy;
 
     public EventHubsProducerOperations(final EventHubProducerAsyncClient producerAsyncClient,
-                                       final EventHubsConfiguration configuration) {
+                                       final EventHubsConfiguration configuration,
+                                       final HeaderFilterStrategy headerFilterStrategy) {
         ObjectHelper.notNull(producerAsyncClient, "client cannot be null");
 
         this.producerAsyncClient = producerAsyncClient;
+        this.headerFilterStrategy = headerFilterStrategy;
         configurationOptionsProxy = new EventHubsConfigurationOptionsProxy(configuration);
     }
 
@@ -54,8 +58,15 @@ public class EventHubsProducerOperations {
         ObjectHelper.notNull(exchange, "exchange cannot be null");
         ObjectHelper.notNull(callback, "callback cannot be null");
 
-        final SendOptions sendOptions = createSendOptions(configurationOptionsProxy.getPartitionKey(exchange),
-                configurationOptionsProxy.getPartitionId(exchange));
+        String partitionKey = configurationOptionsProxy.getPartitionKey(exchange);
+        final String partitionId = configurationOptionsProxy.getPartitionId(exchange);
+        if (ObjectHelper.isEmpty(partitionKey) && ObjectHelper.isEmpty(partitionId)) {
+            // neither the route nor the endpoint chose a partition: keep the partition key of a received event,
+            // so events with the same key stay together, but never its partition id, as partitions differ between
+            // Event Hubs
+            partitionKey = configurationOptionsProxy.getReceivedPartitionKey(exchange);
+        }
+        final SendOptions sendOptions = createSendOptions(partitionKey, partitionId);
         final Iterable<EventData> eventData = createEventData(exchange);
 
         return sendAsyncEvents(eventData, sendOptions, exchange, callback);
@@ -107,7 +118,7 @@ public class EventHubsProducerOperations {
         // check if our exchange is list or contain some values
         if (exchange.getIn().getBody() instanceof Iterable) {
             return createEventDataFromIterable((Iterable<Object>) exchange.getIn().getBody(),
-                    exchange.getContext().getTypeConverter(), exchange.getIn().getHeaders());
+                    exchange.getContext().getTypeConverter(), exchange.getIn().getHeaders(), exchange);
         }
 
         // we have only a single event here
@@ -115,16 +126,17 @@ public class EventHubsProducerOperations {
     }
 
     private Iterable<EventData> createEventDataFromIterable(
-            final Iterable<Object> inputData, final TypeConverter converter, Map<String, Object> headers) {
+            final Iterable<Object> inputData, final TypeConverter converter,
+            Map<String, Object> headers, final Exchange exchange) {
         final List<EventData> finalEventData = new LinkedList<>();
 
         inputData.forEach(data -> {
-            if (data instanceof Exchange) {
-                finalEventData.add(createEventDataFromExchange((Exchange) data));
-            } else if (data instanceof Message) {
-                finalEventData.add(createEventDataFromMessage((Message) data));
+            if (data instanceof Exchange ex) {
+                finalEventData.add(createEventDataFromExchange(ex));
+            } else if (data instanceof Message msg) {
+                finalEventData.add(createEventDataFromMessage(msg));
             } else {
-                finalEventData.add(createEventDataFromObject(data, converter, headers));
+                finalEventData.add(createEventDataFromObject(data, converter, headers, exchange));
             }
         });
 
@@ -137,11 +149,12 @@ public class EventHubsProducerOperations {
 
     private EventData createEventDataFromMessage(final Message message) {
         return createEventDataFromObject(message.getBody(), message.getExchange().getContext().getTypeConverter(),
-                message.getHeaders());
+                message.getHeaders(), message.getExchange());
     }
 
     private EventData createEventDataFromObject(
-            final Object inputData, final TypeConverter converter, Map<String, Object> headers) {
+            final Object inputData, final TypeConverter converter,
+            Map<String, Object> headers, final Exchange exchange) {
         final byte[] data = converter.convertTo(byte[].class, inputData);
 
         if (ObjectHelper.isEmpty(data)) {
@@ -152,7 +165,15 @@ public class EventHubsProducerOperations {
         }
 
         EventData eventData = new EventData(data);
-        eventData.getProperties().putAll(headers);
+        if (headerFilterStrategy != null) {
+            headers.forEach((key, value) -> {
+                if (!headerFilterStrategy.applyFilterToCamelHeaders(key, value, exchange)) {
+                    eventData.getProperties().put(key, value);
+                }
+            });
+        } else {
+            eventData.getProperties().putAll(headers);
+        }
 
         return eventData;
     }

@@ -21,19 +21,30 @@ public class LangChain4jChatEndpointUriFactory extends org.apache.camel.support.
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(7);
-        props.add("bridgeErrorHandler");
+        Set<String> props = new HashSet<>(12);
+        props.add("apiKey");
+        props.add("baseUrl");
         props.add("chatId");
         props.add("chatModel");
         props.add("chatOperation");
-        props.add("exceptionHandler");
-        props.add("exchangePattern");
+        props.add("customProvider");
         props.add("lazyStartProducer");
+        props.add("modelName");
+        props.add("modelProperties");
+        props.add("provider");
+        props.add("temperature");
+        props.add("timeout");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
-        SECRET_PROPERTY_NAMES = Collections.emptySet();
-        MULTI_VALUE_PREFIXES = Collections.emptyMap();
+        Set<String> secretProps = new HashSet<>(1);
+        secretProps.add("apiKey");
+        SECRET_PROPERTY_NAMES = Collections.unmodifiableSet(secretProps);
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
+        Map<String, String> prefixes = new HashMap<>(1);
+        prefixes.put("modelProperties", "model.");
+        MULTI_VALUE_PREFIXES = Collections.unmodifiableMap(prefixes);
     }
 
     @Override
@@ -46,7 +57,7 @@ public class LangChain4jChatEndpointUriFactory extends org.apache.camel.support.
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "chatId", null, true, copy);
         uri = buildQueryParameters(uri, copy, encode);
@@ -61,6 +72,11 @@ public class LangChain4jChatEndpointUriFactory extends org.apache.camel.support.
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

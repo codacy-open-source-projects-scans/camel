@@ -22,6 +22,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.health.HealthCheck;
 import org.apache.camel.health.HealthCheckHelper;
 import org.apache.camel.health.WritableHealthCheckRepository;
@@ -137,7 +138,7 @@ public class Comprehend2Producer extends DefaultProducer {
                 try {
                     result = comprehendClient.detectDominantLanguage(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Dominant Language command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Dominant Language command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
@@ -147,6 +148,9 @@ public class Comprehend2Producer extends DefaultProducer {
                     message.setHeader(Comprehend2Constants.DETECTED_LANGUAGE, topLanguage.languageCode());
                     message.setHeader(Comprehend2Constants.DETECTED_LANGUAGE_SCORE, topLanguage.score());
                 }
+            } else {
+                throw new IllegalArgumentException(
+                        "detectDominantLanguage operation requires DetectDominantLanguageRequest in POJO mode");
             }
         } else {
             DetectDominantLanguageRequest.Builder request = DetectDominantLanguageRequest.builder();
@@ -155,7 +159,7 @@ public class Comprehend2Producer extends DefaultProducer {
             try {
                 result = comprehendClient.detectDominantLanguage(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Dominant Language command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Dominant Language command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -176,11 +180,14 @@ public class Comprehend2Producer extends DefaultProducer {
                 try {
                     result = comprehendClient.detectEntities(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Entities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Entities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result.entities());
+            } else {
+                throw new IllegalArgumentException(
+                        "detectEntities operation requires DetectEntitiesRequest in POJO mode");
             }
         } else {
             DetectEntitiesRequest.Builder request = DetectEntitiesRequest.builder();
@@ -190,7 +197,7 @@ public class Comprehend2Producer extends DefaultProducer {
             try {
                 result = comprehendClient.detectEntities(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Entities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Entities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -206,11 +213,14 @@ public class Comprehend2Producer extends DefaultProducer {
                 try {
                     result = comprehendClient.detectKeyPhrases(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Key Phrases command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Key Phrases command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result.keyPhrases());
+            } else {
+                throw new IllegalArgumentException(
+                        "detectKeyPhrases operation requires DetectKeyPhrasesRequest in POJO mode");
             }
         } else {
             DetectKeyPhrasesRequest.Builder request = DetectKeyPhrasesRequest.builder();
@@ -220,7 +230,7 @@ public class Comprehend2Producer extends DefaultProducer {
             try {
                 result = comprehendClient.detectKeyPhrases(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Key Phrases command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Key Phrases command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -236,13 +246,16 @@ public class Comprehend2Producer extends DefaultProducer {
                 try {
                     result = comprehendClient.detectSentiment(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Sentiment command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Sentiment command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
                 message.setHeader(Comprehend2Constants.DETECTED_SENTIMENT, result.sentimentAsString());
                 message.setHeader(Comprehend2Constants.DETECTED_SENTIMENT_SCORE, result.sentimentScore());
+            } else {
+                throw new IllegalArgumentException(
+                        "detectSentiment operation requires DetectSentimentRequest in POJO mode");
             }
         } else {
             DetectSentimentRequest.Builder request = DetectSentimentRequest.builder();
@@ -252,7 +265,7 @@ public class Comprehend2Producer extends DefaultProducer {
             try {
                 result = comprehendClient.detectSentiment(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Sentiment command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Sentiment command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -270,11 +283,14 @@ public class Comprehend2Producer extends DefaultProducer {
                 try {
                     result = comprehendClient.detectSyntax(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Syntax command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Syntax command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result.syntaxTokens());
+            } else {
+                throw new IllegalArgumentException(
+                        "detectSyntax operation requires DetectSyntaxRequest in POJO mode");
             }
         } else {
             DetectSyntaxRequest.Builder request = DetectSyntaxRequest.builder();
@@ -284,7 +300,7 @@ public class Comprehend2Producer extends DefaultProducer {
             try {
                 result = comprehendClient.detectSyntax(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Syntax command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Syntax command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -300,11 +316,14 @@ public class Comprehend2Producer extends DefaultProducer {
                 try {
                     result = comprehendClient.detectPiiEntities(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect PII Entities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect PII Entities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result.entities());
+            } else {
+                throw new IllegalArgumentException(
+                        "detectPiiEntities operation requires DetectPiiEntitiesRequest in POJO mode");
             }
         } else {
             DetectPiiEntitiesRequest.Builder request = DetectPiiEntitiesRequest.builder();
@@ -314,7 +333,7 @@ public class Comprehend2Producer extends DefaultProducer {
             try {
                 result = comprehendClient.detectPiiEntities(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect PII Entities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect PII Entities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -330,11 +349,14 @@ public class Comprehend2Producer extends DefaultProducer {
                 try {
                     result = comprehendClient.detectToxicContent(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Detect Toxic Content command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Detect Toxic Content command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result.resultList());
+            } else {
+                throw new IllegalArgumentException(
+                        "detectToxicContent operation requires DetectToxicContentRequest in POJO mode");
             }
         } else {
             DetectToxicContentRequest.Builder request = DetectToxicContentRequest.builder();
@@ -345,7 +367,7 @@ public class Comprehend2Producer extends DefaultProducer {
             try {
                 result = comprehendClient.detectToxicContent(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Detect Toxic Content command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Detect Toxic Content command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -361,11 +383,14 @@ public class Comprehend2Producer extends DefaultProducer {
                 try {
                     result = comprehendClient.classifyDocument(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Classify Document command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Classify Document command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "classifyDocument operation requires ClassifyDocumentRequest in POJO mode");
             }
         } else {
             ClassifyDocumentRequest.Builder request = ClassifyDocumentRequest.builder();
@@ -379,7 +404,7 @@ public class Comprehend2Producer extends DefaultProducer {
             try {
                 result = comprehendClient.classifyDocument(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Classify Document command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Classify Document command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -395,11 +420,14 @@ public class Comprehend2Producer extends DefaultProducer {
                 try {
                     result = comprehendClient.containsPiiEntities(req);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Contains PII Entities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Contains PII Entities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result.labels());
+            } else {
+                throw new IllegalArgumentException(
+                        "containsPiiEntities operation requires ContainsPiiEntitiesRequest in POJO mode");
             }
         } else {
             ContainsPiiEntitiesRequest.Builder request = ContainsPiiEntitiesRequest.builder();
@@ -409,7 +437,7 @@ public class Comprehend2Producer extends DefaultProducer {
             try {
                 result = comprehendClient.containsPiiEntities(request.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Contains PII Entities command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Contains PII Entities command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);

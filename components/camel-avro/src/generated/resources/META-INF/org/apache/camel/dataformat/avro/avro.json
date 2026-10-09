@@ -3,7 +3,7 @@
     "kind": "dataformat",
     "name": "avro",
     "title": "Avro",
-    "description": "Serialize and deserialize messages using Apache Avro binary data format.",
+    "description": "Serialize and deserialize messages using Apache Avro binary data format",
     "deprecated": false,
     "firstVersion": "2.14.0",
     "label": "dataformat,transformation",
@@ -11,12 +11,13 @@
     "supportLevel": "Stable",
     "groupId": "org.apache.camel",
     "artifactId": "camel-avro",
-    "version": "4.21.0-SNAPSHOT",
+    "version": "4.23.0-SNAPSHOT",
     "modelName": "avro",
     "modelJavaType": "org.apache.camel.model.dataformat.AvroDataFormat"
   },
   "properties": {
     "id": { "index": 0, "kind": "attribute", "displayName": "Id", "group": "common", "required": false, "type": "string", "javaType": "java.lang.String", "deprecated": false, "autowired": false, "secret": false, "description": "The id of this node" },
-    "instanceClassName": { "index": 1, "kind": "attribute", "displayName": "Instance Class Name", "group": "common", "required": false, "type": "string", "javaType": "java.lang.String", "deprecated": false, "autowired": false, "secret": false, "description": "Class name to use for marshal and unmarshalling" }
+    "instanceClassName": { "index": 1, "kind": "attribute", "displayName": "Instance Class Name", "group": "common", "required": false, "type": "string", "javaType": "java.lang.String", "deprecated": false, "autowired": false, "secret": false, "description": "Class name to use for marshal and unmarshalling." },
+    "serializablePackages": { "index": 2, "kind": "attribute", "displayName": "Serializable Packages", "group": "security", "label": "security", "required": false, "type": "string", "javaType": "java.lang.String", "deprecated": false, "autowired": false, "secret": false, "security": "insecure:serialization", "description": "Comma-separated list of additional packages that contain trusted Avro model classes. Avro 1.12 validates classes resolved from schemas; Camel automatically trusts packages derived from the configured schema or instance class." }
   }
 }

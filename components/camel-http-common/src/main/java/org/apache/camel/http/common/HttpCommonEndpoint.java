@@ -18,6 +18,7 @@ package org.apache.camel.http.common;
 
 import java.net.URI;
 
+import org.apache.camel.http.base.HttpHeaderFilterStrategy;
 import org.apache.camel.http.base.cookie.CookieHandler;
 import org.apache.camel.spi.EndpointServiceLocation;
 import org.apache.camel.spi.HeaderFilterStrategy;
@@ -40,7 +41,7 @@ public abstract class HttpCommonEndpoint extends DefaultEndpoint
     URI httpUri;
     @UriParam(label = "common,advanced",
               description = "To use a custom HeaderFilterStrategy to filter header to and from Camel message.")
-    HeaderFilterStrategy headerFilterStrategy = new org.apache.camel.http.base.HttpHeaderFilterStrategy();
+    HeaderFilterStrategy headerFilterStrategy = new HttpHeaderFilterStrategy();
     @UriParam(label = "common,advanced",
               description = "To use a custom HttpBinding to control the mapping between Camel message and HttpClient.")
     HttpBinding httpBinding;
@@ -182,8 +183,9 @@ public abstract class HttpCommonEndpoint extends DefaultEndpoint
     private String proxyHost;
     @UriParam(label = "producer,proxy", description = "Proxy server port")
     private int proxyPort;
-    @UriParam(label = "producer,proxy", enums = "http,https",
-              description = "Proxy server authentication protocol scheme to use")
+    @UriParam(label = "producer,proxy", enums = "http,https", defaultValue = "http",
+              description = "Proxy server connection protocol scheme. Defaults to http regardless of the target endpoint scheme,"
+                            + " because most corporate HTTP proxies expect a plain HTTP connection on their listener port.")
     private String proxyAuthScheme;
     @UriParam(label = "producer,proxy", enums = "Basic,Bearer,NTLM",
               description = "Proxy authentication method to use (NTLM is deprecated)")
@@ -277,6 +279,7 @@ public abstract class HttpCommonEndpoint extends DefaultEndpoint
             httpBinding.setMuteException(isMuteException());
             if (getComponent() != null) {
                 httpBinding.setAllowJavaSerializedObject(getComponent().isAllowJavaSerializedObject());
+                httpBinding.setDeserializationFilter(getComponent().getDeserializationFilter());
             }
             httpBinding.setEagerCheckContentAvailable(isEagerCheckContentAvailable());
             httpBinding.setMapHttpMessageBody(isMapHttpMessageBody());

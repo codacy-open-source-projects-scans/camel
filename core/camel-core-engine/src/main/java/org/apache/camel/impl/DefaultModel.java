@@ -20,12 +20,15 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.apache.camel.CamelContext;
@@ -50,6 +53,8 @@ import org.apache.camel.model.RouteFilters;
 import org.apache.camel.model.RouteTemplateDefinition;
 import org.apache.camel.model.RouteTemplateParameterDefinition;
 import org.apache.camel.model.RoutesDefinition;
+import org.apache.camel.model.SwitchCaseDefinition;
+import org.apache.camel.model.SwitchDefinition;
 import org.apache.camel.model.TemplatedRouteDefinition;
 import org.apache.camel.model.TemplatedRouteParameterDefinition;
 import org.apache.camel.model.ToDefinition;
@@ -61,6 +66,7 @@ import org.apache.camel.spi.NodeIdFactory;
 import org.apache.camel.spi.RouteTemplateLoaderListener;
 import org.apache.camel.spi.RouteTemplateParameterSource;
 import org.apache.camel.support.CamelContextHelper;
+import org.apache.camel.support.LocalBeanRegistry;
 import org.apache.camel.support.PatternHelper;
 import org.apache.camel.support.RouteTemplateHelper;
 import org.apache.camel.util.AntPathMatcher;
@@ -224,78 +230,74 @@ public class DefaultModel implements Model {
                         }
                     }
                 }
+                // how many rest services call each direct route
+                Map<String, Integer> directUsage = new HashMap<>();
+                for (RouteDefinition r : allRoutes) {
+                    ToDefinition to = restRouteToInline(r);
+                    if (to != null) {
+                        directUsage.merge(to.getEndpointUri(), 1, Integer::sum);
+                    }
+                }
                 for (RouteDefinition r : allRoutes) {
                     // loop all rest routes
                     FromDefinition from = r.getInput();
-                    if (from != null && !r.isInlined()) {
-                        // only attempt to inline if not already inlined
-                        String uri = from.getEndpointUri();
-                        if (uri != null && uri.startsWith("rest:")) {
-                            // find first EIP in the outputs (skip abstract which are onException/intercept
-                            // etc)
-                            ToDefinition to = null;
-                            for (ProcessorDefinition<?> def : r.getOutputs()) {
-                                if (def.isAbstract()) {
-                                    continue;
+                    ToDefinition to = restRouteToInline(r);
+                    if (to != null) {
+                        String toUri = to.getEndpointUri();
+                        RouteDefinition toBeInlined = directs.get(toUri);
+                        // a route used by more than one rest service is not inlined (its outputs can only
+                        // belong to one route), so the rest services call it
+                        if (toBeInlined != null && directUsage.getOrDefault(toUri, 0) == 1) {
+                            toBeRemoved.add(toBeInlined);
+                            // inline the source loc:line as starting from this direct input
+                            FromDefinition inlinedFrom = toBeInlined.getInput();
+                            from.setLocation(inlinedFrom.getLocation());
+                            from.setLineNumber(inlinedFrom.getLineNumber());
+                            // inline by replacing the outputs (preserve all abstracts such as interceptors)
+                            List<ProcessorDefinition<?>> toBeRemovedOut = new ArrayList<>();
+                            for (ProcessorDefinition<?> out : r.getOutputs()) {
+                                // should be removed if to be added via inlined
+                                boolean remove = toBeInlined.getOutputs().stream().anyMatch(o -> o == out);
+                                if (!remove) {
+                                    remove = !out.isAbstract(); // remove all non abstract
                                 }
-                                if (def instanceof ToDefinition toDefinition) {
-                                    to = toDefinition;
-                                }
-                                break;
-                            }
-                            if (to != null) {
-                                String toUri = to.getEndpointUri();
-                                RouteDefinition toBeInlined = directs.get(toUri);
-                                if (toBeInlined != null) {
-                                    toBeRemoved.add(toBeInlined);
-                                    // inline the source loc:line as starting from this direct input
-                                    FromDefinition inlinedFrom = toBeInlined.getInput();
-                                    from.setLocation(inlinedFrom.getLocation());
-                                    from.setLineNumber(inlinedFrom.getLineNumber());
-                                    // inline by replacing the outputs (preserve all abstracts such as interceptors)
-                                    List<ProcessorDefinition<?>> toBeRemovedOut = new ArrayList<>();
-                                    for (ProcessorDefinition<?> out : r.getOutputs()) {
-                                        // should be removed if to be added via inlined
-                                        boolean remove = toBeInlined.getOutputs().stream().anyMatch(o -> o == out);
-                                        if (!remove) {
-                                            remove = !out.isAbstract(); // remove all non abstract
-                                        }
-                                        if (remove) {
-                                            toBeRemovedOut.add(out);
-                                        }
-                                    }
-                                    r.getOutputs().removeAll(toBeRemovedOut);
-                                    r.getOutputs().addAll(toBeInlined.getOutputs());
-                                    // inlined outputs should have re-assigned parent to this route
-                                    r.getOutputs().forEach(o -> o.setParent(r));
-                                    // and copy over various configurations
-                                    if (toBeInlined.getRouteId() != null) {
-                                        r.setId(toBeInlined.getRouteId());
-                                    }
-                                    r.setNodePrefixId(toBeInlined.getNodePrefixId());
-                                    r.setGroup(toBeInlined.getGroup());
-                                    r.setAutoStartup(toBeInlined.getAutoStartup());
-                                    r.setDelayer(toBeInlined.getDelayer());
-                                    r.setInputType(toBeInlined.getInputType());
-                                    r.setOutputType(toBeInlined.getOutputType());
-                                    r.setLogMask(toBeInlined.getLogMask());
-                                    r.setMessageHistory(toBeInlined.getMessageHistory());
-                                    r.setStreamCache(toBeInlined.getStreamCache());
-                                    r.setTrace(toBeInlined.getTrace());
-                                    r.setStartupOrder(toBeInlined.getStartupOrder());
-                                    r.setRoutePolicyRef(toBeInlined.getRoutePolicyRef());
-                                    r.setRouteConfigurationId(toBeInlined.getRouteConfigurationId());
-                                    r.setRoutePolicies(toBeInlined.getRoutePolicies());
-                                    r.setShutdownRoute(toBeInlined.getShutdownRoute());
-                                    r.setShutdownRunningTask(toBeInlined.getShutdownRunningTask());
-                                    r.setErrorHandlerRef(toBeInlined.getErrorHandlerRef());
-                                    r.setPrecondition(toBeInlined.getPrecondition());
-                                    if (toBeInlined.isErrorHandlerFactorySet()) {
-                                        r.setErrorHandler(toBeInlined.getErrorHandler());
-                                    }
-                                    r.markInlined();
+                                if (remove) {
+                                    toBeRemovedOut.add(out);
                                 }
                             }
+                            r.getOutputs().removeAll(toBeRemovedOut);
+                            r.getOutputs().addAll(toBeInlined.getOutputs());
+                            // inlined outputs should have re-assigned parent to this route
+                            r.getOutputs().forEach(o -> o.setParent(r));
+                            // and copy over various configurations
+                            if (toBeInlined.getRouteId() != null) {
+                                r.setId(toBeInlined.getRouteId());
+                            }
+                            r.setNodePrefixId(toBeInlined.getNodePrefixId());
+                            r.setGroup(toBeInlined.getGroup());
+                            r.setAutoStartup(toBeInlined.getAutoStartup());
+                            r.setDelayer(toBeInlined.getDelayer());
+                            r.setInputType(toBeInlined.getInputType());
+                            r.setOutputType(toBeInlined.getOutputType());
+                            r.setLogMask(toBeInlined.getLogMask());
+                            r.setMessageHistory(toBeInlined.getMessageHistory());
+                            if (toBeInlined.getStreamCache() != null) {
+                                // keep stream caching from the rest verb unless the inlined route sets it
+                                r.setStreamCache(toBeInlined.getStreamCache());
+                            }
+                            r.setTrace(toBeInlined.getTrace());
+                            r.setStartupOrder(toBeInlined.getStartupOrder());
+                            r.setRoutePolicyRef(toBeInlined.getRoutePolicyRef());
+                            r.setRouteConfigurationId(toBeInlined.getRouteConfigurationId());
+                            r.setRoutePolicies(toBeInlined.getRoutePolicies());
+                            r.setShutdownRoute(toBeInlined.getShutdownRoute());
+                            r.setShutdownRunningTask(toBeInlined.getShutdownRunningTask());
+                            r.setErrorHandlerRef(toBeInlined.getErrorHandlerRef());
+                            r.setPrecondition(toBeInlined.getPrecondition());
+                            if (toBeInlined.isErrorHandlerFactorySet()) {
+                                r.setErrorHandler(toBeInlined.getErrorHandler());
+                            }
+                            r.markInlined();
                         }
                     }
                 }
@@ -317,6 +319,28 @@ public class DefaultModel implements Model {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * The to of a rest route (not already inlined) that is a candidate for inlining, which is the first EIP in the
+     * outputs (skipping abstracts such as onException and intercept)
+     */
+    private static ToDefinition restRouteToInline(RouteDefinition r) {
+        FromDefinition from = r.getInput();
+        if (from == null || r.isInlined()) {
+            return null;
+        }
+        String uri = from.getEndpointUri();
+        if (uri == null || !uri.startsWith("rest:")) {
+            return null;
+        }
+        for (ProcessorDefinition<?> def : r.getOutputs()) {
+            if (def.isAbstract()) {
+                continue;
+            }
+            return def instanceof ToDefinition toDefinition ? toDefinition : null;
+        }
+        return null;
     }
 
     @Override
@@ -557,7 +581,7 @@ public class DefaultModel implements Model {
                 } else if (temp.getDefaultValue() != null) {
                     addProperty(prop, temp.getName(), temp.getDefaultValue());
                     addProperty(propDefaultValues, temp.getName(), temp.getDefaultValue());
-                } else if (temp.isRequired() && !routeTemplateContext.hasParameter(temp.getName())) {
+                } else if (isTemplateParameterRequired(temp) && !routeTemplateContext.hasParameter(temp.getName())) {
                     // this is a required parameter which is missing
                     missingParameters.add(temp.getName());
                 }
@@ -578,8 +602,14 @@ public class DefaultModel implements Model {
         // so it has all parameters available
         if (target.getTemplateParameters() != null) {
             for (RouteTemplateParameterDefinition temp : target.getTemplateParameters()) {
-                if (!routeTemplateContext.hasParameter(temp.getName()) && temp.getDefaultValue() != null) {
-                    routeTemplateContext.setParameter(temp.getName(), temp.getDefaultValue());
+                if (!routeTemplateContext.hasParameter(temp.getName())) {
+                    // same precedence as above: environment variable, then default value
+                    if (routeTemplateContext.hasEnvironmentVariable(temp.getName())) {
+                        routeTemplateContext.setParameter(temp.getName(),
+                                routeTemplateContext.getEnvironmentVariable(temp.getName()));
+                    } else if (temp.getDefaultValue() != null) {
+                        routeTemplateContext.setParameter(temp.getName(), temp.getDefaultValue());
+                    }
                 }
             }
         }
@@ -618,6 +648,22 @@ public class DefaultModel implements Model {
         if (group != null) {
             def.setGroup(group);
         }
+        // a route from a template (or a Kamelet) must not replace an existing route with the same id, unless that
+        // route was created from the same template (such as the route of a Kamelet with a route id that is created
+        // again when its parent route is updated); a route that exists in the CamelContext but has no route
+        // definition in the model is never replaced
+        String id = def.getId();
+        if (id != null) {
+            RouteDefinition existing = getRouteDefinition(id);
+            boolean sameTemplate = existing != null && routeTemplateId.equals(existing.getRouteTemplateId());
+            if (!sameTemplate && (existing != null || camelContext.getRoute(id) != null)) {
+                throw new FailedToCreateRouteFromTemplateException(
+                        id, routeTemplateId,
+                        "Route with id: " + id
+                                             + " already exists. Remove the existing route first or use another route id.");
+            }
+        }
+        def.setRouteTemplateId(routeTemplateId);
         def.setTemplateParameters(prop);
         def.setTemplateDefaultParameters(propDefaultValues);
         def.setRouteTemplateContext(routeTemplateContext);
@@ -628,7 +674,13 @@ public class DefaultModel implements Model {
         }
 
         if (target.getConfigurer() != null) {
-            routeTemplateContext.setConfigurer(target.getConfigurer());
+            // the template configurer runs first, and then any configurer from the templated route builder
+            Consumer<RouteTemplateContext> configurer = routeTemplateContext.getConfigurer();
+            if (configurer != null) {
+                routeTemplateContext.setConfigurer(target.getConfigurer().andThen(configurer));
+            } else {
+                routeTemplateContext.setConfigurer(target.getConfigurer());
+            }
         }
 
         // assign ids to the routes and validate that the id's are all unique
@@ -638,7 +690,8 @@ public class DefaultModel implements Model {
         String duplicate = RouteDefinitionHelper.validateUniqueIds(def, routeDefinitions, prefixId);
         if (duplicate != null) {
             throw new FailedToCreateRouteFromTemplateException(
-                    routeId, routeTemplateId,
+                    def.idOrCreate(camelContext.getCamelContextExtension().getContextPlugin(NodeIdFactory.class)),
+                    routeTemplateId,
                     "Duplicate id detected: " + duplicate + ". Please correct ids to be unique among all your routes.");
         }
 
@@ -654,6 +707,15 @@ public class DefaultModel implements Model {
         return def.getId();
     }
 
+    /**
+     * Whether the given route template parameter is required. The attribute is a String so that a property placeholder
+     * can be used, and it is assumed to be required unless explicitly set to false.
+     */
+    private boolean isTemplateParameterRequired(RouteTemplateParameterDefinition temp) {
+        Boolean required = CamelContextHelper.parseBoolean(camelContext, temp.getRequired());
+        return required == null || required;
+    }
+
     private static void addProperty(Map<String, Object> prop, String key, Object value) {
         prop.put(key, value);
         // support also camelCase and kebab-case because route templates (kamelets)
@@ -666,7 +728,16 @@ public class DefaultModel implements Model {
 
     private static void addTemplateBeans(RouteTemplateContext routeTemplateContext, RouteTemplateDefinition target)
             throws Exception {
+        // a bean the caller has bound (TemplatedRouteBuilder or templated route) takes precedence over the template
+        // bean with the same name, as a parameter takes precedence over the default value of the template
+        Set<String> callerBeans = Collections.emptySet();
+        if (routeTemplateContext.getLocalBeanRepository() instanceof LocalBeanRegistry local) {
+            callerBeans = new HashSet<>(local.keys());
+        }
         for (BeanFactoryDefinition b : target.getTemplateBeans()) {
+            if (callerBeans.contains(b.getName())) {
+                continue;
+            }
             // route template beans do not directly support property placeholders
             // but need to use rtc.property API calls
             b.setScriptPropertyPlaceholders("false");
@@ -809,21 +880,31 @@ public class DefaultModel implements Model {
             Collection<ProcessorDefinition> col = ProcessorDefinitionHelper.filterTypeInOutputs(route.getOutputs(),
                     ProcessorDefinition.class);
             for (ProcessorDefinition proc : col) {
-                String pid = proc.getId();
-                // match direct by ids
-                if (id.equals(pid)) {
+                if (matchesId(proc, id)) {
                     return proc;
                 }
-                // try to match via node prefix id
-                if (proc.getNodePrefixId() != null) {
-                    pid = proc.getNodePrefixId() + pid;
-                    if (id.equals(pid)) {
-                        return proc;
+                if (proc instanceof SwitchDefinition sw) {
+                    // a case of a Switch is not a processor in the tree: its send is, under the id of the case
+                    for (SwitchCaseDefinition c : sw.getCases()) {
+                        ToDefinition send = c.getToDefinition();
+                        if (send != null && matchesId(send, id)) {
+                            return send;
+                        }
                     }
                 }
             }
         }
         return null;
+    }
+
+    private static boolean matchesId(ProcessorDefinition<?> proc, String id) {
+        String pid = proc.getId();
+        // match direct by ids
+        if (id.equals(pid)) {
+            return true;
+        }
+        // try to match via node prefix id
+        return proc.getNodePrefixId() != null && id.equals(proc.getNodePrefixId() + pid);
     }
 
     @Override

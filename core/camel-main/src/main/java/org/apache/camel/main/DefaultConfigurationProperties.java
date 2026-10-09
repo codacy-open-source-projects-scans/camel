@@ -34,9 +34,12 @@ public abstract class DefaultConfigurationProperties<T> {
 
     private String name;
     private String description;
+    @Metadata(enums = "dev,test,prod")
+    private String profile;
     @Metadata(defaultValue = "Default", enums = "Verbose,Default,Brief,Oneline,Off")
     private StartupSummaryLevel startupSummaryLevel;
     private int durationMaxSeconds;
+    private String duration;
     private int durationMaxIdleSeconds;
     private int durationMaxMessages;
     @Metadata(defaultValue = "shutdown", enums = "shutdown,stop")
@@ -47,14 +50,6 @@ public abstract class DefaultConfigurationProperties<T> {
     private boolean shutdownRoutesInReverseOrder = true;
     private boolean shutdownLogInflightExchangesOnTimeout = true;
     private boolean inflightRepositoryBrowseEnabled;
-    @Metadata(defaultValue = "false")
-    private boolean errorRegistryEnabled;
-    @Metadata(defaultValue = "100")
-    private int errorRegistryMaximumEntries = 100;
-    @Metadata(defaultValue = "3600")
-    private int errorRegistryTimeToLiveSeconds = 3600;
-    @Metadata(defaultValue = "true")
-    private boolean errorRegistryStackTraceEnabled = true;
     private String fileConfigurations;
     private boolean jmxEnabled = true;
     @Metadata(enums = "classic,default,short,simple,off", defaultValue = "default")
@@ -66,6 +61,8 @@ public abstract class DefaultConfigurationProperties<T> {
     @Metadata(security = "insecure:dev")
     private boolean devConsoleEnabled;
     private boolean modeline;
+    @Metadata(defaultValue = "true")
+    private boolean yamlDslCompactNotationWarn = true;
     private int logDebugMaxChars;
     private boolean streamCachingEnabled = true;
     private String streamCachingAllowClasses;
@@ -83,6 +80,7 @@ public abstract class DefaultConfigurationProperties<T> {
     private int streamCachingBufferSize;
     private boolean streamCachingRemoveSpoolDirectoryWhenStopping = true;
     private boolean streamCachingStatisticsEnabled;
+    private boolean messageSizeEnabled;
     private boolean typeConverterStatisticsEnabled;
     private boolean tracing;
     private boolean tracingStandby;
@@ -147,11 +145,14 @@ public abstract class DefaultConfigurationProperties<T> {
     private String groovyScriptPattern = "classpath:camel-groovy/*,classpath:camel-groovy-compiled/*";
     @Metadata(label = "advanced")
     private boolean groovyPreloadCompiled;
+    @Deprecated(since = "4.23.0")
     @Metadata(defaultValue = "default", enums = "default,prototype,pooled")
     private String exchangeFactory = "default";
+    @Deprecated(since = "4.23.0")
     private int exchangeFactoryCapacity = 100;
+    @Deprecated(since = "4.23.0")
     private boolean exchangeFactoryStatisticsEnabled;
-    @Metadata(enums = "xml,yaml")
+    @Metadata(enums = "xml,yaml,json,png")
     private String dumpRoutes;
     private String dumpRoutesInclude = "routes";
     private boolean dumpRoutesLog = true;
@@ -165,6 +166,7 @@ public abstract class DefaultConfigurationProperties<T> {
     private String startupRecorder;
     private int startupRecorderMaxDepth = -1;
     private boolean startupRecorderRecording;
+    private boolean startupRecorderRuntimeEnabled;
     private String startupRecorderProfile = "default";
     private long startupRecorderDuration;
     private String startupRecorderDir;
@@ -195,6 +197,23 @@ public abstract class DefaultConfigurationProperties<T> {
         this.description = description;
     }
 
+    public String getProfile() {
+        return profile;
+    }
+
+    /**
+     * Camel profile to use when running.
+     *
+     * The dev profile is for development, which enables a set of additional developer focus functionality, tracing,
+     * debugging, and gathering additional runtime statistics that are useful during development. However, those
+     * additional features has a slight overhead cost, and are not enabled for production profile.
+     *
+     * The default profile is prod.
+     */
+    public void setProfile(String profile) {
+        this.profile = profile;
+    }
+
     public StartupSummaryLevel getStartupSummaryLevel() {
         return startupSummaryLevel;
     }
@@ -216,6 +235,28 @@ public abstract class DefaultConfigurationProperties<T> {
      */
     public void setDurationMaxSeconds(int durationMaxSeconds) {
         this.durationMaxSeconds = durationMaxSeconds;
+    }
+
+    public String getDuration() {
+        return duration;
+    }
+
+    /**
+     * For how long to keep running before automatic terminating the JVM, as a duration with a time unit such as 15s, 2m
+     * or 1h (a plain number is seconds). An alias of durationMaxSeconds that accepts a unit.
+     */
+    public void setDuration(String duration) {
+        this.duration = duration;
+        if (duration != null && !duration.isBlank()) {
+            String text = duration.trim();
+            if (text.matches("\\d+")) {
+                // a plain number is seconds, as durationMaxSeconds
+                this.durationMaxSeconds = Integer.parseInt(text);
+            } else {
+                long millis = org.apache.camel.util.TimeUtils.toMilliSeconds(text);
+                this.durationMaxSeconds = (int) Math.max(1, (millis + 999) / 1000);
+            }
+        }
     }
 
     public int getDurationMaxIdleSeconds() {
@@ -332,57 +373,6 @@ public abstract class DefaultConfigurationProperties<T> {
         this.inflightRepositoryBrowseEnabled = inflightRepositoryBrowseEnabled;
     }
 
-    public boolean isErrorRegistryEnabled() {
-        return errorRegistryEnabled;
-    }
-
-    /**
-     * Sets whether the error registry is enabled to capture errors during message routing.
-     *
-     * This is by default disabled.
-     */
-    public void setErrorRegistryEnabled(boolean errorRegistryEnabled) {
-        this.errorRegistryEnabled = errorRegistryEnabled;
-    }
-
-    public int getErrorRegistryMaximumEntries() {
-        return errorRegistryMaximumEntries;
-    }
-
-    /**
-     * Sets the maximum number of error entries to keep in the error registry. When the limit is exceeded, the oldest
-     * entries are evicted.
-     *
-     * The default value is 100.
-     */
-    public void setErrorRegistryMaximumEntries(int errorRegistryMaximumEntries) {
-        this.errorRegistryMaximumEntries = errorRegistryMaximumEntries;
-    }
-
-    public int getErrorRegistryTimeToLiveSeconds() {
-        return errorRegistryTimeToLiveSeconds;
-    }
-
-    /**
-     * Sets the time-to-live in seconds for error entries in the error registry. Entries older than this are evicted.
-     *
-     * The default value is 3600 (1 hour).
-     */
-    public void setErrorRegistryTimeToLiveSeconds(int errorRegistryTimeToLiveSeconds) {
-        this.errorRegistryTimeToLiveSeconds = errorRegistryTimeToLiveSeconds;
-    }
-
-    public boolean isErrorRegistryStackTraceEnabled() {
-        return errorRegistryStackTraceEnabled;
-    }
-
-    /**
-     * Sets whether to capture stack traces in the error registry. This is enabled by default.
-     */
-    public void setErrorRegistryStackTraceEnabled(boolean errorRegistryStackTraceEnabled) {
-        this.errorRegistryStackTraceEnabled = errorRegistryStackTraceEnabled;
-    }
-
     public String getFileConfigurations() {
         return fileConfigurations;
     }
@@ -486,17 +476,30 @@ public abstract class DefaultConfigurationProperties<T> {
     }
 
     /**
-     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel JBang
+     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel CLI
      */
     public boolean isModeline() {
         return modeline;
     }
 
     /**
-     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel JBang
+     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel CLI
      */
     public void setModeline(boolean modeline) {
         this.modeline = modeline;
+    }
+
+    public boolean isYamlDslCompactNotationWarn() {
+        return yamlDslCompactNotationWarn;
+    }
+
+    /**
+     * Whether to log a WARN when YAML DSL routes use compact (shorthand) notation instead of the canonical
+     * (explicit/normalized) form. The canonical style is recommended as it is more tooling and AI friendly. Use Camel
+     * CLI to normalize existing routes: camel validate normalize &lt;file&gt;
+     */
+    public void setYamlDslCompactNotationWarn(boolean yamlDslCompactNotationWarn) {
+        this.yamlDslCompactNotationWarn = yamlDslCompactNotationWarn;
     }
 
     public int getLogDebugMaxChars() {
@@ -694,6 +697,20 @@ public abstract class DefaultConfigurationProperties<T> {
      */
     public void setStreamCachingStatisticsEnabled(boolean streamCachingStatisticsEnabled) {
         this.streamCachingStatisticsEnabled = streamCachingStatisticsEnabled;
+    }
+
+    public boolean isMessageSizeEnabled() {
+        return messageSizeEnabled;
+    }
+
+    /**
+     * Sets whether message size observation is enabled (default is false).
+     *
+     * When enabled, Camel will compute the size of message body and headers (in bytes) per endpoint (for both IN and
+     * OUT directions) and make this available via JMX MBeans (min/max/mean body size and headers size).
+     */
+    public void setMessageSizeEnabled(boolean messageSizeEnabled) {
+        this.messageSizeEnabled = messageSizeEnabled;
     }
 
     public boolean isTypeConverterStatisticsEnabled() {
@@ -1525,6 +1542,10 @@ public abstract class DefaultConfigurationProperties<T> {
         this.groovyPreloadCompiled = groovyPreloadCompiled;
     }
 
+    /**
+     * @deprecated Exchange pooling is deprecated and will be removed in a future release.
+     */
+    @Deprecated(since = "4.23.0")
     public String getExchangeFactory() {
         return exchangeFactory;
     }
@@ -1533,32 +1554,48 @@ public abstract class DefaultConfigurationProperties<T> {
      * Controls whether to pool (reuse) exchanges or create new exchanges (prototype). Using pooled will reduce JVM
      * garbage collection overhead by avoiding to re-create Exchange instances per message each consumer receives. The
      * default is prototype mode.
+     *
+     * @deprecated Exchange pooling is deprecated and will be removed in a future release.
      */
+    @Deprecated(since = "4.23.0")
     public void setExchangeFactory(String exchangeFactory) {
         this.exchangeFactory = exchangeFactory;
     }
 
     /**
      * The capacity the pool (for each consumer) uses for storing exchanges. The default capacity is 100.
+     *
+     * @deprecated Exchange pooling is deprecated and will be removed in a future release.
      */
+    @Deprecated(since = "4.23.0")
     public int getExchangeFactoryCapacity() {
         return exchangeFactoryCapacity;
     }
 
     /**
      * The capacity the pool (for each consumer) uses for storing exchanges. The default capacity is 100.
+     *
+     * @deprecated Exchange pooling is deprecated and will be removed in a future release.
      */
+    @Deprecated(since = "4.23.0")
     public void setExchangeFactoryCapacity(int exchangeFactoryCapacity) {
         this.exchangeFactoryCapacity = exchangeFactoryCapacity;
     }
 
+    /**
+     * @deprecated Exchange pooling is deprecated and will be removed in a future release.
+     */
+    @Deprecated(since = "4.23.0")
     public boolean isExchangeFactoryStatisticsEnabled() {
         return exchangeFactoryStatisticsEnabled;
     }
 
     /**
      * Configures whether statistics is enabled on exchange factory.
+     *
+     * @deprecated Exchange pooling is deprecated and will be removed in a future release.
      */
+    @Deprecated(since = "4.23.0")
     public void setExchangeFactoryStatisticsEnabled(boolean exchangeFactoryStatisticsEnabled) {
         this.exchangeFactoryStatisticsEnabled = exchangeFactoryStatisticsEnabled;
     }
@@ -1569,12 +1606,21 @@ public abstract class DefaultConfigurationProperties<T> {
 
     /**
      * If dumping is enabled then Camel will during startup dump all loaded routes (incl rests and route templates)
-     * represented as XML/YAML DSL into the log. This is intended for trouble shooting or to assist during development.
+     * represented as XML, YAML, or Java DSL into the log. This is intended for trouble shooting or to assist during
+     * development.
      *
      * Sensitive information that may be configured in the route endpoints could potentially be included in the dump
      * output and is therefore not recommended being used for production usage.
      *
-     * This requires to have camel-xml-io/camel-yaml-io on the classpath to be able to dump the routes as XML/YAML.
+     * This requires to have camel-xml-io/camel-yaml-io/camel-java-io on the classpath to be able to dump the routes as
+     * XML/YAML/Java.
+     *
+     * You can also use JSon which dumps the route structure in JSon. The JSon does not represent Camel DSL but it
+     * useful for tooling to understand the structure of the routes and how EIPs are nested together.
+     *
+     * You can also use png to save route diagrams as PNG image files either all combined in a single file (default
+     * camel-route-diagrams.png) or to a given folder, where routes are grouped by source file name(s) and saved as
+     * corresponding .png files. This requires to have camel-diagram on the classpath to be able to render PNG diagrams.
      */
     public void setDumpRoutes(String dumpRoutes) {
         this.dumpRoutes = dumpRoutes;
@@ -1722,6 +1768,21 @@ public abstract class DefaultConfigurationProperties<T> {
         this.startupRecorderRecording = startupRecorderRecording;
     }
 
+    public boolean isStartupRecorderRuntimeEnabled() {
+        return startupRecorderRuntimeEnabled;
+    }
+
+    /**
+     * To also instrument the running Camel application, and not only its startup, by emitting Java Flight Recorder
+     * events for every exchange, route and processor.
+     *
+     * This requires that camel-jfr is on the classpath, and to enable this option. The runtime events are only captured
+     * while a recording is active. As they are emitted per message they add overhead, so this is turned off by default.
+     */
+    public void setStartupRecorderRuntimeEnabled(boolean startupRecorderRuntimeEnabled) {
+        this.startupRecorderRuntimeEnabled = startupRecorderRuntimeEnabled;
+    }
+
     public String getStartupRecorderProfile() {
         return startupRecorderProfile;
     }
@@ -1793,6 +1854,29 @@ public abstract class DefaultConfigurationProperties<T> {
      */
     public T withDescription(String description) {
         this.description = description;
+        return (T) this;
+    }
+
+    /**
+     * Camel profile to use when running.
+     *
+     * The dev profile is for development, which enables a set of additional developer focus functionality, tracing,
+     * debugging, and gathering additional runtime statistics that are useful during development. However, those
+     * additional features has a slight overhead cost, and are not enabled for production profile.
+     *
+     * The default profile is prod.
+     */
+    public T withProfile(String profile) {
+        this.profile = profile;
+        return (T) this;
+    }
+
+    /**
+     * For how long to keep running before automatic terminating the JVM, as a duration with a time unit such as 15s, 2m
+     * or 1h (a plain number is seconds). An alias of durationMaxSeconds that accepts a unit.
+     */
+    public T withDuration(String duration) {
+        setDuration(duration);
         return (T) this;
     }
 
@@ -1893,44 +1977,6 @@ public abstract class DefaultConfigurationProperties<T> {
     }
 
     /**
-     * Sets whether the error registry is enabled to capture errors during message routing.
-     *
-     * This is by default disabled.
-     */
-    public T withErrorRegistryEnabled(boolean errorRegistryEnabled) {
-        this.errorRegistryEnabled = errorRegistryEnabled;
-        return (T) this;
-    }
-
-    /**
-     * Sets the maximum number of error entries to keep in the error registry.
-     *
-     * The default value is 100.
-     */
-    public T withErrorRegistryMaximumEntries(int errorRegistryMaximumEntries) {
-        this.errorRegistryMaximumEntries = errorRegistryMaximumEntries;
-        return (T) this;
-    }
-
-    /**
-     * Sets the time-to-live in seconds for error entries in the error registry.
-     *
-     * The default value is 3600 (1 hour).
-     */
-    public T withErrorRegistryTimeToLiveSeconds(int errorRegistryTimeToLiveSeconds) {
-        this.errorRegistryTimeToLiveSeconds = errorRegistryTimeToLiveSeconds;
-        return (T) this;
-    }
-
-    /**
-     * Sets whether to capture stack traces in the error registry.
-     */
-    public T withErrorRegistryStackTraceEnabled(boolean errorRegistryStackTraceEnabled) {
-        this.errorRegistryStackTraceEnabled = errorRegistryStackTraceEnabled;
-        return (T) this;
-    }
-
-    /**
      * Directory to load additional configuration files that contains configuration values that takes precedence over
      * any other configuration. This can be used to refer to files that may have secret configuration that has been
      * mounted on the file system for containers.
@@ -1986,10 +2032,19 @@ public abstract class DefaultConfigurationProperties<T> {
     }
 
     /**
-     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel JBang
+     * Whether to support JBang style //DEPS to specify additional dependencies when running Camel CLI
      */
     public T withModeline(boolean modeline) {
         this.modeline = modeline;
+        return (T) this;
+    }
+
+    /**
+     * Whether to log a WARN when YAML DSL routes use compact (shorthand) notation instead of the canonical
+     * (explicit/normalized) form.
+     */
+    public T withYamlDslCompactNotationWarn(boolean yamlDslCompactNotationWarn) {
+        this.yamlDslCompactNotationWarn = yamlDslCompactNotationWarn;
         return (T) this;
     }
 
@@ -2152,6 +2207,17 @@ public abstract class DefaultConfigurationProperties<T> {
      */
     public T withStreamCachingStatisticsEnabled(boolean streamCachingStatisticsEnabled) {
         this.streamCachingStatisticsEnabled = streamCachingStatisticsEnabled;
+        return (T) this;
+    }
+
+    /**
+     * Sets whether message size observation is enabled (default is false).
+     *
+     * When enabled, Camel will compute the size of message body and headers (in bytes) per endpoint (for both IN and
+     * OUT directions) and make this available via JMX MBeans (min/max/mean body size and headers size).
+     */
+    public T withMessageSizeEnabled(boolean messageSizeEnabled) {
+        this.messageSizeEnabled = messageSizeEnabled;
         return (T) this;
     }
 
@@ -2770,7 +2836,10 @@ public abstract class DefaultConfigurationProperties<T> {
     /**
      * Controls whether to pool (reuse) exchanges or create new fresh exchanges (default). Using pooled will reduce JVM
      * garbage collection overhead by avoiding to re-create Exchange instances per message each consumer receives.
+     *
+     * @deprecated Exchange pooling is deprecated and will be removed in a future release.
      */
+    @Deprecated(since = "4.23.0")
     public T withExchangeFactory(String exchangeFactory) {
         this.exchangeFactory = exchangeFactory;
         return (T) this;
@@ -2778,7 +2847,10 @@ public abstract class DefaultConfigurationProperties<T> {
 
     /**
      * The capacity the pool (for each consumer) uses for storing exchanges. The default capacity is 100.
+     *
+     * @deprecated Exchange pooling is deprecated and will be removed in a future release.
      */
+    @Deprecated(since = "4.23.0")
     public T withExchangeFactoryCapacity(int exchangeFactoryCapacity) {
         this.exchangeFactoryCapacity = exchangeFactoryCapacity;
         return (T) this;
@@ -2786,7 +2858,10 @@ public abstract class DefaultConfigurationProperties<T> {
 
     /**
      * Configures whether statistics is enabled on exchange factory.
+     *
+     * @deprecated Exchange pooling is deprecated and will be removed in a future release.
      */
+    @Deprecated(since = "4.23.0")
     public T withExchangeFactoryStatisticsEnabled(boolean exchangeFactoryStatisticsEnabled) {
         this.exchangeFactoryStatisticsEnabled = exchangeFactoryStatisticsEnabled;
         return (T) this;
@@ -2794,12 +2869,21 @@ public abstract class DefaultConfigurationProperties<T> {
 
     /**
      * If dumping is enabled then Camel will during startup dump all loaded routes (incl rests and route templates)
-     * represented as XML/YAML DSL into the log. This is intended for trouble shooting or to assist during development.
+     * represented as XML, YAML, or Java DSL into the log. This is intended for trouble shooting or to assist during
+     * development.
      *
      * Sensitive information that may be configured in the route endpoints could potentially be included in the dump
      * output and is therefore not recommended being used for production usage.
      *
-     * This requires to have camel-xml-io/camel-yaml-io on the classpath to be able to dump the routes as XML/YAML.
+     * This requires to have camel-xml-io/camel-yaml-io/camel-java-io on the classpath to be able to dump the routes as
+     * XML/YAML/Java.
+     *
+     * You can also use JSon which dumps the route structure in JSon. The JSon does not represent Camel DSL but it
+     * useful for tooling to understand the structure of the routes and how EIPs are nested together.
+     *
+     * You can also use png to save route diagrams as PNG image files either all combined in a single file (default
+     * camel-route-diagrams.png) or to a given folder, where routes are grouped by source file name(s) and saved as
+     * corresponding .png files. This requires to have camel-diagram on the classpath to be able to render PNG diagrams.
      */
     public T withDumpRoutes(String dumpRoutes) {
         this.dumpRoutes = dumpRoutes;
@@ -2925,6 +3009,18 @@ public abstract class DefaultConfigurationProperties<T> {
     }
 
     /**
+     * To also instrument the running Camel application, and not only its startup, by emitting Java Flight Recorder
+     * events for every exchange, route and processor.
+     *
+     * This requires that camel-jfr is on the classpath, and to enable this option. The runtime events are only captured
+     * while a recording is active. As they are emitted per message they add overhead, so this is turned off by default.
+     */
+    public T withStartupRecorderRuntimeEnabled(boolean startupRecorderRuntimeEnabled) {
+        this.startupRecorderRuntimeEnabled = startupRecorderRuntimeEnabled;
+        return (T) this;
+    }
+
+    /**
      * To use a specific Java Flight Recorder profile configuration, such as default or profile.
      *
      * The default is default.
@@ -2982,10 +3078,19 @@ public abstract class DefaultConfigurationProperties<T> {
     }
 
     /**
-     * Whether to use cloud properties location setting. Default is none.
+     * Sets the locations (comma separated values) where to find properties configuration as defined for cloud native
+     * environments such as Kubernetes. You should only scan text based mounted configuration.
      */
-    public T withCloudPropertiesLocation(boolean dumpRoutesResolvePlaceholders) {
+    public T withCloudPropertiesLocation(String cloudPropertiesLocation) {
         this.cloudPropertiesLocation = cloudPropertiesLocation;
+        return (T) this;
+    }
+
+    /**
+     * @deprecated this method has no effect, use {@link #withCloudPropertiesLocation(String)}
+     */
+    @Deprecated(since = "4.23")
+    public T withCloudPropertiesLocation(boolean dumpRoutesResolvePlaceholders) {
         return (T) this;
     }
 

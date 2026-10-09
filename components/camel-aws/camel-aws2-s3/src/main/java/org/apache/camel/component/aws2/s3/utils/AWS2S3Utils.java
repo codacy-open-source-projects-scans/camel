@@ -16,17 +16,15 @@
  */
 package org.apache.camel.component.aws2.s3.utils;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
 import org.apache.camel.Exchange;
-import org.apache.camel.StreamCache;
 import org.apache.camel.component.aws2.s3.AWS2S3Configuration;
 import org.apache.camel.component.aws2.s3.AWS2S3Constants;
 import org.apache.camel.spi.Language;
+import org.apache.camel.support.PayloadHelper;
 import org.apache.camel.util.ObjectHelper;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.ServerSideEncryption;
@@ -41,24 +39,29 @@ public final class AWS2S3Utils {
     /**
      * Reads the bucket name from the header of the given exchange. If not provided, it's read from the endpoint
      * configuration.
+     * <p>
+     * Only the configured {@code bucketName} may be a dynamic Simple expression; a bucket name supplied through the
+     * {@code CamelAwsS3OverrideBucketName} header is used literally and is never evaluated. A configured
+     * {@code bucketName} whose Simple expression resolves to {@code null} fails fast here.
      *
-     * @param  exchange                 The exchange to read the header from
+     * @param  exchange                 The exchange to read the bucket name from
      * @param  configuration            The AWS2 S3 configuration
      * @return                          The bucket name.
-     * @throws IllegalArgumentException if the header could not be determined.
+     * @throws IllegalArgumentException if the bucket name is not set or resolves to {@code null}.
      */
     public static String determineBucketName(final Exchange exchange, AWS2S3Configuration configuration) {
         String bucketName = exchange.getIn().getHeader(AWS2S3Constants.OVERRIDE_BUCKET_NAME, String.class);
         if (ObjectHelper.isEmpty(bucketName)) {
+            // only the configured bucket name (supplied by the route) may be a dynamic simple expression;
+            // a bucket name provided through the header is used literally and never evaluated
             bucketName = configuration.getBucketName();
+            if (bucketName != null && hasSimpleFunction(bucketName)) {
+                Language simple = exchange.getContext().resolveLanguage("simple");
+                bucketName = simple.createExpression(bucketName).evaluate(exchange, String.class);
+            }
         }
         if (bucketName == null) {
-            throw new IllegalArgumentException("AWS S3 Bucket name header is missing or not configured.");
-        }
-        // dynamic keys using built-in simple language
-        if (hasSimpleFunction(bucketName)) {
-            Language simple = exchange.getContext().resolveLanguage("simple");
-            bucketName = simple.createExpression(bucketName).evaluate(exchange, String.class);
+            throw new IllegalArgumentException("AWS S3 Bucket name is not set, or resolved to null.");
         }
         return bucketName;
     }
@@ -90,35 +93,15 @@ public final class AWS2S3Utils {
         }
     }
 
+    /**
+     * Determines the length of the input stream, without reading it.
+     *
+     * @return     the length, or <tt>-1</tt> if the length cannot be determined without reading the stream
+     * @deprecated use {@link PayloadHelper#getLength(Object)}
+     */
+    @Deprecated(since = "4.23.0")
     public static long determineLengthInputStream(InputStream is) throws IOException {
-        if (is instanceof StreamCache streamCache) {
-            long len = streamCache.length();
-            if (len > 0) {
-                return len;
-            }
-        } else if (is instanceof FileInputStream fis) {
-            return fis.getChannel().size();
-        }
-
-        if (!is.markSupported()) {
-            return -1;
-        }
-        if (is instanceof ByteArrayInputStream) {
-            return is.available();
-        }
-        long size = 0;
-        try {
-            is.mark(1024);
-            int i = is.available();
-            while (i > 0) {
-                long skip = is.skip(i);
-                size += skip;
-                i = is.available();
-            }
-        } finally {
-            is.reset();
-        }
-        return size;
+        return PayloadHelper.getLength(is);
     }
 
     public static byte[] toByteArray(InputStream is, final int size) throws IOException {
@@ -134,20 +117,58 @@ public final class AWS2S3Utils {
         }
     }
 
+    /**
+     * Reads the object key from the header of the given exchange. If not provided, it's read from the endpoint
+     * configuration.
+     * <p>
+     * Only the configured {@code keyName} may be a dynamic Simple expression; a key supplied through the
+     * {@code CamelAwsS3Key} header is used literally and is never evaluated. A configured {@code keyName} whose Simple
+     * expression resolves to {@code null} fails fast here instead of passing a null key to the AWS SDK.
+     *
+     * @param  exchange                 The exchange to read the key from
+     * @param  configuration            The AWS2 S3 configuration
+     * @return                          The object key.
+     * @throws IllegalArgumentException if the key is not set or resolves to {@code null}.
+     */
     public static String determineKey(final Exchange exchange, AWS2S3Configuration configuration) {
         String key = exchange.getIn().getHeader(AWS2S3Constants.KEY, String.class);
         if (ObjectHelper.isEmpty(key)) {
+            // only the configured key (supplied by the route) may be a dynamic simple expression;
+            // a key provided through the header is used literally and never evaluated
             key = configuration.getKeyName();
+            if (key != null && hasSimpleFunction(key)) {
+                Language simple = exchange.getContext().resolveLanguage("simple");
+                key = simple.createExpression(key).evaluate(exchange, String.class);
+            }
         }
         if (key == null) {
-            throw new IllegalArgumentException("AWS S3 Key header missing.");
-        }
-        // dynamic keys using built-in simple language
-        if (hasSimpleFunction(key)) {
-            Language simple = exchange.getContext().resolveLanguage("simple");
-            key = simple.createExpression(key).evaluate(exchange, String.class);
+            throw new IllegalArgumentException("AWS S3 Key is not set, or resolved to null.");
         }
         return key;
+    }
+
+    public static String evaluateDestinationBucketPrefix(final Exchange exchange, AWS2S3Configuration configuration) {
+        String prefix = configuration.getDestinationBucketPrefix();
+        if (ObjectHelper.isEmpty(prefix)) {
+            return "";
+        }
+        if (hasSimpleFunction(prefix)) {
+            Language simple = exchange.getContext().resolveLanguage("simple");
+            prefix = simple.createExpression(prefix).evaluate(exchange, String.class);
+        }
+        return prefix;
+    }
+
+    public static String evaluateDestinationBucketSuffix(final Exchange exchange, AWS2S3Configuration configuration) {
+        String suffix = configuration.getDestinationBucketSuffix();
+        if (ObjectHelper.isEmpty(suffix)) {
+            return "";
+        }
+        if (hasSimpleFunction(suffix)) {
+            Language simple = exchange.getContext().resolveLanguage("simple");
+            suffix = simple.createExpression(suffix).evaluate(exchange, String.class);
+        }
+        return suffix;
     }
 
     public static void setEncryption(

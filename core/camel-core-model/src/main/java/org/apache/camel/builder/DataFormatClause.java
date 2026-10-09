@@ -64,6 +64,11 @@ import org.apache.camel.model.dataformat.SwiftMxDataFormat;
 import org.apache.camel.model.dataformat.SyslogDataFormat;
 import org.apache.camel.model.dataformat.TarFileDataFormat;
 import org.apache.camel.model.dataformat.ThriftDataFormat;
+import org.apache.camel.model.dataformat.ToonDataFormat;
+import org.apache.camel.model.dataformat.UblDataFormat;
+import org.apache.camel.model.dataformat.UniVocityCsvDataFormat;
+import org.apache.camel.model.dataformat.UniVocityFixedDataFormat;
+import org.apache.camel.model.dataformat.UniVocityTsvDataFormat;
 import org.apache.camel.model.dataformat.XMLSecurityDataFormat;
 import org.apache.camel.model.dataformat.YAMLDataFormat;
 import org.apache.camel.model.dataformat.YAMLLibrary;
@@ -1095,6 +1100,59 @@ public class DataFormatClause<T extends ProcessorDefinition<?>> {
     }
 
     /**
+     * Uses the TOON (Token-Oriented Object Notation) data format
+     */
+    public T toon() {
+        return dataFormat(new ToonDataFormat());
+    }
+
+    /**
+     * Uses the UBL (Universal Business Language) 2.1 data format
+     */
+    public T ubl() {
+        return dataFormat(new UblDataFormat());
+    }
+
+    /**
+     * Uses the UBL (Universal Business Language) 2.1 data format
+     *
+     * @param prettyPrint turn pretty printing on or off
+     */
+    public T ubl(boolean prettyPrint) {
+        UblDataFormat ublDataFormat = new UblDataFormat();
+        ublDataFormat.setPrettyPrint(Boolean.toString(prettyPrint));
+        return dataFormat(ublDataFormat);
+    }
+
+    /**
+     * Uses the uniVocity CSV data format
+     */
+    public T univocityCsv() {
+        return dataFormat(new UniVocityCsvDataFormat());
+    }
+
+    /**
+     * Uses the uniVocity fixed-length data format
+     */
+    public T univocityFixed() {
+        return dataFormat(new UniVocityFixedDataFormat());
+    }
+
+    /**
+     * Uses the uniVocity TSV data format
+     */
+    public T univocityTsv() {
+        return dataFormat(new UniVocityTsvDataFormat());
+    }
+
+    /**
+     * Uses the YAML data format with the SnakeYAML library
+     */
+    public T yaml() {
+        return dataFormat(new YAMLDataFormat());
+    }
+
+    /**
      * Uses the YAML data format
      *
      * @param library the yaml library to use
@@ -1523,7 +1581,7 @@ public class DataFormatClause<T extends ProcessorDefinition<?>> {
     }
 
     /**
-     * Allows {@code null} as value of a body to unmarshall.
+     * Allows {@code null} as value of a body: unmarshal and marshal skip a {@code null} body, so it stays {@code null}.
      *
      * @return the builder
      */
@@ -1532,10 +1590,10 @@ public class DataFormatClause<T extends ProcessorDefinition<?>> {
     }
 
     /**
-     * Indicates whether {@code null} is allowed as value of a body to unmarshall.
+     * Indicates whether {@code null} is allowed as value of a body: unmarshal and marshal skip a {@code null} body, so
+     * it stays {@code null}.
      *
-     * @param  allowNullBody {@code true} if {@code null} is allowed as value of a body to unmarshall, {@code false}
-     *                       otherwise
+     * @param  allowNullBody {@code true} if {@code null} is allowed as value of a body, {@code false} otherwise
      * @return               the builder
      */
     public DataFormatClause<T> allowNullBody(boolean allowNullBody) {
@@ -1580,6 +1638,9 @@ public class DataFormatClause<T extends ProcessorDefinition<?>> {
                 return processorType;
             case Marshal:
                 MarshalDefinition marshal = new MarshalDefinition(dataFormatType);
+                if (allowNullBody) {
+                    marshal.allowNullBody(true);
+                }
                 marshal.setVariableReceive(variableReceive);
                 marshal.setVariableSend(variableSend);
                 processorType.addOutput(marshal);

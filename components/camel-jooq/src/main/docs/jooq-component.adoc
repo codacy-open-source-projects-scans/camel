@@ -7,8 +7,6 @@
 :supportlevel: Stable
 :tabs-sync-option:
 :component-header: Both producer and consumer are supported
-//Manually maintained attributes
-:camel-spring-boot-name: jooq
 
 *Since Camel {since}*
 
@@ -31,6 +29,8 @@ There are two types of queries:
 . `org.jooq.ResultQuery`: can return results
 
 For example:
+
+._Java-only: JOOQ DSL API for creating Query and ResultQuery objects_
 [source,java]
 ----
 // Create a Query object and execute it:
@@ -46,10 +46,45 @@ Result<Record> result = resultQuery.fetch();
 SQL could be executed using JOOQ's objects "Query" or "ResultQuery".
 Also, the SQL query could be specified inside URI:
 
+[tabs]
+====
+Java::
++
 [source,java]
 ----
-from("jooq://org.apache.camel.component.jooq.db.tables.records.BookStoreRecord?query=select * from book_store x where x.name = 'test'").to("bean:myBusinessLogic");
+from("direct:start")
+    .to("jooq://org.apache.camel.component.jooq.db.tables.records.BookStoreRecord?operation=fetch&query=select * from book_store x where x.name = 'test'")
+    .to("bean:myBusinessLogic");
 ----
+
+XML::
++
+[source,xml]
+----
+<route>
+    <from uri="direct:start"/>
+    <to uri="jooq://org.apache.camel.component.jooq.db.tables.records.BookStoreRecord?operation=fetch&amp;query=select * from book_store x where x.name = 'test'"/>
+    <to uri="bean:myBusinessLogic"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:start
+      steps:
+        - to:
+            uri: jooq://org.apache.camel.component.jooq.db.tables.records.BookStoreRecord
+            parameters:
+              operation: fetch
+              query: "select * from book_store x where x.name = 'test'"
+        - to:
+            uri: bean:myBusinessLogic
+----
+====
 
 See the examples below.
 
@@ -87,7 +122,7 @@ When using jooq as a producer you can use any of the following `JooqOperation` o
     <context:property-placeholder location="classpath:config.properties"
                                   xmlns:context="http://www.springframework.org/schema/context"/>
 
-    <bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+    <bean id="dataSource" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
         <property name="url" value="${db.url}"/>
         <property name="driverClassName" value="${db.driver}"/>
         <property name="username" value="${db.username}"/>
@@ -189,17 +224,13 @@ When using jooq as a producer you can use any of the following `JooqOperation` o
             <to uri="jooq://org.apache.camel.component.jooq.db.tables.records.BookStoreRecord/execute?query=delete from book_store x where x.name = 'test'"/>
             <log message="Fetched ${body}"/>
         </route>
-
-        <!-- SQL: consume -->
-        <route id="sql-consume">
-            <from uri="jooq://org.apache.camel.component.jooq.db.tables.records.BookStoreRecord?query=select * from book_store x where x.name = 'test'"/>
-            <log message="Fetched ${body}"/>
-        </route>
     </camelContext>
 </beans>
 ----
 
 .Sample bean:
+
+._Java-only: JOOQ bean with Query and ResultQuery factory methods_
 [source,java]
 ----
 @Component
@@ -219,6 +250,3 @@ public class BookStoreRecordBean {
     }
 }
 ----
-
-
-include::spring-boot:partial$starter.adoc[]

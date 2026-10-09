@@ -20,8 +20,10 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.nio.file.Files;
 
+import dev.langchain4j.service.Result;
 import org.apache.camel.Exchange;
 import org.apache.camel.RoutesBuilder;
+import org.apache.camel.TypeConversionException;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.file.GenericFile;
 import org.apache.camel.component.langchain4j.agent.api.Agent;
@@ -38,7 +40,7 @@ public class LangChain4jAgentAutoConversionTest extends CamelTestSupport {
     @Override
     protected RoutesBuilder createRouteBuilder() throws Exception {
 
-        Agent mockAgent = (body, exchange) -> "Processed";
+        Agent mockAgent = (body, exchange) -> Result.<String> builder().content("Processed").build();
 
         context.getRegistry().bind("mockAgent", mockAgent);
 
@@ -143,7 +145,7 @@ public class LangChain4jAgentAutoConversionTest extends CamelTestSupport {
                 "application/zip");
 
         assertThrows(
-                org.apache.camel.TypeConversionException.class,
+                TypeConversionException.class,
                 () -> context.getTypeConverter()
                         .convertTo(AiAgentBody.class, exchange, "data".getBytes()));
     }

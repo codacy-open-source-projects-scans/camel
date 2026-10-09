@@ -11,8 +11,8 @@ The Resilience4j EIP supports two options which are listed below:
 [width="100%",cols="2,5,^1,2",options="header"]
 |===
 | Name | Description | Default | Type
-| *resilienceConfiguration* | Configure the Resilience EIP. When the configuration is complete, use `end()` to return to the Resilience EIP. |  | Resilience4jConfigurationDefinition
-| *resilienceConfigurationRef* | Refers to a Resilience configuration to use for configuring the Resilience EIP. |  | String
+| *resilience4jConfiguration* | Configure the Resilience EIP. When the configuration is complete, use `end()` to return to the Resilience EIP. |  | Resilience4jConfigurationDefinition
+| *configuration* | Refers to a Resilience configuration (by name) to use for configuring the Resilience EIP. |  | String
 |===
 
 NOTE: See xref:resilience4jConfiguration-eip.adoc[Resilience4j Configuration] for all the configuration options
@@ -68,12 +68,12 @@ YAML::
             steps:
               - to:
                   uri: http://fooservice.com/faulty
-              - onFallback:
-                  steps:
-                    - transform:
-                        expression:
-                          constant:
-                            expression: Fallback message
+            onFallback:
+              steps:
+                - transform:
+                    expression:
+                      constant:
+                        expression: Fallback message
         - to:
             uri: mock:result
 ----
@@ -82,7 +82,9 @@ YAML::
 In case the calling the downstream HTTP service is failing, and an exception is thrown,
 then the circuit breaker will react and execute the fallback route instead.
 
-If there was no fallback, then the circuit breaker will throw an exception.
+If there is no fallback and the protected processor fails, the circuit breaker will throw an exception.
+However, when the circuit breaker is open and rejects a call, the message continues routing unchanged
+(no exception is thrown) unless `throwExceptionWhenHalfOpenOrOpenState` is enabled.
 
 TIP: For more information about fallback, see xref:onFallback-eip.adoc[onFallback].
 
@@ -134,10 +136,10 @@ YAML::
       uri: direct:start
       steps:
         - circuitBreaker:
+            resilience4jConfiguration:
+              timeoutDuration: 2000
+              timeoutEnabled: "true"
             steps:
-              - resilience4jConfiguration:
-                  timeoutDuration: 2000
-                  timeoutEnabled: "true"
               - log:
                   message: "Resilience processing start: ${threadName}"
               - to:
@@ -151,6 +153,87 @@ YAML::
 
 In this example if calling the downstream service does not return a response within 2 seconds,
 a timeout is triggered, and the exchange will fail with a `TimeoutException`.
+
+=== Asynchronous (non-blocking) processing
+
+By default, the Resilience4j circuit breaker processes exchanges synchronously,
+blocking the caller thread until the protected operation completes.
+When `asynchronous` is enabled, the circuit breaker uses Resilience4j's CompletionStage-based
+decorators, which release the caller thread immediately and complete processing asynchronously.
+
+This is most valuable when the downstream processor supports asynchronous processing
+(e.g., Netty HTTP, Kafka), as it avoids blocking threads while waiting for responses.
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:start")
+    .circuitBreaker()
+        .resilience4jConfiguration()
+            .asynchronous(true)
+            .timeoutEnabled(true)
+            .timeoutDuration(2000)
+        .end()
+        .to("http://fooservice.com/faulty")
+    .onFallback()
+        .transform().constant("Fallback message")
+    .end()
+    .to("mock:result");
+----
+
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="direct:start"/>
+  <circuitBreaker>
+    <resilience4jConfiguration asynchronous="true" timeoutEnabled="true" timeoutDuration="2000"/>
+    <to uri="http://fooservice.com/faulty"/>
+    <onFallback>
+      <transform>
+        <constant>Fallback message</constant>
+      </transform>
+    </onFallback>
+  </circuitBreaker>
+  <to uri="mock:result"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:start
+      steps:
+        - circuitBreaker:
+            resilience4jConfiguration:
+              asynchronous: "true"
+              timeoutDuration: 2000
+              timeoutEnabled: "true"
+            steps:
+              - to:
+                  uri: http://fooservice.com/faulty
+            onFallback:
+              steps:
+                - transform:
+                    expression:
+                      constant:
+                        expression: Fallback message
+        - to:
+            uri: mock:result
+----
+====
+
+NOTE: When using asynchronous mode with timeout, the `timeoutExecutorService` must be
+a `ScheduledExecutorService`. If not provided, Camel will automatically create one.
+If a custom executor is provided that is not a `ScheduledExecutorService`, the route will
+fail to start with an `IllegalArgumentException`.
 
 === Camel's Error Handler and Circuit Breaker EIP
 

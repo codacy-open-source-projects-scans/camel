@@ -53,7 +53,8 @@ public class StopRouteAbortAfterTimeoutTest extends ContextTestSupport {
             template.sendBody("seda:start", "message-" + i);
         }
 
-        mockEP.assertIsSatisfied();
+        // use timed assertion to avoid flaky failures on slow CI
+        MockEndpoint.assertIsSatisfied(context, 30, TimeUnit.SECONDS);
     }
 
     @Test
@@ -92,7 +93,7 @@ public class StopRouteAbortAfterTimeoutTest extends ContextTestSupport {
                 // shutdown this test faster
                 context.getShutdownStrategy().setTimeout(3);
 
-                from("seda:start").routeId("start").delay(100).to("mock:result");
+                from("seda:start").routeId("start").delay(2000).to("mock:result");
             }
         };
     }

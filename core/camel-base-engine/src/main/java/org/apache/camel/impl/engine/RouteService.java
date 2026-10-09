@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelContextAware;
@@ -44,9 +45,9 @@ import org.apache.camel.spi.LifecycleStrategy;
 import org.apache.camel.spi.RouteIdAware;
 import org.apache.camel.spi.RoutePolicy;
 import org.apache.camel.spi.StartupStepRecorder;
+import org.apache.camel.support.CamelContextHelper;
 import org.apache.camel.support.ChildServiceSupport;
 import org.apache.camel.support.EventHelper;
-import org.apache.camel.support.PatternHelper;
 import org.apache.camel.support.service.ServiceHelper;
 import org.slf4j.MDC;
 
@@ -126,7 +127,7 @@ public class RouteService extends ChildServiceSupport {
         try {
             doWarmUp();
         } catch (Exception e) {
-            throw new FailedToStartRouteException(getId(), getLocation(), e.getLocalizedMessage(), e);
+            throw new FailedToStartRouteException(getId(), getLocation(), extractUsefulMessage(e), e);
         }
     }
 
@@ -135,27 +136,34 @@ public class RouteService extends ChildServiceSupport {
             try {
                 doSetup();
             } catch (Exception e) {
-                throw new FailedToStartRouteException(getId(), getLocation(), e.getLocalizedMessage(), e);
+                throw new FailedToStartRouteException(getId(), getLocation(), extractUsefulMessage(e), e);
             }
         }
     }
 
-    public boolean isAutoStartup() {
-        if (!getCamelContext().isAutoStartup()) {
-            return false;
-        }
-        if (!getRoute().isAutoStartup()) {
-            return false;
-        }
-        if (getCamelContext().getAutoStartupExcludePattern() != null) {
-            String[] patterns = getCamelContext().getAutoStartupExcludePattern().split(",");
-            String id = getRoute().getRouteId();
-            String url = getRoute().getEndpoint().getEndpointUri();
-            if (PatternHelper.matchPatterns(id, patterns) || PatternHelper.matchPatterns(url, patterns)) {
-                return false;
+    /**
+     * Extracts a non-null, non-empty error message from the exception or its cause chain.
+     * <p/>
+     * {@link Throwable#getLocalizedMessage()} can return {@code null} for exceptions such as
+     * {@link NullPointerException} that carry no message, which would cause {@link FailedToStartRouteException} to
+     * throw {@link NullPointerException} from its own constructor (via {@code Objects.requireNonNull}) instead of
+     * wrapping the original failure. This helper walks the cause chain to find the first meaningful message and falls
+     * back to the simple class name so the caller always receives a non-null string.
+     */
+    static String extractUsefulMessage(Throwable e) {
+        Throwable current = e;
+        while (current != null) {
+            String msg = current.getLocalizedMessage();
+            if (msg != null && !msg.isBlank()) {
+                return msg;
             }
+            current = current.getCause();
         }
-        return true;
+        return e.getClass().getSimpleName();
+    }
+
+    public boolean isAutoStartup() {
+        return CamelContextHelper.isAutoStartup(getRoute());
     }
 
     protected void doSetup() throws Exception {
@@ -368,7 +376,7 @@ public class RouteService extends ChildServiceSupport {
         }
     }
 
-    private void routePolicyCallback(java.util.function.BiConsumer<RoutePolicy, Route> callback) {
+    private void routePolicyCallback(BiConsumer<RoutePolicy, Route> callback) {
         if (route.getRoutePolicyList() != null) {
             for (RoutePolicy routePolicy : route.getRoutePolicyList()) {
                 callback.accept(routePolicy, route);

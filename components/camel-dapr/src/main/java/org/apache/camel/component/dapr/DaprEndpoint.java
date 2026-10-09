@@ -26,19 +26,28 @@ import org.apache.camel.Processor;
 import org.apache.camel.Producer;
 import org.apache.camel.component.dapr.consumer.DaprConfigurationConsumer;
 import org.apache.camel.component.dapr.consumer.DaprPubSubConsumer;
+import org.apache.camel.spi.HeaderFilterStrategy;
+import org.apache.camel.spi.HeaderFilterStrategyAware;
 import org.apache.camel.spi.UriEndpoint;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.support.DefaultEndpoint;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Dapr component which interfaces with Dapr Building Blocks.
  */
 @UriEndpoint(firstVersion = "4.12.0", scheme = "dapr", title = "Dapr", syntax = "dapr:operation", category = {
         Category.CLOUD, Category.SAAS }, headersClass = DaprConstants.class)
-public class DaprEndpoint extends DefaultEndpoint {
+public class DaprEndpoint extends DefaultEndpoint implements HeaderFilterStrategyAware {
+
+    private static final Logger LOG = LoggerFactory.getLogger(DaprEndpoint.class);
 
     @UriParam
     private DaprConfiguration configuration;
+    @UriParam(label = "advanced",
+              description = "To use a custom HeaderFilterStrategy to filter header to and from Camel message.")
+    private HeaderFilterStrategy headerFilterStrategy;
     private DaprClient client;
     private DaprPreviewClient previewClient;
     private DaprWorkflowClient workflowClient;
@@ -78,6 +87,38 @@ public class DaprEndpoint extends DefaultEndpoint {
                 = configuration.getWorkflowClient() != null ? configuration.getWorkflowClient() : new DaprWorkflowClient();
     }
 
+    @Override
+    public void doStop() throws Exception {
+        // close only the clients that this endpoint created: a configured (or autowired) client can be shared with
+        // other endpoints and is closed by its owner. The clients are created again when the endpoint is started again
+        if (client != configuration.getClient()) {
+            close(client);
+        }
+        if (previewClient != configuration.getPreviewClient()) {
+            close(previewClient);
+        }
+        if (workflowClient != configuration.getWorkflowClient()) {
+            close(workflowClient);
+        }
+        client = null;
+        previewClient = null;
+        workflowClient = null;
+        super.doStop();
+    }
+
+    private static void close(AutoCloseable daprClient) {
+        if (daprClient == null) {
+            return;
+        }
+        try {
+            daprClient.close();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            LOG.debug("Failed to close {} due to: {}", daprClient, e.getMessage(), e);
+        }
+    }
+
     /**
      * The endpoint configurations
      */
@@ -87,6 +128,22 @@ public class DaprEndpoint extends DefaultEndpoint {
 
     public void setConfiguration(DaprConfiguration config) {
         this.configuration = config;
+    }
+
+    @Override
+    public HeaderFilterStrategy getHeaderFilterStrategy() {
+        if (headerFilterStrategy == null) {
+            headerFilterStrategy = new DaprHeaderFilterStrategy();
+        }
+        return headerFilterStrategy;
+    }
+
+    /**
+     * To use a custom {@link org.apache.camel.spi.HeaderFilterStrategy} to filter header to and from Camel message.
+     */
+    @Override
+    public void setHeaderFilterStrategy(HeaderFilterStrategy headerFilterStrategy) {
+        this.headerFilterStrategy = headerFilterStrategy;
     }
 
     /**

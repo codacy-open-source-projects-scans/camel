@@ -41,7 +41,6 @@ import com.github.freva.asciitable.AsciiTable;
 import com.github.freva.asciitable.Column;
 import com.github.freva.asciitable.HorizontalAlign;
 import com.github.freva.asciitable.OverflowBehaviour;
-import org.apache.camel.catalog.impl.TimePatternConverter;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.commands.CommandHelper;
 import org.apache.camel.dsl.jbang.core.common.PidNameAgeCompletionCandidates;
@@ -54,8 +53,8 @@ import org.apache.camel.util.URISupport;
 import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
 import org.apache.camel.util.json.Jsoner;
-import org.fusesource.jansi.Ansi;
-import org.fusesource.jansi.AnsiConsole;
+import org.jline.jansi.Ansi;
+import org.jline.jansi.AnsiConsole;
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "trace",
@@ -362,9 +361,9 @@ public class CamelTraceAction extends ActionBaseCommand {
                 long millis;
                 if (StringHelper.isDigit(since)) {
                     // is in seconds by default
-                    millis = TimePatternConverter.toMilliSeconds(since) * 1000;
+                    millis = TimeUtils.toMilliSeconds(since) * 1000;
                 } else {
-                    millis = TimePatternConverter.toMilliSeconds(since);
+                    millis = TimeUtils.toMilliSeconds(since);
                 }
                 limit = new Date(System.currentTimeMillis() - millis);
             }
@@ -660,10 +659,10 @@ public class CamelTraceAction extends ActionBaseCommand {
                 long t1 = r1.timestamp;
                 long t2 = r2.timestamp;
                 if (t1 == 0) {
-                    t1 = lastTimestamp.get(r1.name);
+                    t1 = lastTimestamp.getOrDefault(r1.name, 0L);
                 }
-                if (t1 == 0) {
-                    t1 = lastTimestamp.get(r2.name);
+                if (t2 == 0) {
+                    t2 = lastTimestamp.getOrDefault(r2.name, 0L);
                 }
                 if (t1 == 0 && t2 == 0) {
                     return 0;

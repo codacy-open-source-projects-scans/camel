@@ -100,6 +100,10 @@ public class FileIdempotentRenameRepositoryReadLockStrategy extends ServiceSuppo
                 idempotentRepository.remove(exchange, key);
             }
         }
+        // remember whether we own the key end-to-end (idempotent add + rename check both
+        // succeeded), so releaseExclusiveReadLockOnAbort knows whether it is safe to remove it if
+        // begin() later fails for an unrelated reason
+        exchange.setProperty(asReadLockKey(file, Exchange.FILE_LOCK_IDEMPOTENT_ACQUIRED), answer);
         return answer;
     }
 
@@ -107,6 +111,16 @@ public class FileIdempotentRenameRepositoryReadLockStrategy extends ServiceSuppo
     public void releaseExclusiveReadLockOnAbort(
             GenericFileOperations<File> operations, GenericFile<File> file, Exchange exchange)
             throws Exception {
+        // only remove the key if we own it end-to-end. If we never owned it (pre-existing key) or
+        // the rename-check failed (already cleaned up above in acquireExclusiveReadLock) there is
+        // nothing to do here. If we do own it, acquireExclusiveReadLock succeeded and something
+        // later in begin() must have failed, so the key is ours to clean up
+        boolean acquired
+                = exchange.getProperty(asReadLockKey(file, Exchange.FILE_LOCK_IDEMPOTENT_ACQUIRED), false, Boolean.class);
+        if (acquired) {
+            String key = asKey(exchange, file);
+            idempotentRepository.remove(exchange, key);
+        }
         rename.releaseExclusiveReadLockOnAbort(operations, file, exchange);
     }
 
@@ -227,14 +241,26 @@ public class FileIdempotentRenameRepositoryReadLockStrategy extends ServiceSuppo
     }
 
     protected String asKey(Exchange exchange, GenericFile<File> file) {
-        // use absolute file path as default key, but evaluate if an expression
-        // key was configured
-        String key = file.getAbsoluteFilePath();
+        // use the copy from absolute path as that was the original path of the
+        // file when the lock was acquired
+        // for example if the file consumer uses preMove then the file is moved
+        // and therefore has another name that would no longer match
+        String key = file.getCopyFromAbsoluteFilePath() != null
+                ? file.getCopyFromAbsoluteFilePath() : file.getAbsoluteFilePath();
         if (endpoint.getIdempotentKey() != null) {
             Exchange dummy = GenericFileHelper.createDummy(endpoint, exchange, () -> file);
             key = endpoint.getIdempotentKey().evaluate(dummy, String.class);
         }
         return key;
+    }
+
+    private static String asReadLockKey(GenericFile<File> file, String key) {
+        // use the copy from absolute path as that was the original path of the
+        // file when the lock was acquired; e.g. if the file consumer uses preMove
+        // then the file is moved and would otherwise no longer match
+        String path = file.getCopyFromAbsoluteFilePath() != null
+                ? file.getCopyFromAbsoluteFilePath() : file.getAbsoluteFilePath();
+        return path + "-" + key;
     }
 
     @Override

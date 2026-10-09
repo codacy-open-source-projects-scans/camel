@@ -20,10 +20,17 @@ import java.util.function.Supplier;
 
 import org.apache.camel.CamelContextAware;
 import org.apache.camel.RuntimeCamelException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Represents a {@link BeanRepository} which may also be capable of binding beans to its repository.
  */
+@Metadata(label = "api",
+          description = "The bean registry of the CamelContext (context.getRegistry()): the beans declared in the route "
+                        + "file (beans:), in Spring or Quarkus, and the ones bound in code. A bean is looked up by its "
+                        + "name, it is not a variable: in a Groovy or Java script the bean myBean is "
+                        + "exchange.getContext().getRegistry().lookupByName(\"myBean\"), in the DSL #bean:myBean or the "
+                        + "ref option; plain myBean does not exist there.")
 public interface Registry extends BeanRepository {
 
     /**
@@ -52,7 +59,8 @@ public interface Registry extends BeanRepository {
      * @param  destroyMethod         optional destroy method (invoked at unbind or stopping Camel)
      * @throws RuntimeCamelException is thrown if binding is not possible
      */
-    default void bind(String id, Object bean, String initMethod, String destroyMethod) throws RuntimeCamelException {
+    default void bind(String id, Object bean, @Nullable String initMethod, @Nullable String destroyMethod)
+            throws RuntimeCamelException {
         if (bean != null) {
             bind(id, bean.getClass(), bean, initMethod, destroyMethod);
         }
@@ -70,6 +78,10 @@ public interface Registry extends BeanRepository {
      * @param  bean                  the bean
      * @throws RuntimeCamelException is thrown if binding is not possible
      */
+    @Metadata(label = "api",
+              description = "Registers a bean under a name so routes can refer to it (#bean:name, a ref option, "
+                            + "lookupByName).",
+              examples = { "context.getRegistry().bind(\"myStrategy\", new MyStrategy())" })
     void bind(String id, Class<?> type, Object bean) throws RuntimeCamelException;
 
     /**
@@ -86,7 +98,8 @@ public interface Registry extends BeanRepository {
      * @param  destroyMethod         optional destroy method (invoked at unbind or stopping Camel)
      * @throws RuntimeCamelException is thrown if binding is not possible
      */
-    void bind(String id, Class<?> type, Object bean, String initMethod, String destroyMethod) throws RuntimeCamelException;
+    void bind(String id, Class<?> type, Object bean, @Nullable String initMethod, @Nullable String destroyMethod)
+            throws RuntimeCamelException;
 
     /**
      * Binds the bean (via a supplier) to the repository (if possible).
@@ -120,7 +133,9 @@ public interface Registry extends BeanRepository {
      * @param  destroyMethod         optional destroy method (invoked at unbind or stopping Camel)
      * @throws RuntimeCamelException is thrown if binding is not possible
      */
-    void bind(String id, Class<?> type, Supplier<Object> bean, String initMethod, String destroyMethod)
+    void bind(
+            String id, Class<?> type, Supplier<Object> bean, @Nullable String initMethod,
+            @Nullable String destroyMethod)
             throws RuntimeCamelException;
 
     /**

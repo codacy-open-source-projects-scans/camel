@@ -17,6 +17,7 @@
 package org.apache.camel.processor;
 
 import java.util.Iterator;
+import java.util.Set;
 
 import org.apache.camel.AsyncCallback;
 import org.apache.camel.AsyncProcessor;
@@ -33,6 +34,7 @@ import org.apache.camel.spi.EndpointUtilizationStatistics;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.ProducerCache;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.AsyncProcessorSupport;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.MessageHelper;
@@ -55,12 +57,13 @@ import static org.apache.camel.util.ObjectHelper.notNull;
  * the failover load balancer is a specialized pipeline. So the trick is to keep doing the same as the pipeline to
  * ensure it works the same and the async routing engine is flawless.
  */
-public class RoutingSlip extends BaseProcessorSupport implements Traceable, IdAware, RouteIdAware {
+public class RoutingSlip extends BaseProcessorSupport implements Traceable, IdAware, RouteIdAware, StepIdAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(RoutingSlip.class);
 
     protected String id;
     protected String routeId;
+    protected String stepId;
     protected ProducerCache producerCache;
     protected int cacheSize;
     protected boolean ignoreInvalidEndpoints;
@@ -69,6 +72,7 @@ public class RoutingSlip extends BaseProcessorSupport implements Traceable, IdAw
     protected String uriDelimiter;
     protected final CamelContext camelContext;
     protected AsyncProcessor errorHandler;
+    protected Set<String> allowedSchemes;
 
     /**
      * The iterator to be used for retrieving the next routing slip(s) to be used.
@@ -128,6 +132,16 @@ public class RoutingSlip extends BaseProcessorSupport implements Traceable, IdAw
         this.routeId = routeId;
     }
 
+    @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
     public Expression getExpression() {
         return expression;
     }
@@ -162,6 +176,10 @@ public class RoutingSlip extends BaseProcessorSupport implements Traceable, IdAw
 
     public void setErrorHandler(AsyncProcessor errorHandler) {
         this.errorHandler = errorHandler;
+    }
+
+    public void setAllowedSchemes(String allowedSchemes) {
+        this.allowedSchemes = ProcessorHelper.parseAllowedSchemes(allowedSchemes);
     }
 
     @Override
@@ -245,6 +263,8 @@ public class RoutingSlip extends BaseProcessorSupport implements Traceable, IdAw
             try {
                 Object recipient = iter.next(exchange);
                 recipient = prepareRecipient(exchange, recipient);
+                // enforce the optional allowed-schemes allow-list on the resolved dynamic recipient (CAMEL-24298)
+                ProcessorHelper.checkAllowedSchemes(allowedSchemes, recipient);
                 Endpoint existing = getExistingEndpoint(exchange, recipient);
                 if (existing == null) {
                     endpoint = resolveEndpoint(exchange, recipient, prototype);
@@ -408,12 +428,13 @@ public class RoutingSlip extends BaseProcessorSupport implements Traceable, IdAw
                     // cleanup producer after usage
                     ex.removeProperty(ExchangePropertyKey.SLIP_PRODUCER);
 
+                    // and stop prototype endpoints (also when this step completed asynchronously)
+                    if (prototype) {
+                        ServiceHelper.stopAndShutdownService(endpoint);
+                    }
+
                     // we only have to handle async completion of the routing slip
                     if (doneSync) {
-                        // and stop prototype endpoints
-                        if (prototype) {
-                            ServiceHelper.stopAndShutdownService(endpoint);
-                        }
                         cb.done(true);
                         return;
                     }
@@ -447,6 +468,8 @@ public class RoutingSlip extends BaseProcessorSupport implements Traceable, IdAw
                             try {
                                 Object recipient = iter.next(ex);
                                 recipient = prepareRecipient(exchange, recipient);
+                                // enforce the optional allowed-schemes allow-list on the resolved dynamic recipient (CAMEL-24298)
+                                ProcessorHelper.checkAllowedSchemes(allowedSchemes, recipient);
                                 Endpoint existing = getExistingEndpoint(exchange, recipient);
                                 if (existing == null) {
                                     nextEndpoint = resolveEndpoint(exchange, recipient, prototype);

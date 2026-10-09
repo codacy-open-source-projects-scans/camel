@@ -25,6 +25,8 @@ import java.util.function.Supplier;
 import com.azure.core.util.Context;
 import com.azure.storage.blob.models.AccessTier;
 import com.azure.storage.blob.models.BlobHttpHeaders;
+import com.azure.storage.blob.models.BlobImmutabilityPolicy;
+import com.azure.storage.blob.models.BlobImmutabilityPolicyMode;
 import com.azure.storage.blob.models.BlobListDetails;
 import com.azure.storage.blob.models.BlobRange;
 import com.azure.storage.blob.models.BlobRequestConditions;
@@ -35,6 +37,7 @@ import com.azure.storage.blob.models.ListBlobsOptions;
 import com.azure.storage.blob.models.PageRange;
 import com.azure.storage.blob.models.ParallelTransferOptions;
 import com.azure.storage.blob.models.PublicAccessType;
+import com.azure.storage.blob.models.RehydratePriority;
 import org.apache.camel.Exchange;
 import org.apache.camel.util.ObjectHelper;
 
@@ -121,7 +124,7 @@ public class BlobConfigurationOptionsProxy {
             final PageRange pageRange = getPageRange(exchange);
             if (pageRange != null) {
                 final long blobOffset = pageRange.getStart();
-                final long dataCount = pageRange.getEnd() - pageRange.getStart();
+                final long dataCount = pageRange.getEnd() - pageRange.getStart() + 1;
 
                 return new BlobRange(blobOffset, dataCount);
             }
@@ -285,6 +288,26 @@ public class BlobConfigurationOptionsProxy {
 
     public String getBlobTagFilter(final Exchange exchange) {
         return BlobExchangeHeaders.getBlobTagFilterFromHeaders(exchange);
+    }
+
+    public Boolean getBlobLegalHold(final Exchange exchange) {
+        return BlobExchangeHeaders.getBlobLegalHoldFromHeaders(exchange);
+    }
+
+    public BlobImmutabilityPolicy getBlobImmutabilityPolicy(final Exchange exchange) {
+        return BlobExchangeHeaders.getBlobImmutabilityPolicyFromHeaders(exchange);
+    }
+
+    public OffsetDateTime getBlobImmutabilityPolicyExpiryTime(final Exchange exchange) {
+        return BlobExchangeHeaders.getBlobImmutabilityPolicyExpiryTimeFromHeaders(exchange);
+    }
+
+    public BlobImmutabilityPolicyMode getBlobImmutabilityPolicyMode(final Exchange exchange) {
+        return BlobExchangeHeaders.getBlobImmutabilityPolicyModeFromHeaders(exchange);
+    }
+
+    public RehydratePriority getRehydratePriority(final Exchange exchange) {
+        return BlobExchangeHeaders.getRehydratePriorityFromHeaders(exchange);
     }
 
     public BlobConfiguration getConfiguration() {

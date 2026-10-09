@@ -50,6 +50,8 @@ public class MetricsConfigurationProperties implements BootstrapCloseable {
     private boolean skipCamelInfo = false;
     @Metadata(defaultValue = "false")
     private boolean logMetricsOnShutdown = false;
+    @Metadata(defaultValue = "json", enums = "json,prometheus")
+    private String logMetricsOnShutdownFormat = "json";
     @Metadata(defaultValue = "0.0.4", enums = "0.0.4,1.0.0")
     private String textFormatVersion = "0.0.4";
     @Metadata
@@ -184,7 +186,7 @@ public class MetricsConfigurationProperties implements BootstrapCloseable {
     }
 
     /**
-     * Clear the captured metrics data when Camel is reloading routes such as when using Camel JBang.
+     * Clear the captured metrics data when Camel is reloading routes such as when using Camel CLI.
      */
     public void setClearOnReload(boolean clearOnReload) {
         this.clearOnReload = clearOnReload;
@@ -210,6 +212,17 @@ public class MetricsConfigurationProperties implements BootstrapCloseable {
      */
     public void setLogMetricsOnShutdown(boolean logMetricsOnShutdown) {
         this.logMetricsOnShutdown = logMetricsOnShutdown;
+    }
+
+    public String getLogMetricsOnShutdownFormat() {
+        return logMetricsOnShutdownFormat;
+    }
+
+    /**
+     * Format used to log metrics when application is shutting down. Either `json` (default) or `prometheus` format.
+     */
+    public void setLogMetricsOnShutdownFormat(String logMetricsOnShutdownFormat) {
+        this.logMetricsOnShutdownFormat = logMetricsOnShutdownFormat;
     }
 
     public String getTextFormatVersion() {
@@ -343,7 +356,7 @@ public class MetricsConfigurationProperties implements BootstrapCloseable {
     }
 
     /**
-     * Clear the captured metrics data when Camel is reloading routes such as when using Camel JBang.
+     * Clear the captured metrics data when Camel is reloading routes such as when using Camel CLI.
      */
     public MetricsConfigurationProperties withClearOnReload(boolean clearOnReload) {
         this.clearOnReload = clearOnReload;
@@ -363,6 +376,14 @@ public class MetricsConfigurationProperties implements BootstrapCloseable {
      */
     public MetricsConfigurationProperties withLogMetricsOnShutdown(boolean logMetricsOnShutdown) {
         this.logMetricsOnShutdown = logMetricsOnShutdown;
+        return this;
+    }
+
+    /**
+     * Format used to log metrics when application is shutting down. Either `json` (default) or `prometheus` format.
+     */
+    public MetricsConfigurationProperties withLogMetricsOnShutdownFormat(String logMetricsOnShutdownFormat) {
+        this.logMetricsOnShutdownFormat = logMetricsOnShutdownFormat;
         return this;
     }
 

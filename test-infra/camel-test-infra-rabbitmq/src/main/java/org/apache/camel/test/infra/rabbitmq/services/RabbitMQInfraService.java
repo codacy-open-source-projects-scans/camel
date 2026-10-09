@@ -19,6 +19,8 @@ package org.apache.camel.test.infra.rabbitmq.services;
 
 import org.apache.camel.test.infra.common.services.InfrastructureService;
 
+// Credentials are intentional test-only fixtures for testcontainer services — no security risk
+@SuppressWarnings("java:S2068")
 public interface RabbitMQInfraService extends InfrastructureService {
 
     /**
@@ -88,5 +90,9 @@ public interface RabbitMQInfraService extends InfrastructureService {
 
     default String brokerUrl() {
         return String.format("amqp://%s:%d", hostname(), port());
+    }
+
+    default String uiUrl() {
+        return managementUri();
     }
 }

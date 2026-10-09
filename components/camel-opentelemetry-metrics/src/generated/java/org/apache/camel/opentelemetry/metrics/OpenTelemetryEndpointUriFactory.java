@@ -21,6 +21,7 @@ public class OpenTelemetryEndpointUriFactory extends org.apache.camel.support.co
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
         Set<String> props = new HashSet<>(10);
@@ -36,6 +37,7 @@ public class OpenTelemetryEndpointUriFactory extends org.apache.camel.support.co
         props.add("value");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
         SECRET_PROPERTY_NAMES = Collections.emptySet();
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         Map<String, String> prefixes = new HashMap<>(1);
         prefixes.put("attributes", "attributes.");
         MULTI_VALUE_PREFIXES = Collections.unmodifiableMap(prefixes);
@@ -51,7 +53,7 @@ public class OpenTelemetryEndpointUriFactory extends org.apache.camel.support.co
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "metricType", null, true, copy);
         uri = buildPathParameter(syntax, uri, "metricName", null, true, copy);
@@ -67,6 +69,11 @@ public class OpenTelemetryEndpointUriFactory extends org.apache.camel.support.co
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

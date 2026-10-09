@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -30,11 +31,13 @@ import java.util.Set;
 
 import org.apache.camel.catalog.CamelCatalog;
 import org.apache.camel.catalog.DefaultCamelCatalog;
+import org.apache.camel.dsl.jbang.core.common.CamelJBangConstants;
 import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
 import org.apache.camel.dsl.jbang.core.common.PathUtils;
 import org.apache.camel.dsl.jbang.core.common.RuntimeUtil;
 import org.apache.camel.dsl.jbang.core.common.TemplateHelper;
 import org.apache.camel.dsl.jbang.core.common.VersionHelper;
+import org.apache.camel.tooling.maven.MavenGav;
 import org.apache.camel.util.CamelCaseOrderedProperties;
 import org.apache.camel.util.ObjectHelper;
 
@@ -51,15 +54,25 @@ class ExportCamelMain extends Export {
 
     @Override
     public Integer export() throws Exception {
-        String[] ids = gav.split(":");
-        if (ids.length != 3) {
+        try {
+            MavenGav.parseStrictGav(gav);
+        } catch (IllegalArgumentException e) {
             printer().printErr("--gav must be in syntax: groupId:artifactId:version");
             return 1;
         }
+        if (parentPom != null) {
+            try {
+                MavenGav.parseStrictGav(parentPom);
+            } catch (IllegalArgumentException e) {
+                printer().printErr("--parent-pom must be in syntax: groupId:artifactId:version");
+                return 1;
+            }
+        }
+        String[] ids = gav.split(":");
 
         // the settings file has information what to export
         Path settings = CommandLineHelper.getWorkDir().resolve(Run.RUN_SETTINGS_FILE);
-        if (fresh || !files.isEmpty() || !Files.exists(settings)) {
+        if (mavenResolver.fresh() || !files.isEmpty() || !Files.exists(settings)) {
             // allow to automatic build
             printer().println("Generating fresh run data");
             int silent = runSilently(ignoreLoadingError, lazyBean, verbose);
@@ -72,6 +85,7 @@ class ExportCamelMain extends Export {
 
         printer().println("Exporting as Camel Main project to: " + exportDir);
 
+        exportBaseDir = exportBaseDir != null ? exportBaseDir : Path.of(".");
         Path profile = exportBaseDir.resolve("application.properties");
 
         // use a temporary work dir
@@ -104,6 +118,7 @@ class ExportCamelMain extends Export {
                 srcResourcesDir, srcCamelResourcesDir,
                 srcKameletsResourcesDir, srcPackageName);
         // copy from settings to profile
+        Map<String, String> devProfile = new LinkedHashMap<>();
         copySettingsAndProfile(settings, profile,
                 srcResourcesDir, prop -> {
                     if (groovyPrecompiled && !prop.containsKey("camel.main.groovyPreloadCompiled")) {
@@ -143,8 +158,20 @@ class ExportCamelMain extends Export {
                         prop.put("camel.management.enabled", "true");
                         prop.put("camel.management.port", port);
                     }
+                    // developer console (--console) is configured in-process by camel-jbang, so export the
+                    // equivalent settings (same as KameletMain: console with health, info and jolokia)
+                    if (settingsFlag(settings, CamelJBangConstants.CONSOLE)) {
+                        Map<String, String> console = new LinkedHashMap<>();
+                        for (String key : List.of("camel.management.enabled", "camel.main.devConsoleEnabled",
+                                "camel.management.devConsoleEnabled", "camel.management.healthCheckEnabled",
+                                "camel.management.infoEnabled", "camel.management.jolokiaEnabled")) {
+                            console.put(key, "true");
+                        }
+                        addConsoleProperties(prop, devProfile, console);
+                    }
                     return prop;
                 });
+        writeDevProfileProperties(srcResourcesDir, devProfile);
         // create main class
         createMainClassSource(srcJavaDir, srcPackageName, mainClassname);
         // copy local lib JARs
@@ -161,7 +188,12 @@ class ExportCamelMain extends Export {
         if (mavenWrapper) {
             copyMavenWrapper();
         }
-        copyDockerFiles(BUILD_DIR);
+        if (camelWrapper) {
+            copyCamelWrapper();
+        }
+        if (docker) {
+            copyDockerFiles(BUILD_DIR);
+        }
         String appJar = Paths.get("target", ids[1] + "-" + ids[2] + ".jar").toString();
         copyReadme(BUILD_DIR, appJar);
         if (cleanExportDir || !exportDir.equals(".")) {
@@ -177,6 +209,7 @@ class ExportCamelMain extends Export {
         }
         // copy to export dir and remove work dir
         PathUtils.copyDirectory(buildDir, Path.of(exportDir));
+        createDeferredSymlinks(buildDir, Path.of(exportDir));
         PathUtils.deleteDirectory(buildDir);
 
         return 0;
@@ -213,6 +246,8 @@ class ExportCamelMain extends Export {
         model.put("BuildProperties", formatBuildProperties());
         model.put("Repositories", buildRepositoryList(repos));
         model.put("Dependencies", buildDependencyList(deps));
+        model.put("JibMavenPluginVersion", jibMavenPluginVersion(settings, prop));
+        enrichParentPom(model);
 
         // kubernetes/docker properties
         enrichKubernetesModel(model, settings, profile);
@@ -253,7 +288,6 @@ class ExportCamelMain extends Export {
         model.put("hasJib", jib || jkube);
         model.put("hasJkube", jkube);
         if (jib || jkube) {
-            model.put("JibMavenPluginVersion", jibMavenPluginVersion(settings, prop));
             model.put("hasJibFromAuth",
                     prop.stringPropertyNames().stream().anyMatch(s -> s.startsWith("jib.from.auth.")));
             model.put("hasJibToAuth",
@@ -277,20 +311,31 @@ class ExportCamelMain extends Export {
         answer.removeIf(s -> s.contains("camel-core"));
         answer.removeIf(s -> s.contains("camel-main"));
         answer.removeIf(s -> s.contains("camel-health"));
+        // spring-boot-starter JARs are not usable in camel-main runtime
+        answer.removeIf(s -> s.contains("spring-boot-starter"));
 
         if (profile != null && Files.exists(profile)) {
             Properties prop = new CamelCaseOrderedProperties();
             RuntimeUtil.loadProperties(prop, profile);
             // if metrics is defined then include camel-micrometer-prometheus for camel-main runtime
-            if (prop.getProperty("camel.metrics.enabled") != null
-                    || prop.getProperty("camel.management.metricsEnabled") != null
-                    || prop.getProperty("camel.server.metricsEnabled") != null) {
-                answer.add("mvn:org.apache.camel:camel-micrometer-prometheus");
+            if (prop.containsKey("camel.metrics.enabled")
+                    || prop.containsKey("camel.management.metricsEnabled")
+                    || prop.containsKey("camel.server.metricsEnabled")) {
+                answer.add("camel:micrometer-prometheus");
             }
             // if health-check is defined then include camel-health for camel-main runtime
-            if (prop.getProperty("camel.management.healthCheckEnabled") != null) {
-                answer.add("mvn:org.apache.camel:camel-health");
+            if (prop.containsKey("camel.management.healthCheckEnabled")) {
+                answer.add("camel:health");
             }
+        }
+
+        if (settingsFlag(settings, CamelJBangConstants.CONSOLE)) {
+            // developer console (--console) with health, info and jolokia
+            answer.add("mvn:org.apache.camel:camel-console");
+            answer.add("mvn:org.apache.camel:camel-management");
+            answer.add("mvn:org.apache.camel:camel-health");
+            answer.add("mvn:org.apache.camel:camel-platform-http-main");
+            answer.add("mvn:org.apache.camel:camel-platform-http-jolokia");
         }
 
         boolean main = answer.stream().anyMatch(s -> s.contains("mvn:org.apache.camel:camel-platform-http-main"));

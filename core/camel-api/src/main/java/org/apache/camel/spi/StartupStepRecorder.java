@@ -20,10 +20,23 @@ import java.util.stream.Stream;
 
 import org.apache.camel.StartupStep;
 import org.apache.camel.StaticService;
+import org.jspecify.annotations.Nullable;
 
 /**
- * To record {@link StartupStep} during startup to allow to capture diagnostic information to help troubleshoot Camel
- * applications via various tooling such as Java Flight Recorder.
+ * Records named {@link StartupStep} spans during {@link org.apache.camel.CamelContext} startup to capture timing and
+ * diagnostic information for troubleshooting and performance analysis.
+ * <p/>
+ * Each step is opened with {@link #beginStep} and closed with {@link #endStep}, forming a tree of nested spans that
+ * mirrors the initialization call graph. The default implementation is a no-op; the {@code camel-jfr} module provides
+ * an implementation that writes events to the Java Flight Recorder (JFR) event stream, enabling correlation with JVM
+ * profiling data in tools such as JDK Mission Control.
+ * <p/>
+ * The recorder is started automatically when the context starts and stopped (or kept running, depending on
+ * {@link #setStartupRecorderDuration}) once startup completes. Use {@link #steps()} to iterate over captured steps
+ * after startup for programmatic analysis.
+ *
+ * @see   StartupStep
+ * @since 3.8
  */
 public interface StartupStepRecorder extends StaticService {
 
@@ -58,13 +71,15 @@ public interface StartupStepRecorder extends StaticService {
      */
     void setStartupRecorderDuration(long startupRecorderDuration);
 
+    @Nullable
     String getRecordingDir();
 
     /**
-     * Directory to store the recording. By default the current directory will be used.
+     * Directory to store the recording. By default, the current directory will be used.
      */
     void setRecordingDir(String recordingDir);
 
+    @Nullable
     String getRecordingProfile();
 
     /**
@@ -93,6 +108,26 @@ public interface StartupStepRecorder extends StaticService {
      * Whether to start flight recorder recording. This is only in use if camel-jfr is being used.
      */
     boolean isRecording();
+
+    /**
+     * Whether to also instrument the running Camel application, and not only its startup. This is only in use if
+     * camel-jfr is being used, and it emits an event per exchange, route and processor, so it is off by default.
+     *
+     * @since 4.22
+     */
+    default void setRuntimeEnabled(boolean runtimeEnabled) {
+        // noop
+    }
+
+    /**
+     * Whether to also instrument the running Camel application, and not only its startup. This is only in use if
+     * camel-jfr is being used, and it emits an event per exchange, route and processor, so it is off by default.
+     *
+     * @since 4.22
+     */
+    default boolean isRuntimeEnabled() {
+        return false;
+    }
 
     /**
      * Beings a new step.

@@ -243,6 +243,15 @@ public final class ConnectorConfigGenerator {
                     annotation.setLiteralValue("javaType", "\"java.time.Duration\"");
                 }
 
+                if (fieldConfig.isSecret()) {
+                    annotation.setLiteralValue("secret", "true");
+                }
+
+                final String security = fieldConfig.getSecurityCategory();
+                if (security != null) {
+                    annotation.setLiteralValue("security", String.format("\"%s\"", security));
+                }
+
                 if (fieldConfig.isRequired()) {
                     field.addAnnotation(Metadata.class)
                             .setLiteralValue("required", "true");

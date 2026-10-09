@@ -18,6 +18,7 @@ package org.apache.camel.processor;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -37,6 +38,7 @@ import org.apache.camel.processor.resequencer.SequenceSender;
 import org.apache.camel.spi.ExceptionHandler;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.support.ExchangeHelper;
 import org.apache.camel.support.LoggingExceptionHandler;
 import org.apache.camel.support.service.ServiceHelper;
@@ -61,12 +63,13 @@ import org.slf4j.LoggerFactory;
  * @see ResequencerEngine
  */
 public class StreamResequencer extends BaseProcessorSupport
-        implements SequenceSender<Exchange>, Navigate<Processor>, Traceable, IdAware, RouteIdAware {
+        implements SequenceSender<Exchange>, Navigate<Processor>, Traceable, IdAware, RouteIdAware, StepIdAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(StreamResequencer.class);
 
     private String id;
     private String routeId;
+    private String stepId;
     private final CamelContext camelContext;
     private final ExceptionHandler exceptionHandler;
     private final ResequencerEngine<Exchange> engine;
@@ -201,6 +204,16 @@ public class StreamResequencer extends BaseProcessorSupport
     }
 
     @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
+    @Override
     protected void doBuild() throws Exception {
         ServiceHelper.buildService(processor);
     }
@@ -221,8 +234,12 @@ public class StreamResequencer extends BaseProcessorSupport
     @Override
     protected void doStop() throws Exception {
         // let's stop everything in the reverse order
-        // no need to stop the worker thread -- it will stop automatically when this service is stopped
+        // this also releases the callers waiting for capacity
         engine.stop();
+        // end the worker thread, so that a quick restart does not leave it running next to the new one
+        if (delivery != null) {
+            delivery.cancel();
+        }
         ServiceHelper.stopService(processor);
     }
 
@@ -246,6 +263,11 @@ public class StreamResequencer extends BaseProcessorSupport
             exchange.setException(e);
             callback.done(true);
             return true;
+        } catch (RejectedExecutionException e) {
+            // stopped while waiting for capacity
+            exchange.setException(e);
+            callback.done(true);
+            return true;
         }
 
         try {
@@ -253,6 +275,10 @@ public class StreamResequencer extends BaseProcessorSupport
             Exchange copy = ExchangeHelper.createCorrelatedCopy(exchange, true);
             engine.insert(copy);
             delivery.request();
+        } catch (RejectedExecutionException e) {
+            // stopped after the wait for capacity: the exchange is not queued, so it must fail even when invalid
+            // exchanges are ignored
+            exchange.setException(e);
         } catch (Exception e) {
             if (isIgnoreInvalidExchanges()) {
                 LOG.debug("Invalid Exchange. This Exchange will be ignored: {}", exchange);
@@ -285,6 +311,7 @@ public class StreamResequencer extends BaseProcessorSupport
 
         private final Lock deliveryRequestLock = new ReentrantLock();
         private final Condition deliveryRequestCondition = deliveryRequestLock.newCondition();
+        private volatile boolean cancelled;
 
         Delivery() {
             super(camelContext.getExecutorServiceManager().resolveThreadName("Resequencer Delivery"));
@@ -292,7 +319,7 @@ public class StreamResequencer extends BaseProcessorSupport
 
         @Override
         public void run() {
-            while (isRunAllowed()) {
+            while (isRunAllowed() && !cancelled) {
                 try {
                     deliveryRequestLock.lock();
                     try {
@@ -302,6 +329,9 @@ public class StreamResequencer extends BaseProcessorSupport
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    break;
+                }
+                if (cancelled) {
                     break;
                 }
                 try {
@@ -314,7 +344,9 @@ public class StreamResequencer extends BaseProcessorSupport
         }
 
         public void cancel() {
-            interrupt();
+            // a flag rather than an interrupt, as this thread may be delivering an exchange right now
+            cancelled = true;
+            request();
         }
 
         public void request() {

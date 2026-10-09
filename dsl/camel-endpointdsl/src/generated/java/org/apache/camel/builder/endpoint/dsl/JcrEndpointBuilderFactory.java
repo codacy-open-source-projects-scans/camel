@@ -158,20 +158,6 @@ public interface JcrEndpointBuilderFactory {
             return this;
         }
         /**
-         * Password for login.
-         * 
-         * The option is a: <code>java.lang.String</code> type.
-         * 
-         * Group: common
-         * 
-         * @param password the value to set
-         * @return the dsl builder
-         */
-        default JcrEndpointConsumerBuilder password(String password) {
-            doSetProperty("password", password);
-            return this;
-        }
-        /**
          * Interval in milliseconds to wait before each session live checking
          * The default value is 60000 ms.
          * 
@@ -278,6 +264,20 @@ public interface JcrEndpointBuilderFactory {
          */
         default JcrEndpointConsumerBuilder workspaceName(String workspaceName) {
             doSetProperty("workspaceName", workspaceName);
+            return this;
+        }
+        /**
+         * Password for login.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param password the value to set
+         * @return the dsl builder
+         */
+        default JcrEndpointConsumerBuilder password(String password) {
+            doSetProperty("password", password);
             return this;
         }
     }
@@ -535,20 +535,6 @@ public interface JcrEndpointBuilderFactory {
             return this;
         }
         /**
-         * Password for login.
-         * 
-         * The option is a: <code>java.lang.String</code> type.
-         * 
-         * Group: common
-         * 
-         * @param password the value to set
-         * @return the dsl builder
-         */
-        default JcrEndpointProducerBuilder password(String password) {
-            doSetProperty("password", password);
-            return this;
-        }
-        /**
          * Interval in milliseconds to wait before each session live checking
          * The default value is 60000 ms.
          * 
@@ -655,6 +641,52 @@ public interface JcrEndpointBuilderFactory {
          */
         default JcrEndpointProducerBuilder workspaceName(String workspaceName) {
             doSetProperty("workspaceName", workspaceName);
+            return this;
+        }
+        /**
+         * To use a custom org.apache.camel.spi.HeaderFilterStrategy to filter
+         * header to and from Camel message.
+         * 
+         * The option is a:
+         * <code>org.apache.camel.spi.HeaderFilterStrategy</code> type.
+         * 
+         * Group: filter
+         * 
+         * @param headerFilterStrategy the value to set
+         * @return the dsl builder
+         */
+        default JcrEndpointProducerBuilder headerFilterStrategy(org.apache.camel.spi.HeaderFilterStrategy headerFilterStrategy) {
+            doSetProperty("headerFilterStrategy", headerFilterStrategy);
+            return this;
+        }
+        /**
+         * To use a custom org.apache.camel.spi.HeaderFilterStrategy to filter
+         * header to and from Camel message.
+         * 
+         * The option will be converted to a
+         * <code>org.apache.camel.spi.HeaderFilterStrategy</code> type.
+         * 
+         * Group: filter
+         * 
+         * @param headerFilterStrategy the value to set
+         * @return the dsl builder
+         */
+        default JcrEndpointProducerBuilder headerFilterStrategy(String headerFilterStrategy) {
+            doSetProperty("headerFilterStrategy", headerFilterStrategy);
+            return this;
+        }
+        /**
+         * Password for login.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param password the value to set
+         * @return the dsl builder
+         */
+        default JcrEndpointProducerBuilder password(String password) {
+            doSetProperty("password", password);
             return this;
         }
     }
@@ -841,20 +873,6 @@ public interface JcrEndpointBuilderFactory {
             return this;
         }
         /**
-         * Password for login.
-         * 
-         * The option is a: <code>java.lang.String</code> type.
-         * 
-         * Group: common
-         * 
-         * @param password the value to set
-         * @return the dsl builder
-         */
-        default JcrEndpointBuilder password(String password) {
-            doSetProperty("password", password);
-            return this;
-        }
-        /**
          * Interval in milliseconds to wait before each session live checking
          * The default value is 60000 ms.
          * 
@@ -963,6 +981,20 @@ public interface JcrEndpointBuilderFactory {
             doSetProperty("workspaceName", workspaceName);
             return this;
         }
+        /**
+         * Password for login.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param password the value to set
+         * @return the dsl builder
+         */
+        default JcrEndpointBuilder password(String password) {
+            doSetProperty("password", password);
+            return this;
+        }
     }
 
     /**
@@ -1050,7 +1082,7 @@ public interface JcrEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final JcrHeaderNameBuilder INSTANCE = new JcrHeaderNameBuilder();
+        public static final JcrHeaderNameBuilder INSTANCE = new JcrHeaderNameBuilder();
 
         /**
          * The name of the target node.

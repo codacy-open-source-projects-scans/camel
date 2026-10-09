@@ -16,12 +16,16 @@
  */
 package org.apache.camel.service.lra;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
+import org.apache.camel.test.junit6.TestSupport;
 import org.junit.jupiter.api.Test;
+
+import static org.awaitility.Awaitility.await;
 
 public class LRAFailuresIT extends AbstractLRATestSupport {
 
@@ -33,10 +37,11 @@ public class LRAFailuresIT extends AbstractLRATestSupport {
 
         MockEndpoint compensate = getMockEndpoint("mock:compensate");
         compensate.expectedMessageCount(1);
-        compensate.setResultWaitTime(20000);
 
-        sendBody("direct:saga-compensate", "hello");
+        TestSupport.sendBody(template, "direct:failures-saga-compensate", "hello");
 
+        await().atMost(60, TimeUnit.SECONDS)
+                .until(() -> compensate.getReceivedCounter() >= 1);
         compensate.assertIsSatisfied();
     }
 
@@ -46,13 +51,25 @@ public class LRAFailuresIT extends AbstractLRATestSupport {
 
         MockEndpoint complete = getMockEndpoint("mock:complete");
         complete.expectedMessageCount(1);
-        complete.setResultWaitTime(20000);
 
         MockEndpoint end = getMockEndpoint("mock:end");
         end.expectedBodiesReceived("hello");
 
-        sendBody("direct:saga-complete", "hello");
+        TestSupport.sendBody(template, "direct:failures-saga-complete", "hello");
 
+        // The Narayana LRA coordinator retries failed completion callbacks via
+        // its periodic recovery manager (default: every 120s). Rather than wait
+        // for the next periodic scan, explicitly trigger recovery via the
+        // coordinator's REST endpoint. Poll because the completion failure may
+        // not yet be recorded when the first trigger fires.
+        await().atMost(60, TimeUnit.SECONDS)
+                .pollInterval(2, TimeUnit.SECONDS)
+                .pollDelay(1, TimeUnit.SECONDS)
+                .until(() -> {
+                    triggerRecovery();
+                    return complete.getReceivedCounter() >= 1
+                            && end.getReceivedCounter() >= 1;
+                });
         complete.assertIsSatisfied();
         end.assertIsSatisfied();
     }
@@ -64,19 +81,19 @@ public class LRAFailuresIT extends AbstractLRATestSupport {
             @Override
             public void configure() {
 
-                from("direct:saga-compensate")
+                from("direct:failures-saga-compensate")
                         .saga()
-                        .compensation("direct:compensate")
+                        .compensation("direct:failures-compensate")
                         .process(x -> {
                             throw new RuntimeCamelException("fail");
                         });
 
-                from("direct:saga-complete")
+                from("direct:failures-saga-complete")
                         .saga()
-                        .completion("direct:complete")
+                        .completion("direct:failures-complete")
                         .to("mock:end");
 
-                from("direct:compensate")
+                from("direct:failures-compensate")
                         .process(x -> {
                             int current = maxFailures.decrementAndGet();
                             if (current >= 0) {
@@ -85,7 +102,7 @@ public class LRAFailuresIT extends AbstractLRATestSupport {
                         })
                         .to("mock:compensate");
 
-                from("direct:complete")
+                from("direct:failures-complete")
                         .process(x -> {
                             int current = maxFailures.decrementAndGet();
                             if (current >= 0) {

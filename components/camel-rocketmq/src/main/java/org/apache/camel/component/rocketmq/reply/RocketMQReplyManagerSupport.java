@@ -19,6 +19,7 @@ package org.apache.camel.component.rocketmq.reply;
 
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 
 import org.apache.camel.AsyncCallback;
@@ -148,26 +149,35 @@ public class RocketMQReplyManagerSupport extends ServiceSupport implements Reply
 
     @Override
     public void processReply(ReplyHolder holder) {
-        if (!isRunAllowed()) {
+        if (holder == null) {
             return;
         }
         try {
             Exchange exchange = holder.getExchange();
             if (holder.isTimeout()) {
-                if (log.isWarnEnabled()) {
-                    log.warn("Timeout occurred after {} millis waiting for reply message with messageKey [{}] on topic {}." +
-                             " Setting ExchangeTimedOutException on {} and continue routing.",
-                            holder.getTimeout(), holder.getMessageKey(), replyToTopic, ExchangeHelper.logIds(exchange));
+                if (isStopping() || isStopped()) {
+                    exchange.setException(new RejectedExecutionException(
+                            "Cannot process reply as the reply manager is shutting down"));
+                } else {
+                    handleTimeout(holder, exchange);
                 }
-                String msg = "reply message with messageKey: " + holder.getMessageKey() + " not received on topic: "
-                             + replyToTopic;
-                exchange.setException(new ExchangeTimedOutException(exchange, holder.getTimeout(), msg));
             } else {
                 processReceivedReply(holder);
             }
         } finally {
             holder.getCallback().done(false);
         }
+    }
+
+    private void handleTimeout(ReplyHolder holder, Exchange exchange) {
+        if (log.isWarnEnabled()) {
+            log.warn("Timeout occurred after {} millis waiting for reply message with messageKey [{}] on topic {}." +
+                     " Setting ExchangeTimedOutException on {} and continue routing.",
+                    holder.getTimeout(), holder.getMessageKey(), replyToTopic, ExchangeHelper.logIds(exchange));
+        }
+        String msg = "reply message with messageKey: " + holder.getMessageKey() + " not received on topic: "
+                     + replyToTopic;
+        exchange.setException(new ExchangeTimedOutException(exchange, holder.getTimeout(), msg));
     }
 
     private static void processReceivedReply(ReplyHolder holder) {
@@ -179,17 +189,16 @@ public class RocketMQReplyManagerSupport extends ServiceSupport implements Reply
 
     @Override
     public void cancelMessageKey(String messageKey) {
-        if (null == timeoutMap.get(messageKey)) {
-            return;
+        if (timeoutMap.remove(messageKey) != null) {
+            log.warn("Cancelled messageKey: {}", messageKey);
         }
-        log.warn("Cancelling messageKey: {}", messageKey);
-        timeoutMap.remove(messageKey);
     }
 
     protected void handleReplyMessage(String messageKey, MessageExt messageExt) {
-        ReplyHandler handler = timeoutMap.get(messageKey);
+        // remove the handler in one step, so only one of the reply, a duplicate of the reply, and the timeout
+        // completes the exchange
+        ReplyHandler handler = timeoutMap.remove(messageKey);
         if (handler != null) {
-            timeoutMap.remove(messageKey);
             handler.onReply(messageKey, messageExt);
         } else {
             log.warn("Reply received for unknown messageKey [{}]. The message will be ignored: {}", messageKey, messageExt);

@@ -17,6 +17,7 @@
 package org.apache.camel.test.infra.openai.mock;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -44,7 +45,10 @@ public class RequestHandler {
 
     public String handleRequest(HttpExchange exchange) throws IOException {
         try {
-            String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String requestBody;
+            try (InputStream is = exchange.getRequestBody()) {
+                requestBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
             LOG.debug("Processing request: {}", requestBody);
 
             JsonNode rootNode = objectMapper.readTree(requestBody);
@@ -86,7 +90,8 @@ public class RequestHandler {
         } else {
             LOG.debug("Tool sequence completed for expectation: {}", originalInput);
             return responseBuilder.createFinalToolResponse(context.getMessagesNode(), expectation.getExpectedResponse(),
-                    expectation.getToolContentResponse());
+                    expectation.getToolContentResponse(), expectation.getReasoningContent(),
+                    resolvePromptTokens(expectation), resolveCompletionTokens(expectation));
         }
     }
 
@@ -104,6 +109,10 @@ public class RequestHandler {
         // Execute request assertion if present
         if (expectation.getRequestAssertion() != null) {
             expectation.getRequestAssertion().accept(requestBody);
+        }
+
+        if (expectation.hasError()) {
+            return responseBuilder.createApiErrorResponse(expectation, exchange);
         }
 
         return createResponse(expectation, userInput, exchange);
@@ -124,7 +133,11 @@ public class RequestHandler {
             case SIMPLE_TEXT:
             default:
                 LOG.debug("Creating simple text response");
-                return responseBuilder.createSimpleTextResponse(expectation.getExpectedResponse());
+                return responseBuilder.createSimpleTextResponse(
+                        expectation.getExpectedResponse(),
+                        expectation.getReasoningContent(),
+                        resolvePromptTokens(expectation),
+                        resolveCompletionTokens(expectation));
         }
     }
 
@@ -132,7 +145,21 @@ public class RequestHandler {
         ToolExecutionStep currentStep = expectation.getCurrentToolStep();
         return responseBuilder.createToolCallResponse(
                 expectation.getExpectedResponse(),
-                currentStep.getToolCalls());
+                currentStep.getToolCalls(),
+                resolvePromptTokens(expectation),
+                resolveCompletionTokens(expectation));
+    }
+
+    private int resolvePromptTokens(MockExpectation expectation) {
+        return expectation.getUsagePromptTokens() != null
+                ? expectation.getUsagePromptTokens()
+                : ResponseBuilder.DEFAULT_PROMPT_TOKENS;
+    }
+
+    private int resolveCompletionTokens(MockExpectation expectation) {
+        return expectation.getUsageCompletionTokens() != null
+                ? expectation.getUsageCompletionTokens()
+                : ResponseBuilder.DEFAULT_COMPLETION_TOKENS;
     }
 
     private MockExpectation findExpectationByInput(String input) {

@@ -55,6 +55,13 @@ public class CometdConsumer extends DefaultConsumer implements CometdProducerCon
 
     @Override
     public void doStop() throws Exception {
+        if (service != null) {
+            // the server outlives this consumer when other producers or consumers use its host and port: stop
+            // listening to the channel, or the messages are still processed by this consumer
+            service.removeService(endpoint.getPath());
+            service.getLocalSession().disconnect();
+            service = null;
+        }
         endpoint.disconnect(this);
         super.doStop();
     }
@@ -91,6 +98,9 @@ public class CometdConsumer extends DefaultConsumer implements CometdProducerCon
 
         private CometdBinding createBinding(BayeuxServerImpl bayeux) {
             boolean enableSessionHeaders = endpoint != null && endpoint.isSessionHeadersEnabled();
+            if (endpoint != null && endpoint.getHeaderFilterStrategy() != null) {
+                return new CometdBinding(bayeux, enableSessionHeaders, endpoint.getHeaderFilterStrategy());
+            }
             return new CometdBinding(bayeux, enableSessionHeaders);
         }
 

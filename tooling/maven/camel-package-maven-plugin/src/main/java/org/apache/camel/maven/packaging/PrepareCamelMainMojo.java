@@ -18,9 +18,11 @@ package org.apache.camel.maven.packaging;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -31,6 +33,8 @@ import org.apache.camel.tooling.model.MainModel;
 import org.apache.camel.tooling.model.MainModel.MainGroupModel;
 import org.apache.camel.tooling.util.JavadocHelper;
 import org.apache.camel.tooling.util.PackageHelper;
+import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.Jsoner;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
@@ -132,6 +136,8 @@ public class PrepareCamelMainMojo extends AbstractGeneratorMojo {
                     enums = Arrays.asList("allLocalIp,localIp,localHostName".split(","));
                 } else if ("org.apache.camel.util.concurrent.ThreadPoolRejectedPolicy".equals(javaType)) {
                     enums = Arrays.asList("Abort,CallerRuns,DiscardOldest,Discard".split(","));
+                } else if ("java.util.concurrent.TimeUnit".equals(javaType)) {
+                    enums = Arrays.asList("NANOSECONDS,MICROSECONDS,MILLISECONDS,SECONDS,MINUTES,HOURS,DAYS".split(","));
                 }
                 if (enums == null && as != null) {
                     String text = as.getStringValue("enums");
@@ -146,6 +152,85 @@ public class PrepareCamelMainMojo extends AbstractGeneratorMojo {
                 answer.add(model);
             }
         });
+
+        return answer;
+    }
+
+    /**
+     * Loads cluster service configuration metadata from a bean JSON file.
+     */
+    public static List<MainModel.MainOptionModel> loadClusterServiceMetadata(
+            String prefix, File beanJsonFile)
+            throws Exception {
+
+        final List<MainModel.MainOptionModel> answer = new ArrayList<>();
+
+        String json = Files.readString(beanJsonFile.toPath());
+        JsonObject root = (JsonObject) Jsoner.deserialize(json);
+        JsonObject bean = root.getMap("bean");
+        String sourceType = bean.getString("javaType");
+        boolean classDeprecated = Boolean.TRUE.equals(bean.get("deprecated"));
+
+        // add synthetic "enabled" property
+        MainModel.MainOptionModel enabledModel = new MainModel.MainOptionModel();
+        enabledModel.setName(prefix + "enabled");
+        enabledModel.setJavaType("boolean");
+        enabledModel.setType("boolean");
+        enabledModel.setDefaultValue(true);
+        enabledModel.setDescription("Whether to enable this cluster service.");
+        enabledModel.setSourceType(sourceType);
+        answer.add(enabledModel);
+
+        JsonObject properties = bean.getMap("properties");
+        if (properties != null) {
+            for (Map.Entry<String, Object> entry : properties.entrySet()) {
+                String name = entry.getKey();
+                JsonObject prop = (JsonObject) entry.getValue();
+
+                String javaType = prop.getString("javaType");
+
+                MainModel.MainOptionModel model = new MainModel.MainOptionModel();
+                model.setName(prefix + name);
+                model.setJavaType(javaType);
+                model.setSourceType(sourceType);
+                model.setRequired(Boolean.TRUE.equals(prop.get("required")));
+                model.setDeprecated(classDeprecated || Boolean.TRUE.equals(prop.get("deprecated")));
+                model.setSecret(Boolean.TRUE.equals(prop.get("secret")));
+                model.setDescription(prop.getString("description"));
+
+                String security = prop.getString("security");
+                if (security != null) {
+                    model.setSecurity(security);
+                    if ("secret".equals(security) && !model.isSecret()) {
+                        model.setSecret(true);
+                    }
+                }
+
+                // determine type and handle enums
+                String type = prop.getString("type");
+                List<String> enums = null;
+                Object enumObj = prop.get("enum");
+                if (enumObj instanceof List) {
+                    enums = ((List<?>) enumObj).stream().map(Object::toString).collect(Collectors.toList());
+                    type = "enum";
+                }
+                if (type == null) {
+                    type = MojoHelper.getType(javaType, enums != null, false);
+                }
+                model.setType(type);
+                model.setEnums(enums);
+
+                // default value
+                Object defaultValue = prop.get("defaultValue");
+                if (defaultValue != null) {
+                    model.setDefaultValue(defaultValue);
+                } else if ("boolean".equals(type)) {
+                    model.setDefaultValue("false");
+                }
+
+                answer.add(model);
+            }
+        }
 
         return answer;
     }
@@ -240,12 +325,16 @@ public class PrepareCamelMainMojo extends AbstractGeneratorMojo {
                     prefix = "camel.security.";
                 } else if (file.getName().contains("SSLConfigurationProperties")) {
                     prefix = "camel.ssl.";
+                } else if (file.getName().contains("ErrorRegistryConfigurationProperties")) {
+                    prefix = "camel.errorRegistry.";
                 } else if (file.getName().contains("DebuggerConfigurationProperties")) {
                     prefix = "camel.debug.";
                 } else if (file.getName().contains("TracerConfigurationProperties")) {
                     prefix = "camel.trace.";
                 } else if (file.getName().contains("RouteControllerConfigurationProperties")) {
                     prefix = "camel.routecontroller.";
+                } else if (file.getName().contains("AiObservabilityConfigurationProperties")) {
+                    prefix = "camel.aiObservability.";
                 } else {
                     prefix = "camel.main.";
                 }
@@ -355,6 +444,38 @@ public class PrepareCamelMainMojo extends AbstractGeneratorMojo {
             data.addAll(model);
         } catch (Exception e) {
             throw new MojoFailureException("Error parsing file " + cyberarkVaultConfig + " due " + e.getMessage(), e);
+        }
+
+        // include cluster service configuration from component bean metadata
+        String[][] clusterServices = {
+                { "file", "components/camel-file", "FileLockClusterService" },
+                { "kubernetes", "components/camel-kubernetes", "KubernetesClusterService" },
+                { "zookeeper", "components/camel-zookeeper", "ZooKeeperClusterService" },
+                { "consul", "components/camel-consul", "ConsulClusterService" },
+                { "jgroups-raft", "components/camel-jgroups-raft", "JGroupsRaftClusterService" },
+                { "infinispan", "components/camel-infinispan/camel-infinispan", "InfinispanRemoteClusterService" },
+        };
+        for (String[] cs : clusterServices) {
+            String type = cs[0];
+            String componentPath = cs[1];
+            String beanName = cs[2];
+            try {
+                File componentDir = PackageHelper.findCamelDirectory(project.getBasedir(), componentPath);
+                File beanJson = new File(
+                        componentDir,
+                        "src/generated/resources/META-INF/services/org/apache/camel/bean/" + beanName + ".json");
+                if (beanJson.isFile()) {
+                    String prefix = "camel.cluster." + type + ".";
+                    List<MainModel.MainOptionModel> clusterModel = loadClusterServiceMetadata(prefix, beanJson);
+                    data.addAll(clusterModel);
+                    getLog().info("Loaded cluster service metadata: " + type + " (" + clusterModel.size() + " options)");
+                } else {
+                    getLog().warn("Cluster service bean metadata not found: " + beanJson);
+                }
+            } catch (Exception e) {
+                throw new MojoFailureException(
+                        "Error loading cluster service metadata for " + type + " due " + e.getMessage(), e);
+            }
         }
 
         // lets sort so they are always ordered (but camel.main in top)
@@ -472,6 +593,30 @@ public class PrepareCamelMainMojo extends AbstractGeneratorMojo {
             model.getGroups().add(new MainGroupModel(
                     "camel.lra", "Camel Saga EIP (Long Running Actions) configurations",
                     "org.apache.camel.main.LraConfigurationProperties"));
+            model.getGroups().add(new MainGroupModel(
+                    "camel.errorRegistry", "Camel Error Registry configurations",
+                    "org.apache.camel.main.ErrorRegistryConfigurationProperties"));
+            model.getGroups().add(new MainGroupModel(
+                    "camel.aiObservability", "Camel GenAI Observability configurations",
+                    "org.apache.camel.main.AiObservabilityConfigurationProperties"));
+            model.getGroups().add(new MainGroupModel(
+                    "camel.cluster.file", "Camel File Cluster Service configurations",
+                    "org.apache.camel.component.file.cluster.FileLockClusterService"));
+            model.getGroups().add(new MainGroupModel(
+                    "camel.cluster.kubernetes", "Camel Kubernetes Cluster Service configurations",
+                    "org.apache.camel.component.kubernetes.cluster.KubernetesClusterService"));
+            model.getGroups().add(new MainGroupModel(
+                    "camel.cluster.zookeeper", "Camel ZooKeeper Cluster Service configurations",
+                    "org.apache.camel.component.zookeeper.cluster.ZooKeeperClusterService"));
+            model.getGroups().add(new MainGroupModel(
+                    "camel.cluster.consul", "Camel Consul Cluster Service configurations",
+                    "org.apache.camel.component.consul.cluster.ConsulClusterService"));
+            model.getGroups().add(new MainGroupModel(
+                    "camel.cluster.jgroups-raft", "Camel JGroups Raft Cluster Service configurations",
+                    "org.apache.camel.component.jgroups.raft.cluster.JGroupsRaftClusterService"));
+            model.getGroups().add(new MainGroupModel(
+                    "camel.cluster.infinispan", "Camel Infinispan Remote Cluster Service configurations",
+                    "org.apache.camel.component.infinispan.remote.cluster.InfinispanRemoteClusterService"));
 
             String json = JsonMapper.createJsonSchema(model);
 

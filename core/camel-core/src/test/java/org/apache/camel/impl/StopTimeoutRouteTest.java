@@ -22,30 +22,29 @@ import java.util.concurrent.TimeUnit;
 import org.apache.camel.ContextTestSupport;
 import org.apache.camel.ServiceStatus;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.component.mock.MockEndpoint;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Flaky on GitHub Actions")
 public class StopTimeoutRouteTest extends ContextTestSupport {
 
-    private final CountDownLatch latch = new CountDownLatch(1);
+    private final CountDownLatch processingStarted = new CountDownLatch(1);
 
     @Test
     public void testStopTimeout() throws Exception {
         getMockEndpoint("mock:foo").expectedBodiesReceived("Hello Foo");
 
-        // should stop the route before its routed to mock:foo
         template.asyncSendBody("direct:start", "Hello World");
+
+        assertTrue(processingStarted.await(5, TimeUnit.SECONDS), "Processing should have started");
+
         context.getRouteController().stopRoute("start", 10, TimeUnit.MILLISECONDS);
 
-        // send to the other running route
         template.sendBody("direct:foo", "Hello Foo");
 
-        assertMockEndpointsSatisfied();
-
-        latch.countDown();
+        MockEndpoint.assertIsSatisfied(context, 30, TimeUnit.SECONDS);
 
         assertEquals(ServiceStatus.Stopped, context.getRouteController().getRouteStatus("start"));
         assertEquals(ServiceStatus.Started, context.getRouteController().getRouteStatus("foo"));
@@ -58,12 +57,12 @@ public class StopTimeoutRouteTest extends ContextTestSupport {
             public void configure() {
                 from("direct:start").routeId("start")
                         .process(e -> {
+                            processingStarted.countDown();
                             try {
                                 Thread.sleep(500);
                             } catch (Exception ex) {
                                 // ignore
                             }
-                            latch.countDown();
                         })
                         .to("mock:foo");
 

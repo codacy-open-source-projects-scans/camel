@@ -17,6 +17,7 @@
 package org.apache.camel.component.jgroups.raft.cluster;
 
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.ServiceStatus;
@@ -28,6 +29,7 @@ import org.jgroups.JChannel;
 import org.jgroups.raft.RaftHandle;
 import org.junit.jupiter.api.Test;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class JGroupsRaftClusteredRoutePolicyTest extends JGroupsRaftClusterAbstractTest {
@@ -64,20 +66,25 @@ public class JGroupsRaftClusteredRoutePolicyTest extends JGroupsRaftClusterAbstr
         contextB.start();
         contextC.start();
         waitForLeader(50, handleA, handleB, handleC);
-        assertEquals(1, countActiveFromEndpoints(lcc, rn));
+        awaitOneActiveRoute();
 
         contextA.stop();
-        waitForLeader(50, handleA, handleB, handleC);
-        assertEquals(1, countActiveFromEndpoints(lcc, rn));
+        // Ensure channel A is fully closed before checking for a new leader
+        chA.close();
+        waitForLeader(50, handleB, handleC);
+        awaitOneActiveRoute();
 
         contextB.stop();
-        // NOTE: to be closed by component lifecycle.
+        // Ensure channel B is fully closed before creating a new channel with the same member name
+        chB.close();
+        waitForViewSize(chC, 1, 30);
         chA = new JChannel("raftABC.xml").name("A");
         handleA = new RaftHandle(chA, new NopStateMachine()).raftId("A");
         contextA = createContext("A", handleA);
+        lcc.set(0, contextA);
         contextA.start();
-        waitForLeader(50, handleA, handleB, handleC);
-        assertEquals(1, countActiveFromEndpoints(lcc, rn));
+        waitForLeader(50, handleA, handleC);
+        awaitOneActiveRoute();
     }
 
     private CamelContext createContext(String id, RaftHandle rh) throws Exception {
@@ -102,6 +109,11 @@ public class JGroupsRaftClusteredRoutePolicyTest extends JGroupsRaftClusterAbstr
         });
 
         return context;
+    }
+
+    private void awaitOneActiveRoute() {
+        // the policy starts and stops the routes on its own thread, shortly after the leadership change
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> assertEquals(1, countActiveFromEndpoints(lcc, rn)));
     }
 
     private int countActiveFromEndpoints(ArrayList<CamelContext> lcc, ArrayList<String> rn) {

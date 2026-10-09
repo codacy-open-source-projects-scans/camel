@@ -28,6 +28,7 @@ import org.apache.camel.Processor;
 import org.apache.camel.processor.RecipientList;
 import org.apache.camel.processor.aggregate.AggregationStrategyBeanAdapter;
 import org.apache.camel.processor.aggregate.AggregationStrategyBiFunctionAdapter;
+import org.apache.camel.processor.aggregate.UseLatestAggregationStrategy;
 import org.apache.camel.spi.ExecutorServiceManager;
 import org.apache.camel.spi.Registry;
 import org.junit.jupiter.api.Assertions;
@@ -159,9 +160,11 @@ class DynamicRouterRecipientListHelperTest {
         when(mockConfig.isStopOnException()).thenReturn(true);
         when(mockConfig.isIgnoreInvalidEndpoints()).thenReturn(true);
         when(mockConfig.getCacheSize()).thenReturn(10);
+        when(mockConfig.getAllowedSchemes()).thenReturn("direct,mock");
         // Invoke the method under test
         DynamicRouterRecipientListHelper.setPropertiesForRecipientList(recipientList, camelContext, mockConfig);
         // Verify results
+        verify(recipientList, times(1)).setAllowedSchemes("direct,mock");
         verify(recipientList, times(1)).setParallelProcessing(true);
         verify(recipientList, times(1)).setParallelAggregate(true);
         verify(recipientList, times(1)).setSynchronous(true);
@@ -225,11 +228,11 @@ class DynamicRouterRecipientListHelperTest {
     }
 
     @Test
-    void testCreateAggregationStrategyNoOp() {
+    void testCreateAggregationStrategyDefaultsToUseLatest() {
         when(mockConfig.getAggregationStrategyBean()).thenReturn(null);
         when(mockConfig.getAggregationStrategy()).thenReturn(null);
         AggregationStrategy strategy = DynamicRouterRecipientListHelper.createAggregationStrategy(camelContext, mockConfig);
-        Assertions.assertInstanceOf(DynamicRouterRecipientListHelper.NoopAggregationStrategy.class, strategy);
+        Assertions.assertInstanceOf(UseLatestAggregationStrategy.class, strategy);
     }
 
     @Test

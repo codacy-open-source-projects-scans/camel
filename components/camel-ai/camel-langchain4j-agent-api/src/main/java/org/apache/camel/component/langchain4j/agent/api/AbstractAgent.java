@@ -18,8 +18,14 @@ package org.apache.camel.component.langchain4j.agent.api;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.function.BiPredicate;
 
+import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.mcp.McpToolProvider;
+import dev.langchain4j.mcp.client.McpClient;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.tool.ToolProvider;
 import org.apache.camel.util.ObjectHelper;
@@ -45,6 +51,7 @@ import org.apache.camel.util.ObjectHelper;
 public abstract class AbstractAgent<S> implements Agent {
 
     protected final AgentConfiguration configuration;
+    private ResponseFormat responseFormat;
 
     protected AbstractAgent(AgentConfiguration configuration) {
         this.configuration = configuration;
@@ -57,6 +64,48 @@ public abstract class AbstractAgent<S> implements Agent {
      */
     protected AgentConfiguration getConfiguration() {
         return configuration;
+    }
+
+    /**
+     * Returns the LangChain4j chat model configured for this agent.
+     *
+     * @return the chat model from agent configuration
+     * @since  4.23
+     */
+    public ChatModel getChatModel() {
+        return configuration.getChatModel();
+    }
+
+    /**
+     * Returns the MCP tool provider filter from the given agent's configuration.
+     *
+     * @param  agent the abstract agent, may be {@code null}
+     * @return       the filter predicate, or {@code null} when the agent is {@code null} or no filter is configured
+     * @since        4.23
+     */
+    public static BiPredicate<McpClient, ToolSpecification> mcpToolProviderFilter(AbstractAgent<?> agent) {
+        if (agent == null) {
+            return null;
+        }
+        return agent.getConfiguration().getMcpToolProviderFilter();
+    }
+
+    /**
+     * Gets the response format for structured output.
+     *
+     * @return the response format, or {@code null} if not configured
+     */
+    public ResponseFormat getResponseFormat() {
+        return responseFormat;
+    }
+
+    /**
+     * Sets the response format for structured output (JSON schema).
+     *
+     * @param responseFormat the langchain4j response format to apply to AI service requests
+     */
+    public void setResponseFormat(ResponseFormat responseFormat) {
+        this.responseFormat = responseFormat;
     }
 
     /**
@@ -76,7 +125,6 @@ public abstract class AbstractAgent<S> implements Agent {
      * @param builder      the AI services builder to configure
      * @param toolProvider the Apache Camel tool provider (may be null)
      */
-    @SuppressWarnings("unchecked")
     protected void configureBuilder(AiServices<S> builder, ToolProvider toolProvider) {
         // Collect all tool providers to compose them into a single provider
         List<ToolProvider> toolProviders = new ArrayList<>();
@@ -124,6 +172,41 @@ public abstract class AbstractAgent<S> implements Agent {
         // Output Guardrails
         if (configuration.getOutputGuardrailClasses() != null && !configuration.getOutputGuardrailClasses().isEmpty()) {
             builder.outputGuardrailClasses((List) configuration.getOutputGuardrailClasses());
+        }
+
+        // Response Format (structured output): set once at startup via setResponseFormat(), used here per request
+        if (responseFormat != null) {
+            builder.chatRequestTransformer(chatRequest -> chatRequest.toBuilder().responseFormat(responseFormat).build());
+        }
+
+        // Tool calling options
+        if (configuration.getMaxToolCallingRoundTrips() > 0) {
+            builder.maxToolCallingRoundTrips(configuration.getMaxToolCallingRoundTrips());
+        }
+        if (configuration.getHallucinatedToolNameStrategy() != null) {
+            builder.hallucinatedToolNameStrategy(configuration.getHallucinatedToolNameStrategy());
+        }
+        if (configuration.getToolExecutionErrorHandler() != null) {
+            builder.toolExecutionErrorHandler(configuration.getToolExecutionErrorHandler());
+        }
+        if (configuration.getToolArgumentsErrorHandler() != null) {
+            builder.toolArgumentsErrorHandler(configuration.getToolArgumentsErrorHandler());
+        }
+        if (configuration.getCompensateOnToolErrors() != null) {
+            builder.compensateOnToolErrors(configuration.getCompensateOnToolErrors());
+        }
+        if (Boolean.TRUE.equals(configuration.getExecuteToolsConcurrently())) {
+            Executor executor = configuration.getExecuteToolsExecutor();
+            if (executor != null) {
+                builder.executeToolsConcurrently(executor);
+            } else {
+                builder.executeToolsConcurrently();
+            }
+        }
+
+        // Custom AiServices builder customizer (escape hatch for any builder option not directly exposed)
+        if (configuration.getAiServicesCustomizer() != null) {
+            configuration.getAiServicesCustomizer().accept(builder);
         }
     }
 }

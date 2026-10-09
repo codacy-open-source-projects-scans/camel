@@ -18,6 +18,7 @@ package org.apache.camel.maven.packaging;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
@@ -42,20 +43,26 @@ import java.util.stream.Stream;
 
 import javax.inject.Inject;
 
+import org.apache.camel.tooling.model.ApiReferenceModel;
 import org.apache.camel.tooling.model.BaseModel;
 import org.apache.camel.tooling.model.BaseOptionModel;
 import org.apache.camel.tooling.model.ComponentModel;
 import org.apache.camel.tooling.model.DataFormatModel;
 import org.apache.camel.tooling.model.DevConsoleModel;
+import org.apache.camel.tooling.model.DevConsoleOpenApiHelper;
 import org.apache.camel.tooling.model.EipModel;
 import org.apache.camel.tooling.model.JsonMapper;
 import org.apache.camel.tooling.model.LanguageModel;
+import org.apache.camel.tooling.model.LanguageModel.LanguageFunctionModel;
+import org.apache.camel.tooling.model.LanguageModel.LanguageOperatorModel;
 import org.apache.camel.tooling.model.OtherModel;
 import org.apache.camel.tooling.model.PojoBeanModel;
 import org.apache.camel.tooling.model.TransformerModel;
 import org.apache.camel.tooling.util.FileUtil;
 import org.apache.camel.tooling.util.PackageHelper;
 import org.apache.camel.tooling.util.Strings;
+import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.Jsoner;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -127,6 +134,12 @@ public class PrepareCatalogMojo extends AbstractMojo {
     protected File beansOutDir;
 
     /**
+     * The output directory for generated API reference catalog
+     */
+    @Parameter(defaultValue = "${project.basedir}/src/generated/resources/org/apache/camel/catalog/apis")
+    protected File apisOutDir;
+
+    /**
      * The output directory for generated dev-consoles catalog
      */
     @Parameter(defaultValue = "${project.basedir}/src/generated/resources/org/apache/camel/catalog/dev-consoles")
@@ -149,6 +162,12 @@ public class PrepareCatalogMojo extends AbstractMojo {
      */
     @Parameter(defaultValue = "${project.basedir}/src/generated/resources/org/apache/camel/catalog/models-app")
     protected File modelsAppOutDir;
+
+    /**
+     * The output directory for generated documentation catalog
+     */
+    @Parameter(defaultValue = "${project.basedir}/src/generated/resources/org/apache/camel/catalog/docs")
+    protected File docsOutDir;
 
     /**
      * The output directory for generated XML schemas catalog
@@ -215,6 +234,12 @@ public class PrepareCatalogMojo extends AbstractMojo {
      */
     @Parameter(defaultValue = "${project.basedir}/../../core/camel-xml-io/target/classes")
     protected File xmlioSchemaDir;
+
+    /**
+     * The directory where the camel-yaml-dsl model schema are
+     */
+    @Parameter(defaultValue = "${project.basedir}/../../dsl/camel-yaml-dsl/camel-yaml-dsl/src/generated/resources/schema")
+    protected File yamlDslSchemaDir;
 
     /**
      * The directory where the camel-main metadata are
@@ -331,6 +356,10 @@ public class PrepareCatalogMojo extends AbstractMojo {
      */
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        if (skip) {
+            getLog().info("Skipping prepare-catalog");
+            return;
+        }
         try {
             allJsonFiles = new TreeSet<>();
             allPropertiesFiles = new TreeSet<>();
@@ -391,6 +420,8 @@ public class PrepareCatalogMojo extends AbstractMojo {
                                         }
                                         om.setVersion(project.getVersion());
                                     }
+                                }
+                                if (m != null) {
                                     allModels.put(p, m);
                                 }
                             }
@@ -404,9 +435,11 @@ public class PrepareCatalogMojo extends AbstractMojo {
             Set<String> languages = executeLanguages();
             Set<String> transformers = executeTransformers();
             Set<String> beans = executeBeans();
+            executeApis();
             Set<String> consoles = executeDevConsoles();
             Set<String> others = executeOthers();
             executeDocuments(components, dataformats, languages, others);
+            executeDocs();
             executeXmlSchemas();
             executeMain();
             executeJBang();
@@ -753,6 +786,9 @@ public class PrepareCatalogMojo extends AbstractMojo {
 
         printLanguagesReport(jsonFiles, duplicateJsonFiles, usedLabels, missingFirstVersions);
 
+        // Generate Simple language JavaScript validator with embedded catalog data
+        generateSimpleValidatorJs(languagesOutDir);
+
         return languagesNames;
     }
 
@@ -843,6 +879,44 @@ public class PrepareCatalogMojo extends AbstractMojo {
         return beanNames;
     }
 
+    protected Set<String> executeApis() throws Exception {
+        Path apisOutDir = this.apisOutDir.toPath();
+
+        getLog().info("Copying all Camel API reference json descriptors");
+
+        // lets use sorted set/maps
+        Set<Path> jsonFiles;
+        Set<Path> duplicateJsonFiles;
+
+        // find all API references (camel-api)
+        jsonFiles = allJsonFiles.stream().filter(p -> allModels.get(p) instanceof ApiReferenceModel)
+                .collect(Collectors.toCollection(TreeSet::new));
+
+        getLog().info("Found " + jsonFiles.size() + " api json files");
+
+        // make sure to create out dir
+        Files.createDirectories(apisOutDir);
+
+        // Check duplicates
+        duplicateJsonFiles = getDuplicates(jsonFiles);
+
+        // Copy all descriptors
+        Map<Path, Path> newJsons = map(jsonFiles, p -> p, p -> apisOutDir.resolve(p.getFileName()));
+        try (Stream<Path> stream = list(apisOutDir).filter(p -> !newJsons.containsValue(p))) {
+            stream.forEach(this::delete);
+        }
+        newJsons.forEach(this::copy);
+
+        Path all = apisOutDir.resolve("../apis.properties");
+        Set<String> apiNames
+                = jsonFiles.stream().map(PrepareCatalogMojo::asComponentName).collect(Collectors.toCollection(TreeSet::new));
+        FileUtil.updateFile(all, String.join("\n", apiNames) + "\n");
+
+        printApisReport(jsonFiles, duplicateJsonFiles);
+
+        return apiNames;
+    }
+
     protected Set<String> executeDevConsoles() throws Exception {
         Path consolesOutDir = this.consolesOutDir.toPath();
 
@@ -879,6 +953,15 @@ public class PrepareCatalogMojo extends AbstractMojo {
         Set<String> consoleNames
                 = jsonFiles.stream().map(PrepareCatalogMojo::asComponentName).collect(Collectors.toCollection(TreeSet::new));
         FileUtil.updateFile(all, String.join("\n", consoleNames) + "\n");
+
+        // build and write a single consolidated OpenAPI document describing every dev console
+        List<DevConsoleModel> models = jsonFiles.stream()
+                .map(p -> (DevConsoleModel) allModels.get(p))
+                .collect(Collectors.toList());
+        JsonObject openApi = DevConsoleOpenApiHelper.buildOpenApiDocument(models, project.getVersion());
+        Path openApiFile = consolesOutDir.resolve("../dev-consoles-openapi.json");
+        FileUtil.updateFile(openApiFile, Jsoner.prettyPrint(openApi.toJson()) + "\n");
+        getLog().info("Generated dev-consoles-openapi.json containing " + models.size() + " Camel dev console paths");
 
         printConsolesReport(jsonFiles, duplicateJsonFiles);
 
@@ -939,6 +1022,7 @@ public class PrepareCatalogMojo extends AbstractMojo {
                 case "camel-debezium-common":
                 case "camel-fhir":
                 case "camel-google":
+                case "camel-alibaba":
                 case "camel-google-common":
                 case "camel-http-base":
                 case "camel-http-common":
@@ -1013,6 +1097,11 @@ public class PrepareCatalogMojo extends AbstractMojo {
         copyFile(this.springSchemaDir.toPath().resolve("camel-spring.xsd"), schemasOutDir);
         getLog().info("Copying XML-IO schema");
         copyFile(this.xmlioSchemaDir.toPath().resolve("camel-xml-io.xsd"), schemasOutDir);
+        Path yamlModel = this.yamlDslSchemaDir.toPath().resolve("camelYamlDsl-model.json");
+        if (Files.exists(yamlModel)) {
+            getLog().info("Copying YAML DSL model");
+            copyFile(yamlModel, schemasOutDir);
+        }
     }
 
     protected void executeMain() throws Exception {
@@ -1080,6 +1169,58 @@ public class PrepareCatalogMojo extends AbstractMojo {
         // find out if we have documents for each component / dataformat /
         // languages / others
         printMissingDocumentsReport(docNames, components, dataformats, languages, others);
+    }
+
+    protected void executeDocs() throws Exception {
+        Path docsOutDir = this.docsOutDir.toPath();
+        Files.createDirectories(docsOutDir);
+
+        Set<Path> adocFiles = new TreeSet<>();
+
+        // find all adoc files from component, core, and dsl modules
+        try (Stream<Path> stream = Stream.of(componentsDir.toPath(), coreDir.toPath(), dslDir.toPath())
+                .flatMap(base -> {
+                    try {
+                        return list(base)
+                                .filter(dir -> !dir.getFileName().startsWith(".")
+                                        && !"target".equals(dir.getFileName().toString()))
+                                .flatMap(p -> getComponentPath(p).stream());
+                    } catch (Exception e) {
+                        return Stream.empty();
+                    }
+                })) {
+            stream.forEach(dir -> {
+                try (Stream<Path> pathStream = PackageHelper.walk(dir.resolve("src/main/docs"))
+                        .filter(f -> {
+                            String name = f.getFileName().toString();
+                            return name.endsWith(ADOC)
+                                    && !name.equals("nav.adoc")
+                                    && !name.endsWith(".template");
+                        })) {
+                    adocFiles.addAll(pathStream.toList());
+                }
+            });
+        }
+
+        getLog().info("Copying " + adocFiles.size() + " ascii document files to catalog");
+
+        // build source -> destination map (flatten to filename only)
+        Map<Path, Path> newDocs = map(adocFiles, p -> p, p -> docsOutDir.resolve(p.getFileName()));
+
+        // delete stale files
+        try (Stream<Path> stream = list(docsOutDir).filter(p -> !newDocs.containsValue(p))) {
+            stream.forEach(this::delete);
+        }
+
+        // copy all docs
+        newDocs.forEach(this::copy);
+
+        // write docs.properties index
+        Path all = docsOutDir.resolve("../docs.properties");
+        Set<String> docNames = adocFiles.stream()
+                .map(PrepareCatalogMojo::asComponentName)
+                .collect(Collectors.toCollection(TreeSet::new));
+        FileUtil.updateFile(all, String.join("\n", docNames) + "\n");
     }
 
     private void printMissingDocumentsReport(
@@ -1375,6 +1516,23 @@ public class PrepareCatalogMojo extends AbstractMojo {
         getLog().info(SEPARATOR);
     }
 
+    private void printApisReport(
+            Set<Path> json, Set<Path> duplicate) {
+        getLog().info(SEPARATOR);
+        getLog().info("");
+        getLog().info("Camel API reference catalog report");
+        getLog().info("");
+        getLog().info("\tAPI references found: " + json.size());
+        printComponentDebug(json);
+        if (!duplicate.isEmpty()) {
+            getLog().info("");
+            getLog().warn("\tDuplicate API references detected: " + duplicate.size());
+            printComponentWarning(duplicate);
+        }
+        getLog().info("");
+        getLog().info(SEPARATOR);
+    }
+
     private void printConsolesReport(
             Set<Path> json, Set<Path> duplicate) {
         getLog().info(SEPARATOR);
@@ -1529,8 +1687,100 @@ public class PrepareCatalogMojo extends AbstractMojo {
      */
     private Set<Path> filterJackson3Duplicates(Set<Path> jsonFiles) {
         return jsonFiles.stream()
-                .filter(p -> !p.toString().contains("/components/camel-jackson3"))
+                // use forward slashes so the check also works with Windows paths
+                .filter(p -> !p.toString().replace('\\', '/').contains("/components/camel-jackson3"))
                 .collect(Collectors.toCollection(TreeSet::new));
+    }
+
+    private void generateSimpleValidatorJs(Path languagesOutDir) throws Exception {
+        Path simpleJson = languagesOutDir.resolve("simple.json");
+        if (!Files.exists(simpleJson)) {
+            return;
+        }
+
+        String json = loadText(simpleJson);
+        LanguageModel model = JsonMapper.generateLanguageModel(json);
+
+        // Build JS object for functions keyed by base name (what extractBaseName returns).
+        // The validator looks up baseName in FUNCTIONS, so we strip (params), .suffix, :suffix.
+        StringBuilder sb = new StringBuilder();
+        sb.append("const FUNCTIONS = {\n");
+        Set<String> seenBases = new TreeSet<>();
+        List<LanguageFunctionModel> functions = model.getFunctions();
+        for (LanguageFunctionModel fn : functions) {
+            String baseName = extractFunctionBaseName(fn.getName());
+            if (seenBases.add(baseName)) {
+                if (seenBases.size() > 1) {
+                    sb.append(",\n");
+                }
+                sb.append("  '").append(escapeJs(baseName)).append("': true");
+            }
+        }
+        sb.append("\n};\n\n");
+
+        // Build JS object for operators keyed by symbol
+        sb.append("const OPERATORS = {\n");
+        List<LanguageOperatorModel> operators = model.getOperators();
+        for (int i = 0; i < operators.size(); i++) {
+            LanguageOperatorModel op = operators.get(i);
+            sb.append("  '").append(escapeJs(op.getName()));
+            sb.append("': { kind: '").append(escapeJs(op.getOperatorKind()));
+            sb.append("', description: '").append(escapeJs(op.getDescription()));
+            sb.append("' }");
+            if (i < operators.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append("};\n");
+
+        // Read the template from classpath
+        String template;
+        try (InputStream is = getClass().getResourceAsStream("/camel-simple-validator-template.js")) {
+            if (is == null) {
+                getLog().warn("camel-simple-validator-template.js not found on classpath, skipping JS validator generation");
+                return;
+            }
+            template = loadText(is);
+        }
+
+        // Replace the placeholder with generated catalog data
+        String output = template.replace("// @CATALOG_DATA@", sb.toString());
+
+        // Write output to the simple/ directory alongside the catalog
+        Path simpleDir = languagesOutDir.resolve("../simple");
+        Files.createDirectories(simpleDir);
+        Path jsFile = simpleDir.resolve("camel-simple-validator.js");
+        FileUtil.updateFile(jsFile, output);
+        getLog().info("Generated " + jsFile);
+
+        // Copy the HTML demo file
+        try (InputStream is = getClass().getResourceAsStream("/camel-simple-validator.html")) {
+            if (is != null) {
+                String html = loadText(is);
+                Path htmlFile = simpleDir.resolve("camel-simple-validator.html");
+                FileUtil.updateFile(htmlFile, html);
+                getLog().info("Copied " + htmlFile);
+            }
+        }
+    }
+
+    private static String extractFunctionBaseName(String name) {
+        String base = name;
+        for (char ch : new char[] { '(', '.', ':' }) {
+            int pos = base.indexOf(ch);
+            if (pos != -1) {
+                base = base.substring(0, pos);
+            }
+        }
+        return base;
+    }
+
+    private static String escapeJs(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "");
     }
 
 }

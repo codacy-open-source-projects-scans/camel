@@ -16,6 +16,8 @@
  */
 package org.apache.camel.component.nats.integration;
 
+import java.util.concurrent.TimeUnit;
+
 import org.apache.camel.EndpointInject;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.RuntimeCamelException;
@@ -36,16 +38,14 @@ public class NatsConsumerWithRedeliveryIT extends NatsITSupport {
     @Test
     public void testConsumer() throws Exception {
         mockResultEndpoint.setExpectedMessageCount(1);
-        mockResultEndpoint.setAssertPeriod(1000);
-
-        template.requestBody("direct:send", "test");
-        template.requestBody("direct:send", "golang");
-
         exception.setExpectedMessageCount(1);
 
-        exception.assertIsSatisfied();
+        waitForNatsConsumers(1);
 
-        mockResultEndpoint.assertIsSatisfied();
+        template.sendBody("direct:send", "test");
+        template.sendBody("direct:send", "golang");
+
+        MockEndpoint.assertIsSatisfied(context, 30, TimeUnit.SECONDS);
     }
 
     @Override
@@ -57,9 +57,9 @@ public class NatsConsumerWithRedeliveryIT extends NatsITSupport {
                         .retriesExhaustedLogLevel(LoggingLevel.ERROR)
                         .redeliveryDelay(10).to("mock:exception").handled(true);
 
-                from("direct:send").to("nats:test?flushConnection=true");
+                from("direct:send").to("nats:consumer-redelivery?flushConnection=true");
 
-                from("nats:test?flushConnection=true").choice().when(exchange -> {
+                from("nats:consumer-redelivery?flushConnection=true").choice().when(exchange -> {
                     String s = exchange.getMessage().getBody(String.class);
                     if (s.contains("test")) {
                         return true;

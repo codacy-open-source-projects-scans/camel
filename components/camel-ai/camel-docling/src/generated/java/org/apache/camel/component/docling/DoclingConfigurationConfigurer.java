@@ -25,10 +25,16 @@ public class DoclingConfigurationConfigurer extends org.apache.camel.support.com
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "abortonerror":
         case "abortOnError": target.setAbortOnError(property(camelContext, java.lang.Boolean.class, value)); return true;
+        case "allowfilepathsource":
+        case "allowFilePathSource": target.setAllowFilePathSource(property(camelContext, boolean.class, value)); return true;
+        case "allowurlsource":
+        case "allowUrlSource": target.setAllowUrlSource(property(camelContext, boolean.class, value)); return true;
         case "apikeyheader":
         case "apiKeyHeader": target.setApiKeyHeader(property(camelContext, java.lang.String.class, value)); return true;
         case "asyncpollinterval":
         case "asyncPollInterval": target.setAsyncPollInterval(property(camelContext, long.class, value)); return true;
+        case "asynctaskttl":
+        case "asyncTaskTtl": target.setAsyncTaskTtl(property(camelContext, long.class, value)); return true;
         case "asynctimeout":
         case "asyncTimeout": target.setAsyncTimeout(property(camelContext, long.class, value)); return true;
         case "authenticationscheme":
@@ -89,6 +95,8 @@ public class DoclingConfigurationConfigurer extends org.apache.camel.support.com
         case "includeMetadataInHeaders": target.setIncludeMetadataInHeaders(property(camelContext, boolean.class, value)); return true;
         case "includerawmetadata":
         case "includeRawMetadata": target.setIncludeRawMetadata(property(camelContext, boolean.class, value)); return true;
+        case "inputbasedirectory":
+        case "inputBaseDirectory": target.setInputBaseDirectory(property(camelContext, java.lang.String.class, value)); return true;
         case "maxfilesize":
         case "maxFileSize": target.setMaxFileSize(property(camelContext, long.class, value)); return true;
         case "mdpagebreakplaceholder":
@@ -100,6 +108,8 @@ public class DoclingConfigurationConfigurer extends org.apache.camel.support.com
         case "ocrlanguage":
         case "ocrLanguage": target.setOcrLanguage(property(camelContext, java.lang.String.class, value)); return true;
         case "operation": target.setOperation(property(camelContext, org.apache.camel.component.docling.DoclingOperations.class, value)); return true;
+        case "outputbasedirectory":
+        case "outputBaseDirectory": target.setOutputBaseDirectory(property(camelContext, java.lang.String.class, value)); return true;
         case "outputformat":
         case "outputFormat": target.setOutputFormat(property(camelContext, java.lang.String.class, value)); return true;
         case "pdfbackend":
@@ -128,10 +138,16 @@ public class DoclingConfigurationConfigurer extends org.apache.camel.support.com
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "abortonerror":
         case "abortOnError": return java.lang.Boolean.class;
+        case "allowfilepathsource":
+        case "allowFilePathSource": return boolean.class;
+        case "allowurlsource":
+        case "allowUrlSource": return boolean.class;
         case "apikeyheader":
         case "apiKeyHeader": return java.lang.String.class;
         case "asyncpollinterval":
         case "asyncPollInterval": return long.class;
+        case "asynctaskttl":
+        case "asyncTaskTtl": return long.class;
         case "asynctimeout":
         case "asyncTimeout": return long.class;
         case "authenticationscheme":
@@ -192,6 +208,8 @@ public class DoclingConfigurationConfigurer extends org.apache.camel.support.com
         case "includeMetadataInHeaders": return boolean.class;
         case "includerawmetadata":
         case "includeRawMetadata": return boolean.class;
+        case "inputbasedirectory":
+        case "inputBaseDirectory": return java.lang.String.class;
         case "maxfilesize":
         case "maxFileSize": return long.class;
         case "mdpagebreakplaceholder":
@@ -203,6 +221,8 @@ public class DoclingConfigurationConfigurer extends org.apache.camel.support.com
         case "ocrlanguage":
         case "ocrLanguage": return java.lang.String.class;
         case "operation": return org.apache.camel.component.docling.DoclingOperations.class;
+        case "outputbasedirectory":
+        case "outputBaseDirectory": return java.lang.String.class;
         case "outputformat":
         case "outputFormat": return java.lang.String.class;
         case "pdfbackend":
@@ -232,10 +252,16 @@ public class DoclingConfigurationConfigurer extends org.apache.camel.support.com
         switch (ignoreCase ? name.toLowerCase() : name) {
         case "abortonerror":
         case "abortOnError": return target.getAbortOnError();
+        case "allowfilepathsource":
+        case "allowFilePathSource": return target.isAllowFilePathSource();
+        case "allowurlsource":
+        case "allowUrlSource": return target.isAllowUrlSource();
         case "apikeyheader":
         case "apiKeyHeader": return target.getApiKeyHeader();
         case "asyncpollinterval":
         case "asyncPollInterval": return target.getAsyncPollInterval();
+        case "asynctaskttl":
+        case "asyncTaskTtl": return target.getAsyncTaskTtl();
         case "asynctimeout":
         case "asyncTimeout": return target.getAsyncTimeout();
         case "authenticationscheme":
@@ -296,6 +322,8 @@ public class DoclingConfigurationConfigurer extends org.apache.camel.support.com
         case "includeMetadataInHeaders": return target.isIncludeMetadataInHeaders();
         case "includerawmetadata":
         case "includeRawMetadata": return target.isIncludeRawMetadata();
+        case "inputbasedirectory":
+        case "inputBaseDirectory": return target.getInputBaseDirectory();
         case "maxfilesize":
         case "maxFileSize": return target.getMaxFileSize();
         case "mdpagebreakplaceholder":
@@ -307,6 +335,8 @@ public class DoclingConfigurationConfigurer extends org.apache.camel.support.com
         case "ocrlanguage":
         case "ocrLanguage": return target.getOcrLanguage();
         case "operation": return target.getOperation();
+        case "outputbasedirectory":
+        case "outputBaseDirectory": return target.getOutputBaseDirectory();
         case "outputformat":
         case "outputFormat": return target.getOutputFormat();
         case "pdfbackend":

@@ -17,24 +17,29 @@
 package org.apache.camel.component.iggy;
 
 import java.math.BigInteger;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.camel.Category;
 import org.apache.camel.Consumer;
 import org.apache.camel.Processor;
 import org.apache.camel.Producer;
+import org.apache.camel.spi.HeaderFilterStrategy;
+import org.apache.camel.spi.HeaderFilterStrategyAware;
 import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.UriEndpoint;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriPath;
 import org.apache.camel.support.DefaultEndpoint;
+import org.apache.camel.support.DefaultHeaderFilterStrategy;
 import org.apache.iggy.client.blocking.IggyBaseClient;
 import org.apache.iggy.consumergroup.ConsumerGroupDetails;
 import org.apache.iggy.identifier.ConsumerId;
 import org.apache.iggy.identifier.StreamId;
 import org.apache.iggy.identifier.TopicId;
+import org.apache.iggy.message.HeaderValue;
 import org.apache.iggy.stream.StreamDetails;
 import org.apache.iggy.topic.TopicDetails;
 import org.slf4j.Logger;
@@ -45,12 +50,15 @@ import org.slf4j.LoggerFactory;
  */
 @UriEndpoint(firstVersion = "4.17.0", scheme = "iggy", title = "Iggy", syntax = "iggy:topicName",
              category = { Category.MESSAGING }, headersClass = IggyConstants.class)
-public class IggyEndpoint extends DefaultEndpoint {
+public class IggyEndpoint extends DefaultEndpoint implements HeaderFilterStrategyAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(IggyEndpoint.class);
 
     @UriParam
     private IggyConfiguration configuration;
+    @UriParam(label = "advanced",
+              description = "To use a custom HeaderFilterStrategy to filter header to and from Camel message.")
+    private HeaderFilterStrategy headerFilterStrategy;
     @UriPath(description = "Name of the topic")
     @Metadata(required = true)
     private String topicName;
@@ -106,13 +114,18 @@ public class IggyEndpoint extends DefaultEndpoint {
                     .getTopic(StreamId.of(stream), TopicId.of(topic))
                     .orElseGet(() -> {
                         LOG.debug("Creating topic with name {}", topic);
+                        Map<String, HeaderValue> options = new HashMap<>();
+                        for (Map.Entry<String, String> optionEntry : iggyConfiguration.getIggyHeaderOptions().entrySet()) {
+                            options.put(optionEntry.getKey(), HeaderValue.fromString(optionEntry.getValue()));
+                        }
+
                         TopicDetails topicDetails = client.topics().createTopic(StreamId.of(stream),
                                 iggyConfiguration.getPartitionsCount(),
                                 iggyConfiguration.getCompressionAlgorithm(),
                                 BigInteger.valueOf(iggyConfiguration.getMessageExpiry()),
                                 BigInteger.valueOf(iggyConfiguration.getMaxTopicSize()),
-                                Optional.ofNullable(iggyConfiguration.getReplicationFactor()),
-                                topic);
+                                topic,
+                                options);
 
                         LOG.debug("Topic created or retrieved with details: {}", topicDetails.toString());
 
@@ -160,6 +173,22 @@ public class IggyEndpoint extends DefaultEndpoint {
     public ExecutorService createExecutor() {
         return getCamelContext().getExecutorServiceManager().newFixedThreadPool(this,
                 "IggyConsumer[" + getTopicName() + "]", configuration.getConsumersCount());
+    }
+
+    @Override
+    public HeaderFilterStrategy getHeaderFilterStrategy() {
+        if (headerFilterStrategy == null) {
+            headerFilterStrategy = new DefaultHeaderFilterStrategy();
+        }
+        return headerFilterStrategy;
+    }
+
+    /**
+     * To use a custom {@link org.apache.camel.spi.HeaderFilterStrategy} to filter header to and from Camel message.
+     */
+    @Override
+    public void setHeaderFilterStrategy(HeaderFilterStrategy headerFilterStrategy) {
+        this.headerFilterStrategy = headerFilterStrategy;
     }
 
     public IggyConfiguration getConfiguration() {

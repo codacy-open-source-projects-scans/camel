@@ -25,6 +25,7 @@ import java.util.function.Consumer;
 
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.component.milo.client.internal.SubscriptionManager;
+import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
 import org.eclipse.milo.opcua.stack.core.Stack;
 import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
 import org.eclipse.milo.opcua.stack.core.types.builtin.ExpandedNodeId;
@@ -43,19 +44,39 @@ public class MiloClientConnection implements AutoCloseable {
     private final MiloClientConfiguration configuration;
     private SubscriptionManager manager;
     private volatile boolean initialized;
-    private MonitorFilterConfiguration monitorFilterConfiguration;
 
-    public MiloClientConnection(final MiloClientConfiguration configuration,
-                                final MonitorFilterConfiguration monitorFilterConfiguration) {
+    public MiloClientConnection(final MiloClientConfiguration configuration) {
         requireNonNull(configuration);
 
         // make a copy since the configuration is mutable
         this.configuration = configuration.clone();
-        this.monitorFilterConfiguration = monitorFilterConfiguration;
     }
 
     public MiloClientConfiguration getConfiguration() {
         return configuration;
+    }
+
+    /**
+     * Returns the underlying Eclipse Milo {@link OpcUaClient} backing this connection.
+     * <p>
+     * This is intended for advanced scenarios that the component does not cover directly, most notably encoding and
+     * decoding of custom (server-defined) OPC UA data types: the returned client exposes the
+     * {@link OpcUaClient#getStaticEncodingContext() static} and {@link OpcUaClient#getDynamicEncodingContext() dynamic}
+     * encoding contexts required to encode/decode {@code ExtensionObject} values.
+     * <p>
+     * Notes:
+     * <ul>
+     * <li>The connection is established lazily and asynchronously, so this method may return {@code null} until the
+     * client is connected, and again briefly while a connection is being re-established.</li>
+     * <li>The client is owned and managed by Camel. Callers must not connect, disconnect or otherwise alter its
+     * lifecycle. A reconnect replaces the instance, so fetch it on demand rather than caching the reference.</li>
+     * </ul>
+     *
+     * @return the active milo client, or {@code null} if the connection is not currently established
+     */
+    public OpcUaClient getOpcUaClient() {
+        checkInit();
+        return this.manager.getOpcUaClient();
     }
 
     protected void init() {
@@ -94,7 +115,8 @@ public class MiloClientConnection implements AutoCloseable {
     }
 
     public MonitorHandle monitorValue(
-            final ExpandedNodeId nodeId, Double samplingInterval, final Consumer<DataValue> valueConsumer) {
+            final ExpandedNodeId nodeId, Double samplingInterval, Integer queueSize,
+            MonitorFilterConfiguration monitorFilterConfiguration, Consumer<DataValue> valueConsumer) {
 
         requireNonNull(configuration);
         requireNonNull(valueConsumer);
@@ -102,7 +124,8 @@ public class MiloClientConnection implements AutoCloseable {
         checkInit();
 
         final UInteger handle
-                = this.manager.registerItem(nodeId, samplingInterval, valueConsumer, this.monitorFilterConfiguration);
+                = this.manager.registerItem(nodeId, samplingInterval, queueSize, valueConsumer,
+                        monitorFilterConfiguration);
 
         return () -> MiloClientConnection.this.manager.unregisterItem(handle);
     }

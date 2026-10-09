@@ -18,13 +18,13 @@ package org.apache.camel.component.platform.http.main;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 
 import io.vertx.core.Handler;
 import io.vertx.core.http.impl.MimeMapping;
 import io.vertx.ext.web.Route;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.impl.BlockingHandlerDecorator;
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelContextAware;
 import org.apache.camel.StaticService;
@@ -131,7 +131,7 @@ public class MainHttpServer extends ServiceSupport implements CamelContextAware,
 
     @ManagedAttribute(description = "HTTP server port number")
     public int getPort() {
-        return configuration.getBindPort();
+        return server != null ? server.getPort() : configuration.getBindPort();
     }
 
     public void setPort(int port) {
@@ -232,6 +232,26 @@ public class MainHttpServer extends ServiceSupport implements CamelContextAware,
         }
     }
 
+    /**
+     * Resolves a request path inside the configured static source directory, or returns null when it would land outside
+     * it. Vert.x has already normalised the path, so this is belt-and-braces against a name that still escapes once the
+     * file system has had its say (a symlink, or a platform-specific separator).
+     */
+    static File containedIn(String dir, String path) {
+        try {
+            File root = new File(dir).getCanonicalFile();
+            File candidate = new File(root, path).getCanonicalFile();
+            if (!candidate.toPath().startsWith(root.toPath())) {
+                LOG.debug("Refusing to serve {}: resolves outside staticSourceDir {}", path, dir);
+                return null;
+            }
+            return candidate;
+        } catch (IOException e) {
+            LOG.debug("Unable to resolve {} inside staticSourceDir {}", path, dir, e);
+            return null;
+        }
+    }
+
     protected void setupStatic() {
         String path = staticContextPath;
         if (!path.endsWith("*")) {
@@ -253,11 +273,11 @@ public class MainHttpServer extends ServiceSupport implements CamelContextAware,
                 }
 
                 InputStream is = null;
-                File f = new File(u);
-                if (!f.exists() && staticSourceDir != null) {
-                    f = new File(staticSourceDir, u);
-                }
-                if (f.exists()) {
+                // When a source dir is configured, serve from it rather than falling back to it: resolving
+                // against the process working directory first meant an explicitly configured directory was
+                // consulted only for files the working directory did not already happen to hold.
+                File f = staticSourceDir != null ? containedIn(staticSourceDir, u) : new File(u);
+                if (f != null && f.exists()) {
                     // load directly from file system first
                     try {
                         is = new FileInputStream(f);
@@ -275,7 +295,7 @@ public class MainHttpServer extends ServiceSupport implements CamelContextAware,
                     }
                 }
                 if (is != null) {
-                    String mime = MimeMapping.getMimeTypeForFilename(f.getName());
+                    String mime = MimeMapping.getMimeTypeForFilename(u);
                     if (mime != null) {
                         ctx.response().putHeader("content-type", mime);
                     }
@@ -297,7 +317,7 @@ public class MainHttpServer extends ServiceSupport implements CamelContextAware,
         };
 
         // use blocking handler as the task can take longer time to complete
-        web.handler(new BlockingHandlerDecorator(handler, true));
+        web.blockingHandler(handler);
 
         platformHttpComponent.addHttpEndpoint(staticContextPath, null, null, null, null);
     }

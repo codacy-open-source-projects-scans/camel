@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.apache.camel</groupId>
         <artifactId>components</artifactId>
-        <version>4.21.0-SNAPSHOT</version>
+        <version>4.23.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>camel-mail</artifactId>
@@ -114,7 +114,6 @@
                                     <groupId>org.eclipse.angus</groupId>
                                     <artifactId>angus-mail</artifactId>
                                     <version>${angus-mail-version}</version>
-                                    <type>jar</type>
                                     <outputDirectory>${project.basedir}/src/generated/resources</outputDirectory>
                                     <includes>
                                         META-INF/javamail.default.address.map,

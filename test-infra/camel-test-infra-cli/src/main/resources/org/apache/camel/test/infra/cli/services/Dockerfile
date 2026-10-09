@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 
-ARG FROMIMAGE
+ARG FROMIMAGE=mirror.gcr.io/fedora:43
 
 FROM $FROMIMAGE
 
@@ -54,7 +54,7 @@ ENV JAVA_HOME=/usr/lib/jvm/java
 RUN echo "Installing JBang..."
 RUN curl -Ls https://sh.jbang.dev | bash -s - app setup \
     && source ~/.bashrc \
-    && jbang trust add https://github.com/$CAMEL_REPO/ \
+    && jbang trust add https://github.com/$CAMEL_REPO/
 
 RUN echo "Using JBang $CAMEL_JBANG_VERSION version from $CAMEL_REPO/$CAMEL_REF"
 RUN source ~/.bashrc \
@@ -63,6 +63,9 @@ RUN source ~/.bashrc \
     else jbang app install \
     -Dcamel.jbang.version=$CAMEL_JBANG_VERSION \
     camel@$CAMEL_REPO/$CAMEL_REF ; fi
+
+# Fix JBang 0.138+ bug: wrapper scripts serialize -D with a space that breaks parsing
+RUN if [ -f ~/.jbang/bin/camel ]; then sed -i 's/ -D / -D/g' ~/.jbang/bin/camel; fi
 
 LABEL "camel.ref"=$CAMEL_REF
 LABEL "keep.container.running"=$KEEP_RUNNING
@@ -84,7 +87,7 @@ EXPOSE 22
 USER jbang
 
 RUN echo "Updating jbang" \
-    && jbang version --update
+    && jbang version --update || true
 
 RUN echo "Clearing JBang cache" \
     && jbang cache clear

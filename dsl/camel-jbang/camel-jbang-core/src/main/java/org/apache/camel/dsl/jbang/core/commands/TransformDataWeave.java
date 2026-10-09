@@ -23,13 +23,17 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.camel.dsl.jbang.core.commands.transform.DataWeaveConverter;
+import org.apache.camel.component.dataweave.DataWeaveConversionException;
+import org.apache.camel.component.dataweave.DataWeaveConverter;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
 @Command(name = "dataweave",
          description = "Convert DataWeave scripts to DataSonnet format",
-         sortOptions = false, showDefaultValues = true)
+         sortOptions = false, showDefaultValues = true,
+         footer = {
+                 "%nExamples:",
+                 "  camel transform dataweave --input=script.dwl --output=script.ds" })
 public class TransformDataWeave extends CamelCommand {
 
     @CommandLine.Option(names = { "--input", "-i" },
@@ -70,10 +74,15 @@ public class TransformDataWeave extends CamelCommand {
         converter.setIncludeComments(includeComments);
 
         String result;
-        if (expression.contains("%dw") || expression.contains("---")) {
-            result = converter.convert(expression);
-        } else {
-            result = converter.convertExpression(expression);
+        try {
+            if (expression.contains("%dw") || expression.contains("---")) {
+                result = converter.convert(expression);
+            } else {
+                result = converter.convertExpression(expression);
+            }
+        } catch (DataWeaveConversionException e) {
+            printer().println("Error: " + e.getMessage());
+            return 1;
         }
 
         printer().println(result);
@@ -105,20 +114,31 @@ public class TransformDataWeave extends CamelCommand {
 
         int totalTodos = 0;
         int totalConverted = 0;
+        int failedFiles = 0;
 
         for (Path dwlFile : dwlFiles) {
             DataWeaveConverter converter = new DataWeaveConverter();
             converter.setIncludeComments(includeComments);
 
             String dwContent = Files.readString(dwlFile);
-            String dsContent = converter.convert(dwContent);
+            String dsContent;
+            try {
+                dsContent = converter.convert(dwContent);
+            } catch (DataWeaveConversionException e) {
+                printer().println(dwlFile.getFileName() + ": " + e.getMessage());
+                failedFiles++;
+                continue;
+            }
 
             totalTodos += converter.getTodoCount();
             totalConverted += converter.getConvertedCount();
 
             if (output != null) {
                 Path outputPath = resolveOutputPath(dwlFile, Path.of(output));
-                Files.createDirectories(outputPath.getParent());
+                Path parentDir = outputPath.getParent();
+                if (parentDir != null) {
+                    Files.createDirectories(parentDir);
+                }
                 Files.writeString(outputPath, dsContent);
                 printer().println("Converted: " + dwlFile + " -> " + outputPath);
             } else {
@@ -130,7 +150,7 @@ public class TransformDataWeave extends CamelCommand {
         }
 
         printSummary(totalConverted, totalTodos, dwlFiles.size());
-        return 0;
+        return failedFiles > 0 ? 1 : 0;
     }
 
     private Path resolveOutputPath(Path dwlFile, Path outputPath) {

@@ -546,10 +546,13 @@ public interface HttpEndpointBuilderFactory {
             return this;
         }
         /**
-         * Proxy server authentication protocol scheme to use.
+         * Proxy server connection protocol scheme. Defaults to http regardless
+         * of the target endpoint scheme, because most corporate HTTP proxies
+         * expect a plain HTTP connection on their listener port.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
+         * Default: http
          * Group: proxy
          * 
          * @param proxyAuthScheme the value to set
@@ -732,6 +735,54 @@ public interface HttpEndpointBuilderFactory {
          */
         default HttpEndpointBuilder authUsername(String authUsername) {
             doSetProperty("authUsername", authUsername);
+            return this;
+        }
+        /**
+         * Controls how hostname verification is performed during the TLS
+         * handshake. CLIENT (default) delegates entirely to the configured
+         * x509HostnameVerifier, preserving the behaviour of httpclient 5.5 and
+         * earlier a NoopHostnameVerifier will disable verification. BUILTIN
+         * uses the JDK SSLParameters hostname check only, ignoring the
+         * configured verifier. BOTH runs the JDK built-in check first and then
+         * the configured verifier; a NoopHostnameVerifier cannot bypass the
+         * built-in check under BUILTIN or BOTH. Prefer BOTH when no custom
+         * verifier semantics are needed for stronger out-of-the-box security.
+         * 
+         * The option is a:
+         * <code>org.apache.hc.client5.http.ssl.HostnameVerificationPolicy</code> type.
+         * 
+         * Default: CLIENT
+         * Group: security
+         * 
+         * @param hostnameVerificationPolicy the value to set
+         * @return the dsl builder
+         */
+        default HttpEndpointBuilder hostnameVerificationPolicy(org.apache.hc.client5.http.ssl.HostnameVerificationPolicy hostnameVerificationPolicy) {
+            doSetProperty("hostnameVerificationPolicy", hostnameVerificationPolicy);
+            return this;
+        }
+        /**
+         * Controls how hostname verification is performed during the TLS
+         * handshake. CLIENT (default) delegates entirely to the configured
+         * x509HostnameVerifier, preserving the behaviour of httpclient 5.5 and
+         * earlier a NoopHostnameVerifier will disable verification. BUILTIN
+         * uses the JDK SSLParameters hostname check only, ignoring the
+         * configured verifier. BOTH runs the JDK built-in check first and then
+         * the configured verifier; a NoopHostnameVerifier cannot bypass the
+         * built-in check under BUILTIN or BOTH. Prefer BOTH when no custom
+         * verifier semantics are needed for stronger out-of-the-box security.
+         * 
+         * The option will be converted to a
+         * <code>org.apache.hc.client5.http.ssl.HostnameVerificationPolicy</code> type.
+         * 
+         * Default: CLIENT
+         * Group: security
+         * 
+         * @param hostnameVerificationPolicy the value to set
+         * @return the dsl builder
+         */
+        default HttpEndpointBuilder hostnameVerificationPolicy(String hostnameVerificationPolicy) {
+            doSetProperty("hostnameVerificationPolicy", hostnameVerificationPolicy);
             return this;
         }
         /**
@@ -1943,7 +1994,7 @@ public interface HttpEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final HttpHeaderNameBuilder INSTANCE = new HttpHeaderNameBuilder();
+        public static final HttpHeaderNameBuilder INSTANCE = new HttpHeaderNameBuilder();
 
         /**
          * The HTTP content encoding. Is set on both the IN and OUT message to

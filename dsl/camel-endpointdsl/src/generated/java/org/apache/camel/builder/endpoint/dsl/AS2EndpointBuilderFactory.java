@@ -623,6 +623,27 @@ public interface AS2EndpointBuilderFactory {
             return this;
         }
         /**
+         * Comma separated list of host names an asynchronous MDN may be
+         * delivered to. The delivery address is chosen by the sender of the AS2
+         * message, so this is the list of hosts the operator vouches for. When
+         * set, an asynchronous MDN whose delivery address names a host outside
+         * the list is refused, and the configured
+         * mdnUserName/mdnPassword/mdnAccessToken are attached only to a host on
+         * the list. When not set, the MDN is still delivered to the
+         * sender-supplied address but no credentials are attached.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param asyncMdnAllowedHosts the value to set
+         * @return the dsl builder
+         */
+        default AS2EndpointConsumerBuilder asyncMdnAllowedHosts(String asyncMdnAllowedHosts) {
+            doSetProperty("asyncMdnAllowedHosts", asyncMdnAllowedHosts);
+            return this;
+        }
+        /**
          * The key used to encrypt the EDI message.
          * 
          * The option is a: <code>java.security.PrivateKey</code> type.
@@ -798,6 +819,50 @@ public interface AS2EndpointBuilderFactory {
          */
         default AS2EndpointConsumerBuilder password(String password) {
             doSetProperty("password", password);
+            return this;
+        }
+        /**
+         * Whether to reject an inbound signed AS2 message that cannot be
+         * verified because no validateSigningCertificateChain is configured
+         * (server only). When false (default), such a message is delivered
+         * after logging a warning, preserving the previous behaviour. When
+         * true, the message is rejected instead of being delivered without
+         * verifying its signature. Has no effect when
+         * validateSigningCertificateChain is set (signatures are always
+         * validated then) or for unsigned messages.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param signatureVerificationRequired the value to set
+         * @return the dsl builder
+         */
+        default AS2EndpointConsumerBuilder signatureVerificationRequired(boolean signatureVerificationRequired) {
+            doSetProperty("signatureVerificationRequired", signatureVerificationRequired);
+            return this;
+        }
+        /**
+         * Whether to reject an inbound signed AS2 message that cannot be
+         * verified because no validateSigningCertificateChain is configured
+         * (server only). When false (default), such a message is delivered
+         * after logging a warning, preserving the previous behaviour. When
+         * true, the message is rejected instead of being delivered without
+         * verifying its signature. Has no effect when
+         * validateSigningCertificateChain is set (signatures are always
+         * validated then) or for unsigned messages.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param signatureVerificationRequired the value to set
+         * @return the dsl builder
+         */
+        default AS2EndpointConsumerBuilder signatureVerificationRequired(String signatureVerificationRequired) {
+            doSetProperty("signatureVerificationRequired", signatureVerificationRequired);
             return this;
         }
         /**
@@ -1694,6 +1759,27 @@ public interface AS2EndpointBuilderFactory {
             return this;
         }
         /**
+         * Comma separated list of host names an asynchronous MDN may be
+         * delivered to. The delivery address is chosen by the sender of the AS2
+         * message, so this is the list of hosts the operator vouches for. When
+         * set, an asynchronous MDN whose delivery address names a host outside
+         * the list is refused, and the configured
+         * mdnUserName/mdnPassword/mdnAccessToken are attached only to a host on
+         * the list. When not set, the MDN is still delivered to the
+         * sender-supplied address but no credentials are attached.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param asyncMdnAllowedHosts the value to set
+         * @return the dsl builder
+         */
+        default AS2EndpointProducerBuilder asyncMdnAllowedHosts(String asyncMdnAllowedHosts) {
+            doSetProperty("asyncMdnAllowedHosts", asyncMdnAllowedHosts);
+            return this;
+        }
+        /**
          * The key used to encrypt the EDI message.
          * 
          * The option is a: <code>java.security.PrivateKey</code> type.
@@ -1869,6 +1955,50 @@ public interface AS2EndpointBuilderFactory {
          */
         default AS2EndpointProducerBuilder password(String password) {
             doSetProperty("password", password);
+            return this;
+        }
+        /**
+         * Whether to reject an inbound signed AS2 message that cannot be
+         * verified because no validateSigningCertificateChain is configured
+         * (server only). When false (default), such a message is delivered
+         * after logging a warning, preserving the previous behaviour. When
+         * true, the message is rejected instead of being delivered without
+         * verifying its signature. Has no effect when
+         * validateSigningCertificateChain is set (signatures are always
+         * validated then) or for unsigned messages.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param signatureVerificationRequired the value to set
+         * @return the dsl builder
+         */
+        default AS2EndpointProducerBuilder signatureVerificationRequired(boolean signatureVerificationRequired) {
+            doSetProperty("signatureVerificationRequired", signatureVerificationRequired);
+            return this;
+        }
+        /**
+         * Whether to reject an inbound signed AS2 message that cannot be
+         * verified because no validateSigningCertificateChain is configured
+         * (server only). When false (default), such a message is delivered
+         * after logging a warning, preserving the previous behaviour. When
+         * true, the message is rejected instead of being delivered without
+         * verifying its signature. Has no effect when
+         * validateSigningCertificateChain is set (signatures are always
+         * validated then) or for unsigned messages.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param signatureVerificationRequired the value to set
+         * @return the dsl builder
+         */
+        default AS2EndpointProducerBuilder signatureVerificationRequired(String signatureVerificationRequired) {
+            doSetProperty("signatureVerificationRequired", signatureVerificationRequired);
             return this;
         }
         /**
@@ -2706,6 +2836,27 @@ public interface AS2EndpointBuilderFactory {
             return this;
         }
         /**
+         * Comma separated list of host names an asynchronous MDN may be
+         * delivered to. The delivery address is chosen by the sender of the AS2
+         * message, so this is the list of hosts the operator vouches for. When
+         * set, an asynchronous MDN whose delivery address names a host outside
+         * the list is refused, and the configured
+         * mdnUserName/mdnPassword/mdnAccessToken are attached only to a host on
+         * the list. When not set, the MDN is still delivered to the
+         * sender-supplied address but no credentials are attached.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param asyncMdnAllowedHosts the value to set
+         * @return the dsl builder
+         */
+        default AS2EndpointBuilder asyncMdnAllowedHosts(String asyncMdnAllowedHosts) {
+            doSetProperty("asyncMdnAllowedHosts", asyncMdnAllowedHosts);
+            return this;
+        }
+        /**
          * The key used to encrypt the EDI message.
          * 
          * The option is a: <code>java.security.PrivateKey</code> type.
@@ -2881,6 +3032,50 @@ public interface AS2EndpointBuilderFactory {
          */
         default AS2EndpointBuilder password(String password) {
             doSetProperty("password", password);
+            return this;
+        }
+        /**
+         * Whether to reject an inbound signed AS2 message that cannot be
+         * verified because no validateSigningCertificateChain is configured
+         * (server only). When false (default), such a message is delivered
+         * after logging a warning, preserving the previous behaviour. When
+         * true, the message is rejected instead of being delivered without
+         * verifying its signature. Has no effect when
+         * validateSigningCertificateChain is set (signatures are always
+         * validated then) or for unsigned messages.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param signatureVerificationRequired the value to set
+         * @return the dsl builder
+         */
+        default AS2EndpointBuilder signatureVerificationRequired(boolean signatureVerificationRequired) {
+            doSetProperty("signatureVerificationRequired", signatureVerificationRequired);
+            return this;
+        }
+        /**
+         * Whether to reject an inbound signed AS2 message that cannot be
+         * verified because no validateSigningCertificateChain is configured
+         * (server only). When false (default), such a message is delivered
+         * after logging a warning, preserving the previous behaviour. When
+         * true, the message is rejected instead of being delivered without
+         * verifying its signature. Has no effect when
+         * validateSigningCertificateChain is set (signatures are always
+         * validated then) or for unsigned messages.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: false
+         * Group: security
+         * 
+         * @param signatureVerificationRequired the value to set
+         * @return the dsl builder
+         */
+        default AS2EndpointBuilder signatureVerificationRequired(String signatureVerificationRequired) {
+            doSetProperty("signatureVerificationRequired", signatureVerificationRequired);
             return this;
         }
         /**

@@ -37,7 +37,6 @@ import org.apache.camel.ManagementStatisticsLevel;
 import org.apache.camel.Producer;
 import org.apache.camel.ProducerTemplate;
 import org.apache.camel.Route;
-import org.apache.camel.TimerListener;
 import org.apache.camel.api.management.ManagedResource;
 import org.apache.camel.api.management.mbean.ManagedCamelContextMBean;
 import org.apache.camel.api.management.mbean.ManagedProcessorMBean;
@@ -54,15 +53,15 @@ import org.apache.camel.spi.ManagementStrategy;
 import org.apache.camel.spi.UnitOfWork;
 import org.apache.camel.support.CamelContextHelper;
 import org.apache.camel.support.PluginHelper;
+import org.apache.camel.util.StringHelper;
 import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
 
 @ManagedResource(description = "Managed CamelContext")
-public class ManagedCamelContext extends ManagedPerformanceCounter implements TimerListener, ManagedCamelContextMBean {
+public class ManagedCamelContext extends ManagedPerformanceCounter implements ManagedCamelContextMBean {
 
     private final CamelContext context;
     private final LoadTriplet load = new LoadTriplet();
-    private final LoadThroughput thp = new LoadThroughput();
     private final String jmxDomain;
     private final boolean includeRouteTemplates;
     private final boolean includeKamelets;
@@ -88,11 +87,16 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
         boolean enabled = context.getManagementStrategy().getManagementAgent() != null
                 && context.getManagementStrategy().getManagementAgent().getStatisticsLevel() != ManagementStatisticsLevel.Off;
         setStatisticsEnabled(enabled);
+        if (context.getManagementStrategy().getManagementAgent() != null
+                && context.getManagementStrategy().getManagementAgent().getStatisticsLevel().isExtended()) {
+            initExtendedStatistics();
+        }
     }
 
     @Override
     public void reset() {
         super.reset();
+        load.reset();
         remoteExchangesTotal.reset();
         remoteExchangesCompleted.reset();
         remoteExchangesFailed.reset();
@@ -111,17 +115,21 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
             if (level <= 1) {
                 super.completedExchange(exchange, time);
                 if (exchange.getFromEndpoint() != null && exchange.getFromEndpoint().isRemote()) {
-                    remoteExchangesTotal.increment();
-                    remoteExchangesCompleted.increment();
                     remoteExchangesInflight.decrement();
+                    if (isStatisticsEnabled()) {
+                        remoteExchangesTotal.increment();
+                        remoteExchangesCompleted.increment();
+                    }
                 }
             }
         } else {
             super.completedExchange(exchange, time);
             if (exchange.getFromEndpoint() != null && exchange.getFromEndpoint().isRemote()) {
-                remoteExchangesTotal.increment();
-                remoteExchangesCompleted.increment();
                 remoteExchangesInflight.decrement();
+                if (isStatisticsEnabled()) {
+                    remoteExchangesTotal.increment();
+                    remoteExchangesCompleted.increment();
+                }
             }
         }
     }
@@ -138,17 +146,21 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
             if (level <= 1) {
                 super.failedExchange(exchange);
                 if (exchange.getFromEndpoint() != null && exchange.getFromEndpoint().isRemote()) {
-                    remoteExchangesTotal.increment();
-                    remoteExchangesFailed.increment();
                     remoteExchangesInflight.decrement();
+                    if (isStatisticsEnabled()) {
+                        remoteExchangesTotal.increment();
+                        remoteExchangesFailed.increment();
+                    }
                 }
             }
         } else {
             super.failedExchange(exchange);
             if (exchange.getFromEndpoint() != null && exchange.getFromEndpoint().isRemote()) {
-                remoteExchangesTotal.increment();
-                remoteExchangesFailed.increment();
                 remoteExchangesInflight.decrement();
+                if (isStatisticsEnabled()) {
+                    remoteExchangesTotal.increment();
+                    remoteExchangesFailed.increment();
+                }
             }
         }
     }
@@ -380,17 +392,6 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
     }
 
     @Override
-    public String getThroughput() {
-        double d = thp.getThroughput();
-        if (Double.isNaN(d)) {
-            // empty string if load statistics is disabled
-            return "";
-        } else {
-            return String.format("%.2f", d);
-        }
-    }
-
-    @Override
     public long getRemoteExchangesTotal() {
         return remoteExchangesTotal.getValue();
     }
@@ -443,8 +444,8 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
 
     @Override
     public void onTimer() {
+        super.onTimer();
         load.update(getInflightExchanges());
-        thp.update(getExchangesTotal());
     }
 
     @Override
@@ -570,7 +571,7 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
 
     @Override
     public String dumpRoutesAsXml(boolean resolvePlaceholders, boolean generatedIds) throws Exception {
-        return dumpRoutesAsXml(resolvePlaceholders, true, false);
+        return dumpRoutesAsXml(resolvePlaceholders, generatedIds, false);
     }
 
     @Override
@@ -610,7 +611,7 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
     @Override
     public String dumpRoutesAsYaml(boolean resolvePlaceholders, boolean uriAsParameters, boolean generatedIds)
             throws Exception {
-        return dumpRoutesAsYaml(resolvePlaceholders, uriAsParameters, true, false);
+        return dumpRoutesAsYaml(resolvePlaceholders, uriAsParameters, generatedIds, false);
     }
 
     @Override
@@ -633,6 +634,29 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
 
         return PluginHelper.getModelToYAMLDumper(context).dumpModelAsYaml(context, def, resolvePlaceholders, uriAsParameters,
                 generatedIds, sourceLocation);
+    }
+
+    @Override
+    public String dumpRoutesAsJava() throws Exception {
+        return dumpRoutesAsJava(false);
+    }
+
+    @Override
+    public String dumpRoutesAsJava(boolean resolvePlaceholders) throws Exception {
+        return dumpRoutesAsJava(resolvePlaceholders, true);
+    }
+
+    @Override
+    public String dumpRoutesAsJava(boolean resolvePlaceholders, boolean generatedIds) throws Exception {
+        List<RouteDefinition> routes = context.getCamelContextExtension().getContextPlugin(Model.class).getRouteDefinitions();
+        if (routes.isEmpty()) {
+            return null;
+        }
+
+        RoutesDefinition def = new RoutesDefinition();
+        def.setRoutes(routes);
+
+        return PluginHelper.getModelToJavaDumper(context).dumpModelAsJava(context, def, resolvePlaceholders, generatedIds);
     }
 
     @Override
@@ -696,7 +720,7 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
                     sb.append(String.format(" group=\"%s\"", escapeXml(route.getRouteGroup())));
                 }
                 if (route.getSourceLocation() != null) {
-                    sb.append(String.format(" sourceLocation=\"%s\"", route.getSourceLocation()));
+                    sb.append(String.format(" sourceLocation=\"%s\"", escapeXml(route.getSourceLocation())));
                 }
 
                 // use substring as we only want the attributes
@@ -786,6 +810,7 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
 
                 // use substring as we only want the attributes
                 route.statsAsJSon(jo, fullStats);
+                jo.put("exchangesInflight", route.getExchangesInflight());
 
                 // add processor details if needed
                 if (includeProcessors) {
@@ -857,7 +882,7 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
                     sb.append(String.format(" group=\"%s\"", escapeXml(route.getRouteGroup())));
                 }
                 if (route.getSourceLocation() != null) {
-                    sb.append(String.format(" sourceLocation=\"%s\"", route.getSourceLocation()));
+                    sb.append(String.format(" sourceLocation=\"%s\"", escapeXml(route.getSourceLocation())));
                 }
 
                 // use substring as we only want the attributes
@@ -881,9 +906,9 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
                         sb.append(" exchangesInflight=\"").append(step.getExchangesInflight()).append("\"");
                         sb.append(" ").append(stat, 7, stat.length()).append("\n");
                     }
-                    sb.append("      </stepStats>\n");
                 }
-                sb.append("    </stepStat>\n");
+                sb.append("      </stepStats>\n");
+                sb.append("    </routeStat>\n");
             }
             sb.append("  </routeStats>\n");
         }
@@ -949,7 +974,6 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
     public void reset(boolean includeRoutes) throws Exception {
         reset();
         load.reset();
-        thp.reset();
 
         // and now reset all routes for this route
         if (includeRoutes) {
@@ -1003,10 +1027,8 @@ public class ManagedCamelContext extends ManagedPerformanceCounter implements Ti
     }
 
     private static String escapeXml(String text) {
-        return text
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;");
+        // also quotes as the values are used in attributes
+        return StringHelper.xmlEncode(text);
     }
 
 }

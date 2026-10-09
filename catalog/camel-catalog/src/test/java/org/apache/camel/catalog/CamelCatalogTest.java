@@ -28,13 +28,18 @@ import java.util.stream.Stream;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.camel.tooling.model.ApiReferenceModel;
 import org.apache.camel.tooling.model.ArtifactModel;
 import org.apache.camel.tooling.model.ComponentModel;
 import org.apache.camel.tooling.model.DataFormatModel;
+import org.apache.camel.tooling.model.EipModel;
+import org.apache.camel.tooling.model.JsonMapper;
 import org.apache.camel.tooling.model.Kind;
 import org.apache.camel.tooling.model.LanguageModel;
 import org.apache.camel.tooling.model.PojoBeanModel;
 import org.apache.camel.tooling.model.ReleaseModel;
+import org.apache.camel.tooling.model.SecurityAdvisoryModel;
+import org.apache.camel.util.json.JsonObject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -142,6 +147,19 @@ public class CamelCatalogTest {
     }
 
     @Test
+    public void testTypeSafeAiUsesGenericLanguageModel() {
+        assertTrue(catalog.findLanguageNames().contains("typesafe-ai"));
+        LanguageModel model = catalog.languageModel("typesafe-ai");
+        assertNotNull(model);
+        assertEquals("camel-typesafe-ai", model.getArtifactId());
+        assertEquals("language", model.getModelName());
+        assertEquals("org.apache.camel.model.language.LanguageExpression", model.getModelJavaType());
+        assertTrue(catalog.validateLanguageExpression(null, "typesafe-ai", "Refund requested?").isSuccess());
+        assertTrue(catalog.validateLanguagePredicate(null, "typesafe-ai", "Refund requested?").isSuccess());
+        assertFalse(catalog.validateLanguagePredicate(null, "typesafe-ai", " ").isSuccess());
+    }
+
+    @Test
     public void testFindTransformerNames() {
         List<String> names = catalog.findTransformerNames();
 
@@ -179,6 +197,141 @@ public class CamelCatalogTest {
     }
 
     @Test
+    public void testComponentAliases() {
+        // aliases declared via @Metadata on the endpoint class end up in the component model
+        ComponentModel mail = catalog.componentModel("imap");
+        assertNotNull(mail);
+        assertTrue(mail.getAliases().contains("mail"));
+        assertTrue(mail.getAliases().contains("email"));
+        assertTrue(catalog.componentModel("activemq").getAliases().contains("amq"));
+    }
+
+    @Test
+    public void testSuggestComponentNames() {
+        // exact scheme first, then words of the title or scheme
+        assertEquals(List.of("aws2-s3", "aws2-s3-vectors"), catalog.suggestComponentNames("s3", 0));
+        assertEquals(List.of("aws2-sqs"), catalog.suggestComponentNames("sqs", 0));
+        assertEquals(List.of("paho-mqtt5"), catalog.suggestComponentNames("mqtt", 0));
+        assertEquals(List.of("spring-rabbitmq"), catalog.suggestComponentNames("rabbitmq", 0));
+        assertEquals(List.of("google-pubsub"), catalog.suggestComponentNames("pubsub", 0));
+        assertEquals(List.of("azure-servicebus"), catalog.suggestComponentNames("servicebus", 0));
+        assertEquals(List.of("azure-servicebus"), catalog.suggestComponentNames("Service-Bus", 0));
+        assertEquals(List.of("kafka", "aws2-msk", "kafka-share"), catalog.suggestComponentNames("kafka", 0));
+        // aliases rank right after the exact scheme, substring matches last
+        assertEquals(List.of("activemq", "activemq6", "amqp"), catalog.suggestComponentNames("amq", 0));
+        assertEquals(List.of("paho-mqtt5"), catalog.suggestComponentNames("paho-mqtt", 0));
+        assertTrue(catalog.suggestComponentNames("xyzq", 0).isEmpty());
+        assertTrue(catalog.suggestComponentNames("", 5).isEmpty());
+        assertTrue(catalog.suggestComponentNames(null, 5).isEmpty());
+        // max caps the result
+        List<String> aws = catalog.suggestComponentNames("aws", 0);
+        assertTrue(aws.size() > 5, "aws should match many components, was: " + aws);
+        assertEquals(aws.subList(0, 5), catalog.suggestComponentNames("aws", 5));
+    }
+
+    @Test
+    public void testSuggestComponentNamesDedupesAlternativeSchemes() {
+        // one implementation under several schemes is suggested once, by the scheme that matched
+        assertEquals(List.of("smtp"), catalog.suggestComponentNames("smtp", 0));
+        assertEquals(List.of("https"), catalog.suggestComponentNames("https", 0));
+        // or by its primary scheme when the match came from an alias
+        List<String> mail = catalog.suggestComponentNames("mail", 0);
+        assertEquals("imap", mail.get(0), "mail should suggest the mail component first, was: " + mail);
+        assertFalse(mail.contains("smtp"), "mail should not repeat the mail component, was: " + mail);
+        assertTrue(mail.contains("google-mail"), "mail should also suggest google-mail, was: " + mail);
+    }
+
+    @Test
+    public void testSuggestDataFormatAndLanguageNames() {
+        assertEquals(List.of("snakeYaml"), catalog.suggestDataFormatNames("yaml", 0));
+        List<String> json = catalog.suggestDataFormatNames("json", 0);
+        assertTrue(json.contains("jackson"), "json should suggest jackson, was: " + json);
+        assertTrue(json.contains("gson"), "json should suggest gson, was: " + json);
+        assertEquals("jackson", catalog.suggestDataFormatNames("jackson", 0).get(0));
+
+        assertEquals("simple", catalog.suggestLanguageNames("simple", 0).get(0));
+        List<String> path = catalog.suggestLanguageNames("path", 0);
+        assertTrue(path.contains("xpath"), "path should suggest xpath, was: " + path);
+        assertTrue(path.contains("jsonpath"), "path should suggest jsonpath, was: " + path);
+
+        // an EIP by its alias, with dash and case normalization, before the ones that merely contain the term
+        assertEquals("multicast", catalog.suggestEipNames("fan-out", 0).get(0));
+        assertEquals("multicast", catalog.suggestEipNames("fanOut", 0).get(0));
+        assertEquals("idempotentConsumer", catalog.suggestEipNames("dedup", 0).get(0));
+        assertEquals("throttle", catalog.suggestEipNames("rate-limit", 0).get(0));
+        assertEquals("split", catalog.suggestEipNames("split", 0).get(0));
+        assertEquals(List.of("circuitBreaker"), catalog.suggestEipNames("circuit breaker", 1));
+        assertTrue(catalog.suggestEipNames("no-such-pattern", 0).isEmpty());
+    }
+
+    @Test
+    public void testEipModelAliases() {
+        // verify aliases are present in the EIP model
+        EipModel multicast = catalog.eipModel("multicast");
+        assertNotNull(multicast);
+        assertNotNull(multicast.getAliases());
+        assertTrue(multicast.getAliases().contains("fan-out"));
+        assertTrue(multicast.getAliases().contains("broadcast"));
+
+        EipModel aggregate = catalog.eipModel("aggregate");
+        assertNotNull(aggregate);
+        assertTrue(aggregate.getAliases().contains("fan-in"));
+        assertTrue(aggregate.getAliases().contains("reduce"));
+
+        EipModel choice = catalog.eipModel("choice");
+        assertNotNull(choice);
+        assertTrue(choice.getAliases().contains("router"));
+        assertTrue(choice.getAliases().contains("dispatch"));
+    }
+
+    @Test
+    public void testFindModelNamesByAlias() {
+        // searching by alias should find the EIP
+        List<String> names = catalog.findModelNames("fan-out");
+        assertTrue(names.contains("multicast"), "fan-out should find multicast");
+
+        names = catalog.findModelNames("fan-in");
+        assertTrue(names.contains("aggregate"), "fan-in should find aggregate");
+
+        names = catalog.findModelNames("circuit-breaker");
+        assertTrue(names.contains("circuitBreaker"), "circuit-breaker should find circuitBreaker");
+
+        names = catalog.findModelNames("dedup");
+        assertTrue(names.contains("idempotentConsumer"), "dedup should find idempotentConsumer");
+
+        names = catalog.findModelNames("sink");
+        assertTrue(names.contains("to"), "sink should find to");
+        assertTrue(names.contains("toD"), "sink should find toD");
+    }
+
+    @Test
+    public void testFindModelNamesByAliasDashNormalized() {
+        // fan-out, fanout, fanOut should all match
+        List<String> names1 = catalog.findModelNames("fan-out");
+        List<String> names2 = catalog.findModelNames("fanout");
+        List<String> names3 = catalog.findModelNames("fanOut");
+        assertTrue(names1.contains("multicast"));
+        assertTrue(names2.contains("multicast"));
+        assertTrue(names3.contains("multicast"));
+
+        // circuit-breaker, circuitbreaker, circuitBreaker
+        names1 = catalog.findModelNames("circuit-breaker");
+        names2 = catalog.findModelNames("circuitbreaker");
+        names3 = catalog.findModelNames("circuitBreaker");
+        assertTrue(names1.contains("circuitBreaker"));
+        assertTrue(names2.contains("circuitBreaker"));
+        assertTrue(names3.contains("circuitBreaker"));
+
+        // rate-limit, ratelimit, rateLimit
+        names1 = catalog.findModelNames("rate-limit");
+        names2 = catalog.findModelNames("ratelimit");
+        names3 = catalog.findModelNames("rateLimit");
+        assertTrue(names1.contains("throttle"));
+        assertTrue(names2.contains("throttle"));
+        assertTrue(names3.contains("throttle"));
+    }
+
+    @Test
     public void testJsonSchema() {
         String schema = catalog.componentJSonSchema("docker");
         assertNotNull(schema);
@@ -197,15 +350,26 @@ public class CamelCatalogTest {
         assertNotNull(schema);
         schema = catalog.modelJSonSchema("bean");
         assertNotNull(schema);
+
+        schema = catalog.modelJSonSchema("a2aSubTask");
+        assertNotNull(schema);
+        assertTrue(schema.contains("\"name\": \"a2aSubTask\""));
+        assertTrue(schema.contains("\"failIfNoTaskContext\""));
     }
 
     @Test
     public void testXmlSchema() {
         String schema = catalog.springSchemaAsXml();
         assertNotNull(schema, "Spring XML Schema");
+        assertTrue(schema.contains("targetNamespace=\"http://camel.apache.org/schema/spring\""));
+        assertTrue(schema.contains("name=\"a2aSubTask\""));
+        assertTrue(schema.contains("name=\"failIfNoTaskContext\""));
 
         schema = catalog.xmlIoSchemaAsXml();
         assertNotNull(schema, "XML-IO XML Schema");
+        assertTrue(schema.contains("targetNamespace=\"http://camel.apache.org/schema/xml-io\""));
+        assertTrue(schema.contains("name=\"a2aSubTask\""));
+        assertTrue(schema.contains("name=\"failIfNoTaskContext\""));
     }
 
     @Test
@@ -443,6 +607,23 @@ public class CamelCatalogTest {
     }
 
     @Test
+    public void validateMapOptionEntries() {
+        // userMetadata is a Map option: userMetadata.key=value fills an entry of the map, as property binding does
+        EndpointValidationResult result = catalog.validateEndpointProperties(
+                "spring-ai-chat:assistant?chatModel=#myModel&userMetadata.messageId=abc&userMetadata.priority=high");
+        assertTrue(result.isSuccess(), result.summaryErrorMessage(false));
+
+        // chatModel is a bean option: chatModel.foo=abc sets a property on the bean, as property binding does
+        result = catalog.validateEndpointProperties("spring-ai-chat:assistant?chatModel=#myModel&chatModel.foo=abc");
+        assertTrue(result.isSuccess(), result.summaryErrorMessage(false));
+
+        // the option before the dot must be a Map or a bean, not a plain value
+        result = catalog.validateEndpointProperties("spring-ai-chat:assistant?chatModel=#myModel&systemMessage.foo=abc");
+        assertFalse(result.isSuccess());
+        assertTrue(result.getUnknown().contains("systemMessage.foo"));
+    }
+
+    @Test
     public void testEndpointPropertiesPlaceholders() throws Exception {
         Map<String, String> map = catalog.endpointProperties("timer:foo?period={{howoften}}&repeatCount=5");
         assertNotNull(map);
@@ -481,6 +662,19 @@ public class CamelCatalogTest {
         assertEquals("foo/bar", map.get("path"));
         assertEquals("true", map.get("disconnect"));
         assertEquals("false", map.get("keepAlive"));
+    }
+
+    @Test
+    public void testAsEndpointUriInsertionOrder() throws Exception {
+        // an ordered map keeps its order, also when the log component filters the show options
+        Map<String, String> map = new LinkedHashMap<>();
+        map.put("loggerName", "foo");
+        map.put("style", "Tab");
+        map.put("showAll", "true");
+        map.put("showBody", "false");
+        map.put("loggerLevel", "WARN");
+
+        assertEquals("log:foo?style=Tab&showAll=true&loggerLevel=WARN", catalog.asEndpointUri("log", map, false));
     }
 
     @Test
@@ -545,6 +739,65 @@ public class CamelCatalogTest {
         assertEquals(1, map.size());
 
         assertEquals("foo", map.get("destinationName"));
+    }
+
+    @Test
+    public void testValidateEndpointPropertiesNestedObjectOption() {
+        // approval is an object option: approval.actionType=x sets a property of the bean, as property binding does
+        EndpointValidationResult result = catalog.validateEndpointProperties(
+                "salesforce:approval?approval.actionType=Submit&approval.comments=this is a test&approval.skipEntryCriteria=true");
+        assertNull(result.getUnknown(), result.summaryErrorMessage(false));
+
+        result = catalog.validateEndpointProperties("salesforce:approval?approvals.actionType=Submit");
+        assertTrue(result.getUnknown().contains("approvals.actionType"));
+    }
+
+    @Test
+    public void testEndpointPropertiesXmpp() throws Exception {
+        // the port is optional, the participant follows the host
+        Map<String, String> map = catalog.endpointProperties("xmpp://superman@jabber.org/joker@jabber.org?password=secret");
+        assertNotNull(map);
+        assertEquals("superman", map.get("user"));
+        assertEquals("jabber.org", map.get("host"));
+        assertTrue(map.get("port") == null || map.get("port").isEmpty());
+        assertEquals("joker@jabber.org", map.get("participant"));
+        assertEquals("secret", map.get("password"));
+
+        map = catalog.endpointProperties("xmpp://superman@jabber.org:5223/joker@jabber.org");
+        assertEquals("5223", map.get("port"));
+        assertEquals("joker@jabber.org", map.get("participant"));
+
+        map = catalog.endpointProperties("xmpp://superman@jabber.org/?room=krypton@conference.jabber.org");
+        assertEquals("jabber.org", map.get("host"));
+        assertTrue(map.get("participant") == null || map.get("participant").isEmpty());
+        assertEquals("krypton@conference.jabber.org", map.get("room"));
+
+        EndpointValidationResult result
+                = catalog.validateEndpointProperties("xmpp://superman@jabber.org/joker@jabber.org?password=secret");
+        assertTrue(result.isSuccess(), result.summaryErrorMessage(false));
+    }
+
+    @Test
+    public void testEndpointPropertiesJt400() throws Exception {
+        // the object path keeps its dots and slashes, and the suffix that selects the type is part of it
+        Map<String, String> map
+                = catalog.endpointProperties("jt400://GEORGE:EGROEG@LIVERPOOL/QSYS.LIB/BEATLES.LIB/PENNYLANE.DTAQ?keyed=true");
+        assertNotNull(map);
+        assertEquals(5, map.size());
+
+        assertEquals("GEORGE", map.get("userID"));
+        assertEquals("EGROEG", map.get("password"));
+        assertEquals("LIVERPOOL", map.get("systemName"));
+        assertEquals("QSYS.LIB/BEATLES.LIB/PENNYLANE.DTAQ", map.get("objectPath"));
+        assertEquals("true", map.get("keyed"));
+
+        map = catalog.endpointProperties("jt400://username:password@system/lib.lib/MSGINQ.MSGQ");
+        assertNotNull(map);
+        assertEquals("lib.lib/MSGINQ.MSGQ", map.get("objectPath"));
+
+        EndpointValidationResult result = catalog.validateEndpointProperties(
+                "jt400://GRUPO:ATWORK@server/QSYS.LIB/assets.LIB/compute.PGM?fieldsLength=10,10,512&outputFieldsIdx=2,3");
+        assertTrue(result.isSuccess(), result.summaryErrorMessage(false));
     }
 
     @Test
@@ -721,8 +974,12 @@ public class CamelCatalogTest {
         result = catalog.validateEndpointProperties("timer://foo?fixedRate=#fixed&delay=#myDelay");
         assertTrue(result.isSuccess());
 
-        // optional consumer. prefix
+        // consumer. prefix is only optional for a few options
         result = catalog.validateEndpointProperties("file:inbox?consumer.delay=5000&consumer.greedy=true");
+        assertFalse(result.isSuccess());
+        result = catalog.validateEndpointProperties("file:inbox?consumer.bridgeErrorHandler=true");
+        assertFalse(result.isSuccess());
+        result = catalog.validateEndpointProperties("file:inbox?consumer.exceptionHandler=#myHandler");
         assertTrue(result.isSuccess());
 
         // optional without consumer. prefix
@@ -731,7 +988,7 @@ public class CamelCatalogTest {
 
         // mixed optional without consumer. prefix
         result = catalog.validateEndpointProperties("file:inbox?delay=5000&consumer.greedy=true");
-        assertTrue(result.isSuccess());
+        assertFalse(result.isSuccess());
 
         // prefix
         result = catalog.validateEndpointProperties("file:inbox?delay=5000&scheduler.foo=123&scheduler.bar=456");
@@ -777,7 +1034,7 @@ public class CamelCatalogTest {
 
         // lenient on rss consumer only
         result = catalog.validateEndpointProperties(
-                "rss:file:src/test/data/rss20.xml?splitEntries=true&sortEntries=true&consumer.delay=50&foo=bar", false, true,
+                "rss:file:src/test/data/rss20.xml?splitEntries=true&sortEntries=true&delay=50&foo=bar", false, true,
                 false);
         assertTrue(result.isSuccess());
         assertEquals("foo", result.getLenient().iterator().next());
@@ -846,7 +1103,14 @@ public class CamelCatalogTest {
         assertTrue(catalog.validateTimePattern("1h"));
         assertTrue(catalog.validateTimePattern("1hour"));
         assertTrue(catalog.validateTimePattern("2hours"));
+        // the same patterns as the runtime accepts
+        assertTrue(catalog.validateTimePattern("1d"));
+        assertTrue(catalog.validateTimePattern("500ms"));
+        assertTrue(catalog.validateTimePattern("1h 30m"));
+        assertTrue(catalog.validateTimePattern("PT5S"));
 
+        assertFalse(catalog.validateTimePattern(""));
+        assertFalse(catalog.validateTimePattern("5x"));
         assertFalse(catalog.validateTimePattern("bla"));
         assertFalse(catalog.validateTimePattern("2year"));
         assertFalse(catalog.validateTimePattern("60darn"));
@@ -1065,15 +1329,16 @@ public class CamelCatalogTest {
         assertFalse(result.isSuccess());
         assertEquals("${body", result.getText());
         LOG.info(result.getError());
-        assertTrue(result.getError().startsWith("expected symbol functionEnd but was eol at location 5"));
-        assertEquals("expected symbol functionEnd but was eol", result.getShortError());
+        assertTrue(result.getError().startsWith("expected symbol functionEnd but was eol"));
+        assertTrue(result.getError().contains("missing } to close the function at location 5"));
+        assertTrue(result.getShortError().startsWith("expected symbol functionEnd but was eol"));
         assertEquals(5, result.getIndex());
 
         result = catalog.validateLanguageExpression(null, "simple", "${bodyxxx}");
         assertFalse(result.isSuccess());
         assertEquals("${bodyxxx}", result.getText());
         LOG.info(result.getError());
-        assertEquals("Valid syntax: ${body.OGNL} was: bodyxxx", result.getShortError());
+        assertEquals("Unknown function: bodyxxx (did you mean ${body}?)", result.getShortError());
         assertEquals(0, result.getIndex());
     }
 
@@ -1087,9 +1352,22 @@ public class CamelCatalogTest {
         assertFalse(result.isSuccess());
         assertEquals("${body} > ${header.size", result.getText());
         LOG.info(result.getError());
-        assertTrue(result.getError().startsWith("expected symbol functionEnd but was eol at location 22"));
-        assertEquals("expected symbol functionEnd but was eol", result.getShortError());
+        assertTrue(result.getError().startsWith("expected symbol functionEnd but was eol"));
+        assertTrue(result.getError().contains("missing } to close the function at location 22"));
+        assertTrue(result.getShortError().startsWith("expected symbol functionEnd but was eol"));
         assertEquals(22, result.getIndex());
+    }
+
+    @Test
+    public void testSimpleBeanFunctionIsNotALookupAtValidationTime() {
+        // the bean is only known at runtime; the validator has no registry and must not report it as missing
+        LanguageValidationResult result = catalog.validateLanguageExpression(null, "simple", "${bean:myBean.count}");
+        assertTrue(result.isSuccess(), result.getError());
+        result = catalog.validateLanguagePredicate(null, "simple", "${bean:myBean?method=isReady} == true");
+        assertTrue(result.isSuccess(), result.getError());
+        // a real syntax error next to it is still reported
+        result = catalog.validateLanguageExpression(null, "simple", "${bean:myBean.count");
+        assertFalse(result.isSuccess());
     }
 
     @Test
@@ -1102,10 +1380,68 @@ public class CamelCatalogTest {
         assertFalse(result.isSuccess());
         assertEquals("${bdy} contains '{{danger}}'", result.getText());
         LOG.info(result.getError());
-        assertTrue(result.getError().startsWith("Unknown function: bdy at location 0"));
+        assertTrue(result.getError().startsWith("Unknown function: bdy (did you mean ${body}?) at location 0"));
         assertTrue(result.getError().contains("'{{danger}}'"));
-        assertEquals("Unknown function: bdy", result.getShortError());
+        assertEquals("Unknown function: bdy (did you mean ${body}?)", result.getShortError());
         assertEquals(0, result.getIndex());
+    }
+
+    @Test
+    public void testPredicatePlaceholderAsOperand() {
+        // CAMEL-24692: a placeholder used as a bare operand of a binary operator is valid at runtime,
+        // as the placeholder is resolved before the predicate is parsed
+        LanguageValidationResult result = catalog.validateLanguagePredicate(null, "simple", "${body} >= {{hot.threshold}}");
+        assertTrue(result.isSuccess(), result.getError());
+        assertEquals("${body} >= {{hot.threshold}}", result.getText());
+
+        result = catalog.validateLanguagePredicate(null, "simple", "${header.level} == {{level}}");
+        assertTrue(result.isSuccess(), result.getError());
+
+        result = catalog.validateLanguagePredicate(null, "simple", "${body} in {{list}}");
+        assertTrue(result.isSuccess(), result.getError());
+
+        result = catalog.validateLanguagePredicate(null, "simple", "${body} range {{range}}");
+        assertTrue(result.isSuccess(), result.getError());
+
+        result = catalog.validateLanguagePredicate(null, "simple", "${body} regex {{pattern}}");
+        assertTrue(result.isSuccess(), result.getError());
+
+        // the placeholder can also be the entire predicate
+        result = catalog.validateLanguagePredicate(null, "simple", "{{hot.threshold}}");
+        assertTrue(result.isSuccess(), result.getError());
+        assertEquals("{{hot.threshold}}", result.getText());
+    }
+
+    @Test
+    public void testPredicateMultiplePlaceholders() {
+        // CAMEL-24692: each placeholder must be replaced on its own and not as one greedy match
+        LanguageValidationResult result
+                = catalog.validateLanguagePredicate(null, "simple", "${body} == {{a}} && ${header.x} == {{b}}");
+        assertTrue(result.isSuccess(), result.getError());
+        assertEquals("${body} == {{a}} && ${header.x} == {{b}}", result.getText());
+
+        // mixing a quoted and a bare placeholder
+        result = catalog.validateLanguagePredicate(null, "simple", "${body} == '{{a}}' && ${body} != {{b}}");
+        assertTrue(result.isSuccess(), result.getError());
+
+        // and the placeholders must be restored in the error message
+        result = catalog.validateLanguagePredicate(null, "simple", "${bdy} == {{a}} && ${header.x} == {{b}}");
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("{{a}}"), result.getError());
+        assertTrue(result.getError().contains("{{b}}"), result.getError());
+    }
+
+    @Test
+    public void testExpressionPlaceholder() {
+        LanguageValidationResult result = catalog.validateLanguageExpression(null, "simple", "{{greeting}}");
+        assertTrue(result.isSuccess(), result.getError());
+        assertEquals("{{greeting}}", result.getText());
+
+        result = catalog.validateLanguageExpression(null, "simple", "Hello {{name}} how are you");
+        assertTrue(result.isSuccess(), result.getError());
+
+        result = catalog.validateLanguageExpression(null, "simple", "${body} and {{suffix}}");
+        assertTrue(result.isSuccess(), result.getError());
     }
 
     @Test
@@ -1132,7 +1468,16 @@ public class CamelCatalogTest {
 
         result = catalog.validateLanguagePredicate(null, "simple", "${body.length} =!= 12");
         assertFalse(result.isSuccess());
-        assertEquals("Unexpected token =", result.getShortError());
+        assertTrue(result.getShortError().startsWith("Unknown operator =!=: did you mean !=?"), result.getShortError());
+
+        result = catalog.validateLanguageExpression(null, "simple", "${int:body}");
+        assertTrue(result.isSuccess());
+        assertEquals("${int:body}", result.getText());
+
+        result = catalog.validateLanguageExpression(null, "simple", "${unknown:body}");
+        assertFalse(result.isSuccess());
+        assertEquals("${unknown:body}", result.getText());
+        assertTrue(result.getShortError().startsWith("Unknown function: unknown:body"), result.getShortError());
     }
 
     @Test
@@ -1150,6 +1495,18 @@ public class CamelCatalogTest {
         result = catalog.validateLanguageExpression(null, "jsonpath?unpackArray=true", "$.store.book[?(@.price < 10)]");
         assertTrue(result.isSuccess());
         assertEquals("$.store.book[?(@.price < 10)]", result.getText());
+    }
+
+    @Test
+    public void testValidateSimpleJSonPathFunction() {
+        // CAMEL-24585: a simple expression that delegates to the jsonpath language must validate
+        // even though the tooling uses a bare CamelContext without a type converter
+        LanguageValidationResult result = catalog.validateLanguageExpression(null, "simple", "${jsonpath($.foo)}");
+        assertTrue(result.isSuccess());
+        assertEquals("${jsonpath($.foo)}", result.getText());
+
+        result = catalog.validateLanguagePredicate(null, "simple", "${jsonpath($.store.book[?(@.price < 10)])} != null");
+        assertTrue(result.isSuccess());
     }
 
     @Test
@@ -1179,6 +1536,21 @@ public class CamelCatalogTest {
         assertEquals(code, result.getText());
         assertEquals(23, result.getIndex());
         assertEquals("Unexpected input: '*' @ line 2, column 11.", result.getShortError());
+    }
+
+    @Test
+    public void testValidateGroovyLanguagePlaceholder() {
+        // CAMEL-24692: the groovy validation uses the same placeholder replacement as simple
+        LanguageValidationResult result
+                = catalog.validateLanguageExpression(null, "groovy", "request.body >= {{hot.threshold}}");
+        assertTrue(result.isSuccess(), result.getError());
+        assertEquals("request.body >= {{hot.threshold}}", result.getText());
+
+        result = catalog.validateLanguageExpression(null, "groovy", "{{hot.threshold}}");
+        assertTrue(result.isSuccess(), result.getError());
+
+        result = catalog.validateLanguageExpression(null, "groovy", "request.body == '{{name}}'");
+        assertTrue(result.isSuccess(), result.getError());
     }
 
     @Test
@@ -1531,7 +1903,7 @@ public class CamelCatalogTest {
         assertFalse(result.isSuccess());
         assertEquals("12x5", result.getInvalidNumber().get("camel.resilience4j.slow-call-rate-threshold"));
 
-        text = "camel.faulttolerance.timeoutPoolSize=5";
+        text = "camel.faulttolerance.timeoutDuration=5000";
         result = catalog.validateConfigurationProperty(text);
         assertTrue(result.isSuccess());
 
@@ -1600,7 +1972,7 @@ public class CamelCatalogTest {
 
         am = catalog.modelFromMavenGAV("org.apache.camel", "camel-ognl", catalog.getCatalogVersion());
         Assertions.assertInstanceOf(LanguageModel.class, am);
-        Assertions.assertEquals("Evaluates an OGNL expression (Apache Commons OGNL).", am.getDescription());
+        Assertions.assertEquals("Evaluates an OGNL expression (Apache Commons OGNL)", am.getDescription());
 
         am = catalog.modelFromMavenGAV("org.apache.camel", "camel-bindy", catalog.getCatalogVersion());
         Assertions.assertInstanceOf(DataFormatModel.class, am);
@@ -1664,6 +2036,65 @@ public class CamelCatalogTest {
     }
 
     @Test
+    public void camelSecurityAdvisories() {
+        List<SecurityAdvisoryModel> list = catalog.camelSecurityAdvisories();
+        Assertions.assertTrue(list.size() > 70);
+
+        // oldest advisory first
+        SecurityAdvisoryModel advisory = list.get(0);
+        Assertions.assertEquals("CVE-2013-4330", advisory.getCve());
+        Assertions.assertEquals("CRITICAL", advisory.getSeverity());
+
+        advisory = list.stream().filter(a -> a.getCve().equals("CVE-2025-27636")).findFirst().orElse(null);
+        Assertions.assertNotNull(advisory);
+        Assertions.assertEquals("MEDIUM", advisory.getSeverity());
+        Assertions.assertTrue(advisory.getAffected().contains("4.10.0 before 4.10.2"));
+        Assertions.assertTrue(advisory.getFixed().contains("4.10.2"));
+        Assertions.assertEquals("https://camel.apache.org/security/CVE-2025-27636.html", advisory.getUrl());
+        Assertions.assertTrue(advisory.getComponents().contains("camel-bean"));
+    }
+
+    @Test
+    public void devConsolesOpenApiSpec() {
+        String json = catalog.devConsolesOpenApiSpec();
+        Assertions.assertNotNull(json);
+
+        JsonObject doc = JsonMapper.deserialize(json);
+        Assertions.assertEquals("3.0.3", doc.getString("openapi"));
+
+        JsonObject paths = doc.getJsonObject("paths");
+        Assertions.assertNotNull(paths);
+
+        JsonObject context = paths.getJsonObject("/q/dev/context");
+        Assertions.assertNotNull(context);
+        Assertions.assertNotNull(context.getJsonObject("get"));
+        Assertions.assertNull(context.get("post"));
+
+        JsonObject route = paths.getJsonObject("/q/dev/route");
+        Assertions.assertNotNull(route);
+        Assertions.assertNull(route.get("get"));
+        JsonObject post = route.getJsonObject("post");
+        Assertions.assertNotNull(post);
+        Assertions.assertNotNull(post.getJsonObject("requestBody"));
+
+        // a console migrated to an authoritative typed Response record has a real response schema
+        JsonObject circuitBreaker = paths.getJsonObject("/q/dev/circuit-breaker");
+        JsonObject cbSchema = circuitBreaker.getJsonObject("get").getJsonObject("responses").getJsonObject("200")
+                .getJsonObject("content").getJsonObject("application/json").getJsonObject("schema");
+        Assertions.assertNotNull(cbSchema);
+        Assertions.assertEquals("object", cbSchema.getString("type"));
+        Assertions.assertNotNull(cbSchema.getJsonObject("properties").getJsonObject("circuitBreakers"));
+
+        // api is intentionally never migrated - its response IS a full OpenAPI document dynamically
+        // assembled from every registered console's model, not a fixed shape to describe, so it's a
+        // stable example of the empty placeholder
+        JsonObject api = paths.getJsonObject("/q/dev/api");
+        JsonObject apiContent = api.getJsonObject("get").getJsonObject("responses").getJsonObject("200")
+                .getJsonObject("content").getJsonObject("application/json");
+        Assertions.assertTrue(apiContent.isEmpty());
+    }
+
+    @Test
     public void testFindPojoBeanNames() {
         List<String> names = catalog.findBeansNames();
 
@@ -1680,6 +2111,57 @@ public class CamelCatalogTest {
         assertEquals("ZipAggregationStrategy", model.getName());
         assertEquals("org.apache.camel.processor.aggregate.zipfile.ZipAggregationStrategy", model.getJavaType());
         assertEquals(7, model.getOptions().size());
+    }
+
+    @Test
+    public void testFindApiReferenceNames() {
+        List<String> names = catalog.findApiReferenceNames();
+
+        assertTrue(names.contains("Exchange"));
+        assertTrue(names.contains("Message"));
+        assertTrue(names.contains("CamelContext"));
+        assertTrue(names.contains("Registry"));
+        assertTrue(names.contains("AggregationStrategy"));
+        assertEquals(names, catalog.findNames(Kind.api));
+    }
+
+    @Test
+    public void testApiReferenceModel() {
+        ApiReferenceModel model = catalog.apiReferenceModel("Exchange");
+        assertNotNull(model);
+
+        assertEquals(Kind.api, model.getKind());
+        assertEquals("Exchange", model.getName());
+        assertEquals("org.apache.camel.Exchange", model.getJavaType());
+        assertEquals("camel-api", model.getArtifactId());
+        // the Camel 4 changes for models trained on older Camel
+        assertTrue(model.getDescription().contains("getOut() is deprecated"));
+
+        var getMessage = model.getOptions().stream().filter(o -> o.getName().equals("getMessage")).findFirst().orElseThrow();
+        assertTrue(getMessage.isImportant());
+        assertEquals("org.apache.camel.Message", getMessage.getJavaType());
+        assertTrue(getMessage.getSignatures().contains("Message getMessage()"));
+        assertTrue(getMessage.getSignatures().contains("<T> T getMessage(Class<T> type)"));
+        assertTrue(getMessage.getExamples().contains("exchange.getMessage().getBody(String.class)"));
+        // the overloads of an annotated method come from the compiled class, so they cannot drift
+        var getProperty = model.getOptions().stream().filter(o -> o.getName().equals("getProperty")).findFirst().orElseThrow();
+        assertTrue(getProperty.getSignatures().contains("<T> T getProperty(String name, Object defaultValue, Class<T> type)"));
+        // a deprecated method is not listed
+        assertTrue(model.getOptions().stream().noneMatch(o -> o.getName().equals("getOut")));
+
+        // the first-call rule of the aggregation strategy
+        ApiReferenceModel as = catalog.apiReferenceModel("AggregationStrategy");
+        assertNotNull(as);
+        assertTrue(as.getDescription().contains("oldExchange is null"));
+        assertEquals(Kind.api, catalog.model(Kind.api, "AggregationStrategy").getKind());
+
+        // inherited methods are part of the card (Registry extends BeanRepository)
+        ApiReferenceModel registry = catalog.apiReferenceModel("Registry");
+        assertNotNull(registry);
+        assertTrue(registry.getOptions().stream().anyMatch(o -> o.getName().equals("lookupByName")));
+        assertTrue(registry.getOptions().stream().anyMatch(o -> o.getName().equals("bind")));
+
+        assertNull(catalog.apiReferenceModel("Unknown"));
     }
 
     @Test
@@ -1808,6 +2290,127 @@ public class CamelCatalogTest {
         String json = cat.summaryAsJson();
         assertNotNull(json);
         assertTrue(json.contains("99.0.0-test"), "summaryAsJson should contain the custom version");
+    }
+
+    @Test
+    public void testSimpleValidatorJsExists() throws Exception {
+        try (InputStream is = getClass().getClassLoader()
+                .getResourceAsStream("org/apache/camel/catalog/simple/camel-simple-validator.js")) {
+            assertNotNull(is, "camel-simple-validator.js should exist in catalog");
+            String js = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+
+            // Verify catalog data sections are present
+            assertTrue(js.contains("const FUNCTIONS = {"), "JS should contain FUNCTIONS object");
+            assertTrue(js.contains("const OPERATORS = {"), "JS should contain OPERATORS object");
+
+            // Verify key functions are present (from simple.json)
+            assertTrue(js.contains("'body': true"), "JS should contain body function");
+            assertTrue(js.contains("'header': true"), "JS should contain header function");
+            assertTrue(js.contains("'exchangeProperty': true"), "JS should contain exchangeProperty function");
+
+            // Verify operators are present
+            assertTrue(js.contains("'==':"), "JS should contain == operator");
+            assertTrue(js.contains("'contains':"), "JS should contain contains operator");
+            assertTrue(js.contains("'regex':"), "JS should contain regex operator");
+
+            // Verify API functions are present
+            assertTrue(js.contains("function validate("), "JS should contain validate function");
+            assertTrue(js.contains("function complete("), "JS should contain complete function");
+
+            // Verify the function count matches simple.json
+            String langJson = catalog.languageJSonSchema("simple");
+            assertNotNull(langJson, "simple language JSON should exist");
+            LanguageModel model = JsonMapper.generateLanguageModel(langJson);
+            long expectedFunctions = model.getFunctions().stream()
+                    .map(f -> {
+                        String name = f.getName();
+                        for (char ch : new char[] { '(', '.', ':' }) {
+                            int pos = name.indexOf(ch);
+                            if (pos != -1) {
+                                name = name.substring(0, pos);
+                            }
+                        }
+                        return name;
+                    })
+                    .distinct()
+                    .count();
+            long actualFunctions = js.lines()
+                    .filter(line -> line.matches("\\s+'[^']+': true.*"))
+                    .count();
+            assertEquals(expectedFunctions, actualFunctions,
+                    "JS FUNCTIONS count should match unique base names from simple.json");
+        }
+    }
+
+    @Test
+    public void testSimpleValidatorHtmlExists() throws Exception {
+        try (InputStream is = getClass().getClassLoader()
+                .getResourceAsStream("org/apache/camel/catalog/simple/camel-simple-validator.html")) {
+            assertNotNull(is, "camel-simple-validator.html should exist in catalog");
+            String html = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(html.contains("Simple Language Validator"), "HTML should contain title");
+            assertTrue(html.contains("camel-simple-validator.js"), "HTML should reference the JS file");
+        }
+    }
+
+    @Test
+    void testFindDocNames() {
+        List<String> names = catalog.findDocNames();
+        assertNotNull(names);
+        assertFalse(names.isEmpty());
+        assertTrue(names.contains("kafka-component"));
+        assertTrue(names.contains("split-eip"));
+        assertTrue(names.contains("simple-language"));
+        assertTrue(names.contains("jackson2-dataformat"));
+    }
+
+    @Test
+    void testAsciiDoc() {
+        String doc = catalog.asciiDoc("kafka-component");
+        assertNotNull(doc);
+        assertTrue(doc.contains("Kafka Component"));
+        assertTrue(doc.contains("kafka:topic"));
+    }
+
+    @Test
+    void testAsciiDocNotFound() {
+        String doc = catalog.asciiDoc("unknown-xyz");
+        assertNull(doc);
+    }
+
+    @Test
+    void testComponentAsciiDoc() {
+        String doc = catalog.componentAsciiDoc("kafka");
+        assertNotNull(doc);
+        assertTrue(doc.contains("Kafka Component"));
+    }
+
+    @Test
+    void testModelAsciiDoc() {
+        String doc = catalog.modelAsciiDoc("split-eip");
+        assertNotNull(doc);
+        assertTrue(doc.contains("Split"));
+    }
+
+    @Test
+    void testLanguageAsciiDoc() {
+        String doc = catalog.languageAsciiDoc("simple");
+        assertNotNull(doc);
+        assertTrue(doc.contains("Simple"));
+    }
+
+    @Test
+    void testDataFormatAsciiDoc() {
+        String doc = catalog.dataFormatAsciiDoc("jackson2");
+        assertNotNull(doc);
+        assertTrue(doc.contains("Jackson"));
+    }
+
+    @Test
+    void testOtherAsciiDoc() {
+        String doc = catalog.otherAsciiDoc("yaml-dsl");
+        assertNotNull(doc);
+        assertTrue(doc.contains("YAML"));
     }
 
 }

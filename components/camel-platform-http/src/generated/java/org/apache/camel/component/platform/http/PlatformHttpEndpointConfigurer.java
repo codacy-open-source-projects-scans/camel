@@ -54,6 +54,8 @@ public class PlatformHttpEndpointConfigurer extends PropertyConfigurerSupport im
         case "matchOnUriPrefix": target.setMatchOnUriPrefix(property(camelContext, boolean.class, value)); return true;
         case "muteexception":
         case "muteException": target.setMuteException(property(camelContext, boolean.class, value)); return true;
+        case "oauthprofile":
+        case "oauthProfile": target.setOauthProfile(property(camelContext, java.lang.String.class, value)); return true;
         case "platformhttpengine":
         case "platformHttpEngine": target.setPlatformHttpEngine(property(camelContext, org.apache.camel.component.platform.http.spi.PlatformHttpEngine.class, value)); return true;
         case "populatebodywithform":
@@ -63,6 +65,10 @@ public class PlatformHttpEndpointConfigurer extends PropertyConfigurerSupport im
         case "requestTimeout": target.setRequestTimeout(property(camelContext, long.class, value)); return true;
         case "returnhttprequestheaders":
         case "returnHttpRequestHeaders": target.setReturnHttpRequestHeaders(property(camelContext, boolean.class, value)); return true;
+        case "stripuriprefix":
+        case "stripUriPrefix": target.setStripUriPrefix(property(camelContext, boolean.class, value)); return true;
+        case "unmatchedrequesthandling":
+        case "unmatchedRequestHandling": target.setUnmatchedRequestHandling(property(camelContext, java.lang.String.class, value)); return true;
         case "usebodyhandler":
         case "useBodyHandler": target.setUseBodyHandler(property(camelContext, boolean.class, value)); return true;
         case "usecookiehandler":
@@ -107,6 +113,8 @@ public class PlatformHttpEndpointConfigurer extends PropertyConfigurerSupport im
         case "matchOnUriPrefix": return boolean.class;
         case "muteexception":
         case "muteException": return boolean.class;
+        case "oauthprofile":
+        case "oauthProfile": return java.lang.String.class;
         case "platformhttpengine":
         case "platformHttpEngine": return org.apache.camel.component.platform.http.spi.PlatformHttpEngine.class;
         case "populatebodywithform":
@@ -116,6 +124,10 @@ public class PlatformHttpEndpointConfigurer extends PropertyConfigurerSupport im
         case "requestTimeout": return long.class;
         case "returnhttprequestheaders":
         case "returnHttpRequestHeaders": return boolean.class;
+        case "stripuriprefix":
+        case "stripUriPrefix": return boolean.class;
+        case "unmatchedrequesthandling":
+        case "unmatchedRequestHandling": return java.lang.String.class;
         case "usebodyhandler":
         case "useBodyHandler": return boolean.class;
         case "usecookiehandler":
@@ -161,6 +173,8 @@ public class PlatformHttpEndpointConfigurer extends PropertyConfigurerSupport im
         case "matchOnUriPrefix": return target.isMatchOnUriPrefix();
         case "muteexception":
         case "muteException": return target.isMuteException();
+        case "oauthprofile":
+        case "oauthProfile": return target.getOauthProfile();
         case "platformhttpengine":
         case "platformHttpEngine": return target.getPlatformHttpEngine();
         case "populatebodywithform":
@@ -170,6 +184,10 @@ public class PlatformHttpEndpointConfigurer extends PropertyConfigurerSupport im
         case "requestTimeout": return target.getRequestTimeout();
         case "returnhttprequestheaders":
         case "returnHttpRequestHeaders": return target.isReturnHttpRequestHeaders();
+        case "stripuriprefix":
+        case "stripUriPrefix": return target.isStripUriPrefix();
+        case "unmatchedrequesthandling":
+        case "unmatchedRequestHandling": return target.getUnmatchedRequestHandling();
         case "usebodyhandler":
         case "useBodyHandler": return target.isUseBodyHandler();
         case "usecookiehandler":

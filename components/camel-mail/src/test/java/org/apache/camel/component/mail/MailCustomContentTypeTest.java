@@ -23,6 +23,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mail.Mailbox.MailboxUser;
 import org.apache.camel.component.mail.Mailbox.Protocol;
 import org.apache.camel.test.junit6.CamelTestSupport;
+import org.apache.camel.test.junit6.TestSupport;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,13 +33,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Unit test for contentType option.
  */
 public class MailCustomContentTypeTest extends CamelTestSupport {
-    private static final MailboxUser claus = Mailbox.getOrCreateUser("claus", "secret");
+    private static final MailboxUser claus = Mailbox.getOrCreateUser("MailCustomContentTypeTest-claus", "secret");
 
     @Test
     public void testSendHtmlMail() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(claus);
 
-        sendBody("direct:a", "<html><body><h1>Hello</h1>World</body></html>");
+        TestSupport.sendBody(template, "direct:a", "<html><body><h1>Hello</h1>World</body></html>");
 
         Mailbox box = claus.getInbox();
         Message msg = box.get(0);
@@ -50,9 +51,9 @@ public class MailCustomContentTypeTest extends CamelTestSupport {
 
     @Test
     public void testSendHtmlMailIso88591() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(claus);
 
-        sendBody("direct:c", "<html><body><h1>Hello</h1>World</body></html>");
+        TestSupport.sendBody(template, "direct:c", "<html><body><h1>Hello</h1>World</body></html>");
 
         Mailbox box = claus.getInbox();
         Message msg = box.get(0);
@@ -64,7 +65,7 @@ public class MailCustomContentTypeTest extends CamelTestSupport {
 
     @Test
     public void testNullBody() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(claus);
 
         template.sendBodyAndHeader("direct:b", null, MailConstants.MAIL_CONTENT_TYPE, "text/plain; charset=iso-8859-1");
 
@@ -76,7 +77,7 @@ public class MailCustomContentTypeTest extends CamelTestSupport {
 
     @Test
     public void testSendPlainMailContentTypeInHeader() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(claus);
 
         template.sendBodyAndHeader("direct:b", "Hello World", MailConstants.MAIL_CONTENT_TYPE,
                 "text/plain; charset=iso-8859-1");
@@ -89,7 +90,7 @@ public class MailCustomContentTypeTest extends CamelTestSupport {
 
     @Test
     public void testSendPlainMailContentTypeInHeader2() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(claus);
 
         template.sendBodyAndHeader("direct:b", "Hello World", Exchange.CONTENT_TYPE, "text/plain; charset=iso-8859-1");
 
@@ -101,7 +102,7 @@ public class MailCustomContentTypeTest extends CamelTestSupport {
 
     @Test
     public void testSendPlainMailContentTypeTinyTypeInHeader() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(claus);
 
         // Camel will fixup the Content-Type if you do not have a space after the semi colon
         template.sendBodyAndHeader("direct:b", "Hello World", MailConstants.MAIL_CONTENT_TYPE, "text/plain;charset=iso-8859-1");

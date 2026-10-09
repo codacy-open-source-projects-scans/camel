@@ -36,16 +36,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Unit test for shutdown.
  */
 public class MailShutdownCompleteAllTasksTest extends CamelTestSupport {
-    private static final MailboxUser jones = Mailbox.getOrCreateUser("jones", "secret");
+    private static final MailboxUser jones = Mailbox.getOrCreateUser("MailShutdownCompleteAllTasksTest-jones", "secret");
 
     @Override
-    public void doPreSetup() throws Exception {
+    public void setupResources() throws Exception {
         prepareMailbox();
-    }
-
-    @Override
-    public boolean isUseRouteBuilder() {
-        return false;
+        testConfiguration().withUseRouteBuilder(false);
     }
 
     @Test
@@ -79,7 +75,7 @@ public class MailShutdownCompleteAllTasksTest extends CamelTestSupport {
 
     private void prepareMailbox() throws Exception {
         // connect to mailbox
-        Mailbox.clearAll();
+        Mailbox.clearAll(jones);
         JavaMailSender sender = new DefaultJavaMailSender();
         Store store = sender.getSession().getStore("imap");
         store.connect("localhost", Mailbox.getPort(Protocol.imap), jones.getLogin(), jones.getPassword());

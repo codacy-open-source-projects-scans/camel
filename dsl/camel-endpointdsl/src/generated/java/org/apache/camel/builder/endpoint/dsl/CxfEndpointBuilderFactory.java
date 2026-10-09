@@ -114,6 +114,48 @@ public interface CxfEndpointBuilderFactory {
             return this;
         }
         /**
+         * If enabled and an Exchange failed processing on the consumer side,
+         * and the exception is not a SOAP fault the service contract declares,
+         * the SOAP fault returned to the caller won't contain the exception's
+         * class or message. Faults the route raises deliberately - a CXF Fault,
+         * an exception annotated {code WebFault}, or a Throwable set as the
+         * message body - are part of the contract and are always returned in
+         * full.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: true
+         * Group: consumer
+         * 
+         * @param muteException the value to set
+         * @return the dsl builder
+         */
+        default CxfEndpointConsumerBuilder muteException(boolean muteException) {
+            doSetProperty("muteException", muteException);
+            return this;
+        }
+        /**
+         * If enabled and an Exchange failed processing on the consumer side,
+         * and the exception is not a SOAP fault the service contract declares,
+         * the SOAP fault returned to the caller won't contain the exception's
+         * class or message. Faults the route raises deliberately - a CXF Fault,
+         * an exception annotated {code WebFault}, or a Throwable set as the
+         * message body - are part of the contract and are always returned in
+         * full.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: true
+         * Group: consumer
+         * 
+         * @param muteException the value to set
+         * @return the dsl builder
+         */
+        default CxfEndpointConsumerBuilder muteException(String muteException) {
+            doSetProperty("muteException", muteException);
+            return this;
+        }
+        /**
          * This option enables CXF Logging Feature which writes inbound and
          * outbound SOAP messages to log.
          * 
@@ -2644,7 +2686,7 @@ public interface CxfEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final CxfHeaderNameBuilder INSTANCE = new CxfHeaderNameBuilder();
+        public static final CxfHeaderNameBuilder INSTANCE = new CxfHeaderNameBuilder();
 
         /**
          * The name of the operation.
@@ -2653,10 +2695,10 @@ public interface CxfEndpointBuilderFactory {
          * 
          * Group: common
          * 
-         * @return the name of the header {@code operationName}.
+         * @return the name of the header {@code CxfOperationName}.
          */
-        public String operationName() {
-            return "operationName";
+        public String cxfOperationName() {
+            return "CamelCxfOperationName";
         }
         /**
          * The operation namespace.
@@ -2665,10 +2707,10 @@ public interface CxfEndpointBuilderFactory {
          * 
          * Group: common
          * 
-         * @return the name of the header {@code operationNamespace}.
+         * @return the name of the header {@code CxfOperationNamespace}.
          */
-        public String operationNamespace() {
-            return "operationNamespace";
+        public String cxfOperationNamespace() {
+            return "CamelCxfOperationNamespace";
         }
         /**
          * The destination override url.

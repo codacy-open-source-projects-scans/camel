@@ -26,6 +26,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.health.HealthCheck;
 import org.apache.camel.health.HealthCheckHelper;
 import org.apache.camel.health.WritableHealthCheckRepository;
@@ -45,6 +46,7 @@ import software.amazon.awssdk.services.securityhub.model.BatchUpdateFindingsRequ
 import software.amazon.awssdk.services.securityhub.model.BatchUpdateFindingsResponse;
 import software.amazon.awssdk.services.securityhub.model.DescribeHubRequest;
 import software.amazon.awssdk.services.securityhub.model.DescribeHubResponse;
+import software.amazon.awssdk.services.securityhub.model.GetFindingAggregatorRequest;
 import software.amazon.awssdk.services.securityhub.model.GetFindingHistoryRequest;
 import software.amazon.awssdk.services.securityhub.model.GetFindingHistoryResponse;
 import software.amazon.awssdk.services.securityhub.model.GetFindingsRequest;
@@ -93,6 +95,9 @@ public class SecurityHubProducer extends DefaultProducer {
                 break;
             case listEnabledProductsForImport:
                 listEnabledProductsForImport(getEndpoint().getSecurityHubClient(), exchange);
+                break;
+            case getFindingAggregator:
+                getFindingAggregator(getEndpoint().getSecurityHubClient(), exchange);
                 break;
             default:
                 throw new IllegalArgumentException("Unsupported operation");
@@ -292,6 +297,25 @@ public class SecurityHubProducer extends DefaultProducer {
                 });
     }
 
+    private void getFindingAggregator(SecurityHubClient securityHubClient, Exchange exchange)
+            throws InvalidPayloadException {
+        executeOperation(
+                exchange,
+                GetFindingAggregatorRequest.class,
+                securityHubClient::getFindingAggregator,
+                () -> {
+                    String findingAggregatorArn
+                            = exchange.getIn().getHeader(SecurityHubConstants.FINDING_AGGREGATOR_ARN, String.class);
+                    if (ObjectHelper.isEmpty(findingAggregatorArn)) {
+                        throw new IllegalArgumentException("Finding Aggregator ARN must be specified");
+                    }
+                    GetFindingAggregatorRequest.Builder builder = GetFindingAggregatorRequest.builder();
+                    builder.findingAggregatorArn(findingAggregatorArn);
+                    return securityHubClient.getFindingAggregator(builder.build());
+                },
+                "Get Finding Aggregator");
+    }
+
     private void describeHub(SecurityHubClient securityHubClient, Exchange exchange) throws InvalidPayloadException {
         executeOperation(
                 exchange,
@@ -375,7 +399,7 @@ public class SecurityHubProducer extends DefaultProducer {
                 try {
                     result = pojoExecutor.apply(requestClass.cast(payload));
                 } catch (AwsServiceException ase) {
-                    LOG.trace("{} command returned the error code {}", operationName, ase.awsErrorDetails().errorCode());
+                    LOG.trace("{} command returned the error code {}", operationName, AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
             } else {
@@ -388,7 +412,7 @@ public class SecurityHubProducer extends DefaultProducer {
             try {
                 result = headerExecutor.get();
             } catch (AwsServiceException ase) {
-                LOG.trace("{} command returned the error code {}", operationName, ase.awsErrorDetails().errorCode());
+                LOG.trace("{} command returned the error code {}", operationName, AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
         }

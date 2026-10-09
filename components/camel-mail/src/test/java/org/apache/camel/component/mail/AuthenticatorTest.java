@@ -37,15 +37,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class AuthenticatorTest extends CamelTestSupport {
-    private static final MailboxUser james3 = Mailbox.getOrCreateUser("james3", "secret");
-    private static final MailboxUser james4 = Mailbox.getOrCreateUser("james4", "secret");
+    private static final MailboxUser james3 = Mailbox.getOrCreateUser("authenticator-test-james3", "secret");
+    private static final MailboxUser james4 = Mailbox.getOrCreateUser("authenticator-test-james4", "secret");
 
     /**
      * Checks that the authenticator does dynamically return passwords for the smtp endpoint.
      */
     @Test
     public void testSendAndReceiveMails() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(james3, james4);
         // first expect correct result because smtp authenticator does not return wrong password
         callAndCheck("mock:result");
         // second expect exception  because smtp authenticator does return wrong password
@@ -120,7 +120,7 @@ public class AuthenticatorTest extends CamelTestSupport {
                 from("pop3://localhost:" + Mailbox.getPort(Protocol.pop3)
                      + "?initialDelay=100&delay=100&authenticator=#authPop3").removeHeader("to")
                         .to("smtp://localhost:" + Mailbox.getPort(Protocol.smtp)
-                            + "?authenticator=#authSmtp&to=james4@localhost");
+                            + "?authenticator=#authSmtp&to=" + james4.getEmail());
                 from("imap://localhost:" + Mailbox.getPort(Protocol.imap)
                      + "?initialDelay=200&delay=100&authenticator=#authImap").convertBodyTo(String.class)
                         .to("mock:result");
@@ -148,7 +148,7 @@ public class AuthenticatorTest extends CamelTestSupport {
                 } else if (counter < 4) {
                     // return in the second call the wrongPassword which will throw an MessagingException, see MyMockTransport
                     counter++;
-                    return new PasswordAuthentication("james4", "wrongPassword");
+                    return new PasswordAuthentication(james4.getLogin(), "wrongPassword");
                 } else {
                     return auth(james4);
                 }

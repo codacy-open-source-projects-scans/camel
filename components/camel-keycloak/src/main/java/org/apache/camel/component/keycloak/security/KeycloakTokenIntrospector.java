@@ -18,6 +18,7 @@ package org.apache.camel.component.keycloak.security;
 
 import java.io.IOException;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,6 +32,7 @@ import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.NameValuePair;
+import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.message.BasicNameValuePair;
 import org.slf4j.Logger;
@@ -145,7 +147,7 @@ public class KeycloakTokenIntrospector {
 
         // Set request body with token
         NameValuePair tokenParam = new BasicNameValuePair("token", token);
-        request.setEntity(new UrlEncodedFormEntity(java.util.List.of(tokenParam)));
+        request.setEntity(new UrlEncodedFormEntity(List.of(tokenParam)));
 
         // Execute request
         try {
@@ -183,7 +185,7 @@ public class KeycloakTokenIntrospector {
 
             Map<String, Object> responseMap = OBJECT_MAPPER.readValue(responseBody, Map.class);
             return new IntrospectionResult(responseMap);
-        } catch (org.apache.hc.core5.http.ParseException e) {
+        } catch (ParseException e) {
             throw new IOException("Failed to parse HTTP response", e);
         }
     }
@@ -250,6 +252,17 @@ public class KeycloakTokenIntrospector {
         public boolean isActive() {
             Object active = claims.get("active");
             return active instanceof Boolean b && b;
+        }
+
+        /**
+         * Returns whether the token has passed its expiry ({@code exp}) time. A result that carries no {@code exp}
+         * claim is treated as not expired, leaving expiry enforcement to the introspection endpoint.
+         *
+         * @return true if the {@code exp} claim is present and lies in the past, false otherwise
+         */
+        public boolean isExpired() {
+            Long exp = getExpiration();
+            return exp != null && exp * 1000L <= System.currentTimeMillis();
         }
 
         /**

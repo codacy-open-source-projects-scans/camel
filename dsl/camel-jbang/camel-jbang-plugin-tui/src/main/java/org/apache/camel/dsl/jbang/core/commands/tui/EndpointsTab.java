@@ -1,0 +1,785 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.camel.dsl.jbang.core.commands.tui;
+
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
+import dev.tamboui.layout.Constraint;
+import dev.tamboui.layout.Layout;
+import dev.tamboui.layout.Rect;
+import dev.tamboui.markdown.MarkdownView;
+import dev.tamboui.style.Style;
+import dev.tamboui.terminal.Frame;
+import dev.tamboui.text.CharWidth;
+import dev.tamboui.text.Line;
+import dev.tamboui.text.Span;
+import dev.tamboui.tui.event.KeyCode;
+import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.MouseEvent;
+import dev.tamboui.tui.event.MouseEventKind;
+import dev.tamboui.widgets.block.Block;
+import dev.tamboui.widgets.block.BorderType;
+import dev.tamboui.widgets.block.Borders;
+import dev.tamboui.widgets.block.Title;
+import dev.tamboui.widgets.table.Cell;
+import dev.tamboui.widgets.table.Row;
+import dev.tamboui.widgets.table.Table;
+import org.apache.camel.catalog.CamelCatalog;
+import org.apache.camel.tooling.model.BaseOptionModel;
+import org.apache.camel.tooling.model.ComponentModel;
+import org.apache.camel.util.json.JsonArray;
+import org.apache.camel.util.json.JsonObject;
+
+import static org.apache.camel.dsl.jbang.core.commands.tui.TuiHelper.*;
+
+class EndpointsTab extends AbstractTableTab {
+
+    private static final int MAX_CHART_POINTS = 300;
+    private static final int CHART_ALL = 0;
+    private static final int CHART_SINGLE = 1;
+    private static final int CHART_OFF = 2;
+
+    private static final int PANEL_CHART = 0;
+    private static final int PANEL_DETAIL = 1;
+
+    private final Map<String, LinkedList<Long>> endpointInHistory;
+    private final Map<String, LinkedList<Long>> endpointOutHistory;
+    private final Map<String, LinkedList<Long>> endpointRemoteInHistory;
+    private final Map<String, LinkedList<Long>> endpointRemoteOutHistory;
+    private final Map<String, LinkedList<Long>> endpointRemoteStubInHistory;
+    private final Map<String, LinkedList<Long>> endpointRemoteStubOutHistory;
+    private final Map<String, LinkedList<Long>> endpointInSizeHistory;
+    private final Map<String, LinkedList<Long>> endpointOutSizeHistory;
+    private final Map<String, LinkedList<Long>> perEndpointInHistory;
+    private final Map<String, LinkedList<Long>> perEndpointOutHistory;
+    private final Map<String, LinkedList<Long>> perEndpointInSizeHistory;
+    private final Map<String, LinkedList<Long>> perEndpointOutSizeHistory;
+
+    private int filter;
+    private int chartMode = CHART_ALL;
+    private int panelMode = PANEL_CHART;
+    private int detailScroll;
+    private boolean detailFocused;
+    private Rect lastDetailArea;
+    private int chartPanelHeight = 16;
+    private final DragSplit vSplit = new DragSplit();
+    private int flowPanelWidth = 38;
+    private final DragSplit hSplit = new DragSplit();
+
+    private final CatalogCache catalogCache = new CatalogCache();
+
+    EndpointsTab(MonitorContext ctx, MetricsCollector metrics) {
+        super(ctx, "component", "route", "dir", "total", "body", "hdr", "uri");
+        sortIndex = 1;
+        sort = "route";
+        this.endpointInHistory = metrics.getEndpointInHistory();
+        this.endpointOutHistory = metrics.getEndpointOutHistory();
+        this.endpointRemoteInHistory = metrics.getEndpointRemoteInHistory();
+        this.endpointRemoteOutHistory = metrics.getEndpointRemoteOutHistory();
+        this.endpointRemoteStubInHistory = metrics.getEndpointRemoteStubInHistory();
+        this.endpointRemoteStubOutHistory = metrics.getEndpointRemoteStubOutHistory();
+        this.endpointInSizeHistory = metrics.getEndpointInSizeHistory();
+        this.endpointOutSizeHistory = metrics.getEndpointOutSizeHistory();
+        this.perEndpointInHistory = metrics.getPerEndpointInHistory();
+        this.perEndpointOutHistory = metrics.getPerEndpointOutHistory();
+        this.perEndpointInSizeHistory = metrics.getPerEndpointInSizeHistory();
+        this.perEndpointOutSizeHistory = metrics.getPerEndpointOutSizeHistory();
+    }
+
+    @Override
+    protected boolean selectsFirstRow() {
+        return true;
+    }
+
+    @Override
+    protected int getRowCount() {
+        IntegrationInfo info = ctx.findSelectedIntegration();
+        return info != null ? (int) info.endpoints.stream().filter(this::matchesFilter).count() : 0;
+    }
+
+    @Override
+    protected boolean handleTabKeyEvent(KeyEvent ke) {
+        if (ke.isKey(KeyCode.TAB) && panelMode == PANEL_DETAIL) {
+            detailFocused = !detailFocused;
+            return true;
+        }
+        if (ke.isCharIgnoreCase('f')) {
+            filter = (filter + 1) % 3;
+            return true;
+        }
+        if (ke.isCharIgnoreCase('a')) {
+            chartMode = (chartMode + 1) % 3;
+            return true;
+        }
+        if (ke.isCharIgnoreCase('d')) {
+            panelMode = panelMode == PANEL_CHART ? PANEL_DETAIL : PANEL_CHART;
+            detailScroll = 0;
+            detailFocused = false;
+            return true;
+        }
+        if (panelMode == PANEL_DETAIL && detailFocused) {
+            if (ke.isPageUp() || ke.isKey(KeyCode.PAGE_UP)) {
+                detailScroll = Math.max(0, detailScroll - 10);
+                return true;
+            }
+            if (ke.isPageDown() || ke.isKey(KeyCode.PAGE_DOWN)) {
+                detailScroll += 10;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean handleMouseEvent(MouseEvent me, Rect area) {
+        if (panelMode == PANEL_DETAIL && lastDetailArea != null && lastDetailArea.contains(me.x(), me.y())) {
+            if (me.kind() == MouseEventKind.SCROLL_UP) {
+                detailScroll = Math.max(0, detailScroll - 3);
+                return true;
+            }
+            if (me.kind() == MouseEventKind.SCROLL_DOWN) {
+                detailScroll += 3;
+                return true;
+            }
+        }
+        if (vSplit.handleMouse(me, me.y())) {
+            if (vSplit.isDragging()) {
+                chartPanelHeight = Math.max(5, Math.min(area.y() + area.height() - me.y(), area.height() - 5));
+            }
+            return true;
+        }
+        if (panelMode == PANEL_CHART && hSplit.handleMouse(me, me.x())) {
+            if (hSplit.isDragging()) {
+                flowPanelWidth = Math.max(20, Math.min(me.x() - area.x(), area.width() - 20));
+            }
+            return true;
+        }
+        IntegrationInfo info = ctx.findSelectedIntegration();
+        if (info != null) {
+            List<EndpointInfo> filtered = new ArrayList<>(info.endpoints);
+            if (filter == 1) {
+                filtered.removeIf(ep -> !ep.remote);
+            } else if (filter == 2) {
+                filtered.removeIf(ep -> !ep.remote && !ep.stub);
+            }
+            if (handleTableClick(me, lastTableArea, tableState, filtered.size())) {
+                detailScroll = 0;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public void navigateUp() {
+        if (detailFocused) {
+            detailScroll = Math.max(0, detailScroll - 1);
+        } else {
+            tableState.selectPrevious();
+            detailScroll = 0;
+        }
+    }
+
+    @Override
+    public void navigateDown() {
+        if (detailFocused) {
+            detailScroll++;
+        } else {
+            IntegrationInfo info = ctx.findSelectedIntegration();
+            if (info != null) {
+                List<EndpointInfo> filtered = new ArrayList<>(info.endpoints);
+                if (filter == 1) {
+                    filtered.removeIf(ep -> !ep.remote);
+                } else if (filter == 2) {
+                    filtered.removeIf(ep -> !ep.remote && !ep.stub);
+                }
+                tableState.selectNext(filtered.size());
+                detailScroll = 0;
+            }
+        }
+    }
+
+    @Override
+    protected void renderContent(Frame frame, Rect area, IntegrationInfo info) {
+        List<EndpointInfo> sortedEndpoints = new ArrayList<>(info.endpoints);
+        if (filter == 1) {
+            sortedEndpoints.removeIf(ep -> !ep.remote);
+        } else if (filter == 2) {
+            sortedEndpoints.removeIf(ep -> !ep.remote && !ep.stub);
+        }
+        sortedEndpoints.sort(this::sortEndpoint);
+
+        boolean hasSize = info.endpoints.stream()
+                .anyMatch(ep -> ep.meanBodySize >= 0 || ep.meanHeadersSize >= 0);
+
+        List<Row> rows = new ArrayList<>();
+        for (EndpointInfo ep : sortedEndpoints) {
+            String dir = ep.direction != null ? ep.direction : "";
+            Style dirStyle = switch (dir) {
+                case "in" -> Theme.success();
+                case "out" -> Style.EMPTY.fg(Theme.accent());
+                default -> Theme.label();
+            };
+            String arrow = switch (dir) {
+                case "in" -> TuiIcons.KEY_RIGHT + " ";
+                case "out" -> TuiIcons.KEY_LEFT + " ";
+                default -> TuiIcons.ARROW_BOTH + " ";
+            };
+
+            List<Cell> cells = new ArrayList<>();
+            cells.add(Cell.from(Span.styled(ep.component != null ? ep.component : "", Style.EMPTY.fg(Theme.accent()))));
+            cells.add(Cell.from(ep.routeId != null ? ep.routeId : ""));
+            cells.add(Cell.from(Span.styled(arrow + dir, dirStyle)));
+            cells.add(rightCell(String.valueOf(ep.hits), 8));
+            if (hasSize) {
+                cells.add(rightCell(FlowHelper.sizeToString(ep.meanBodySize), 10));
+                cells.add(rightCell(FlowHelper.sizeToString(ep.meanHeadersSize), 10));
+            }
+            cells.add(centerCell(ep.stub ? TuiIcons.CHECK : "", 6));
+            cells.add(centerCell(ep.remote ? TuiIcons.CHECK : "", 8));
+            cells.add(Cell.from(ep.uri != null ? TuiHelper.displayUri(ep.uri) : ""));
+            rows.add(Row.from(cells));
+        }
+
+        int emptyCols = hasSize ? 9 : 7;
+        if (rows.isEmpty()) {
+            rows.add(emptyRow("No endpoints", emptyCols));
+        }
+
+        List<Cell> headerCells = new ArrayList<>();
+        headerCells.add(Cell.from(Span.styled(sortLabel("COMPONENT", "component"), sortStyle("component"))));
+        headerCells.add(Cell.from(Span.styled(sortLabel("ROUTE", "route"), sortStyle("route"))));
+        headerCells.add(Cell.from(Span.styled(sortLabel("DIR", "dir"), sortStyle("dir"))));
+        headerCells.add(rightCell(sortLabel("TOTAL", "total"), 8, sortStyle("total")));
+        if (hasSize) {
+            headerCells.add(rightCell(sortLabel("BODY", "body"), 10, sortStyle("body")));
+            headerCells.add(rightCell(sortLabel("HDR", "hdr"), 10, sortStyle("hdr")));
+        }
+        headerCells.add(centerCell("STUB", 6, Style.EMPTY.bold()));
+        headerCells.add(centerCell("REMOTE", 8, Style.EMPTY.bold()));
+        headerCells.add(Cell.from(Span.styled(sortLabel("URI", "uri"), sortStyle("uri"))));
+
+        List<Constraint> widths = new ArrayList<>();
+        widths.add(Constraint.length(15));
+        widths.add(Constraint.length(20));
+        widths.add(Constraint.length(8));
+        widths.add(Constraint.length(8));
+        if (hasSize) {
+            widths.add(Constraint.length(10));
+            widths.add(Constraint.length(10));
+        }
+        widths.add(Constraint.length(6));
+        widths.add(Constraint.length(8));
+        widths.add(Constraint.fill());
+
+        boolean showDetailFocus = panelMode == PANEL_DETAIL;
+        Style tableBorderStyle = ctx.paneBorder(!(showDetailFocus && detailFocused));
+        Style tableTitleStyle = showDetailFocus && detailFocused ? Style.EMPTY.fg(Theme.accent()) : Theme.title();
+        String tableTitle = " Endpoints"
+                            + (filter == 1 ? " filter:remote" : filter == 2 ? " filter:remote+stub" : "")
+                            + " ";
+
+        Table table = Table.builder()
+                .rows(rows)
+                .header(Row.from(headerCells))
+                .widths(widths.toArray(Constraint[]::new))
+                .highlightStyle(showDetailFocus && detailFocused ? Theme.selectionBg().dim() : Theme.selectionBg())
+                .highlightSpacing(Table.HighlightSpacing.ALWAYS)
+                .block(Block.builder().borderType(BorderType.ROUNDED).borders(Borders.ALL)
+                        .borderStyle(tableBorderStyle)
+                        .title(Title.from(Line.from(Span.styled(tableTitle, tableTitleStyle))))
+                        .build())
+                .build();
+
+        boolean hasSizeHistory;
+        try {
+            hasSizeHistory = endpointInSizeHistory.values().stream()
+                    .anyMatch(h -> new ArrayList<>(h).stream().anyMatch(v -> v > 0))
+                    || endpointOutSizeHistory.values().stream()
+                            .anyMatch(h -> new ArrayList<>(h).stream().anyMatch(v -> v > 0));
+        } catch (java.util.ConcurrentModificationException e) {
+            hasSizeHistory = false;
+        }
+
+        boolean showPanel = panelMode == PANEL_DETAIL
+                || (chartMode != CHART_OFF && ctx.shellPercent < 50);
+        List<Rect> chunks;
+        if (showPanel) {
+            if (panelMode == PANEL_DETAIL) {
+                // doc panel gets 60% of area
+                int detailH = Math.max(5, area.height() * 60 / 100);
+                chunks = Layout.vertical().constraints(Constraint.fill(), Constraint.length(detailH)).split(area);
+            } else {
+                chartPanelHeight = Math.max(5, Math.min(chartPanelHeight, area.height() - 5));
+                chunks = Layout.vertical().constraints(Constraint.fill(), Constraint.length(chartPanelHeight)).split(area);
+            }
+            vSplit.setBorderPos(chunks.get(1).y());
+        } else {
+            chunks = List.of(area);
+            vSplit.clearBorderPos();
+            hSplit.clearBorderPos();
+        }
+
+        lastTableArea = chunks.get(0);
+        frame.renderStatefulWidget(table, chunks.get(0), tableState);
+        renderScrollbar(frame, table, sortedEndpoints.size());
+
+        if (showPanel && panelMode == PANEL_DETAIL) {
+            hSplit.clearBorderPos();
+            lastDetailArea = chunks.get(1);
+            renderDetail(frame, chunks.get(1), sortedEndpoints, info);
+        } else if (showPanel) {
+            lastDetailArea = null;
+            // Determine selected endpoint URI for single-endpoint chart
+            String selectedUri = null;
+            if (chartMode == CHART_SINGLE) {
+                Integer sel = tableState.selected();
+                if (sel != null && sel >= 0 && sel < sortedEndpoints.size()) {
+                    selectedUri = sortedEndpoints.get(sel).uri;
+                }
+            }
+
+            if (chartMode == CHART_SINGLE && selectedUri != null) {
+                renderSingleEndpointChart(frame, chunks.get(1), selectedUri, info);
+            } else {
+                long inTotal = info.endpoints.stream()
+                        .filter(ep -> "in".equals(ep.direction) && matchesFilter(ep))
+                        .mapToLong(ep -> ep.hits)
+                        .sum();
+                long outTotal = info.endpoints.stream()
+                        .filter(ep -> "out".equals(ep.direction) && matchesFilter(ep))
+                        .mapToLong(ep -> ep.hits)
+                        .sum();
+
+                if (hasSizeHistory) {
+                    // three-column layout: flow panel (fixed) | throughput chart | payload chart
+                    List<Rect> threeParts = Layout.horizontal()
+                            .constraints(Constraint.length(flowPanelWidth), Constraint.fill(), Constraint.fill())
+                            .split(chunks.get(1));
+                    hSplit.setBorderPos(threeParts.get(1).x());
+                    FlowHelper.renderFlowPanel(frame, threeParts.get(0), inTotal, outTotal, info.name);
+                    int renderPoints = Math.min(
+                            FlowHelper.computeRenderPoints(threeParts.get(1)),
+                            FlowHelper.computeRenderPoints(threeParts.get(2)));
+                    renderThroughputChartDirect(frame, threeParts.get(1), info.pid, renderPoints);
+                    renderPayloadSizeChart(frame, threeParts.get(2), info.pid, renderPoints);
+                } else {
+                    renderEndpointFlow(frame, chunks.get(1), inTotal, outTotal, info.name, info.pid);
+                }
+            }
+        }
+    }
+
+    @Override
+    public SubViewBar.Spec subViewBar() {
+        if (ctx.findSelectedIntegration() == null) {
+            return null;
+        }
+        String[] filterLabels = { "all", "remote", "remote+stub" };
+        List<SubViewBar.View> views = List.of(
+                new SubViewBar.View("Chart", panelMode == PANEL_CHART, true, () -> pressKey('d')),
+                new SubViewBar.View("Detail", panelMode == PANEL_DETAIL, true, () -> pressKey('d')));
+        List<SubViewBar.Toggle> toggles = new ArrayList<>();
+        toggles.add(new SubViewBar.Toggle("f", "filter", filterLabels[filter]));
+        if (panelMode == PANEL_CHART) {
+            toggles.add(new SubViewBar.Toggle("a", "chart", switch (chartMode) {
+                case CHART_ALL -> "all";
+                case CHART_SINGLE -> "single";
+                default -> "off";
+            }));
+        }
+        return new SubViewBar.Spec("d", views, toggles, false);
+    }
+
+    @Override
+    public void renderFooter(List<Span> spans) {
+        hint(spans, "Esc", "back");
+        hint(spans, "s", "sort");
+        if (panelMode == PANEL_DETAIL) {
+            hint(spans, "Tab", detailFocused ? "table" : "detail");
+        }
+    }
+
+    int getFilter() {
+        return filter;
+    }
+
+    boolean matchesFilter(EndpointInfo ep) {
+        return switch (filter) {
+            case 1 -> ep.remote;
+            case 2 -> ep.remote || ep.stub;
+            default -> true;
+        };
+    }
+
+    private int sortEndpoint(EndpointInfo a, EndpointInfo b) {
+        int result = switch (sort) {
+            case "component" -> {
+                String ca = a.component != null ? a.component : "";
+                String cb = b.component != null ? b.component : "";
+                yield ca.compareToIgnoreCase(cb);
+            }
+            case "dir" -> {
+                String da = a.direction != null ? a.direction : "";
+                String db = b.direction != null ? b.direction : "";
+                yield da.compareToIgnoreCase(db);
+            }
+            case "total" -> Long.compare(b.hits, a.hits);
+            case "body" -> Long.compare(b.meanBodySize, a.meanBodySize);
+            case "hdr" -> Long.compare(b.meanHeadersSize, a.meanHeadersSize);
+            case "uri" -> {
+                String ua = a.uri != null ? a.uri : "";
+                String ub = b.uri != null ? b.uri : "";
+                yield ua.compareToIgnoreCase(ub);
+            }
+            default -> { // "route"
+                String ra = a.routeId != null ? a.routeId : "";
+                String rb = b.routeId != null ? b.routeId : "";
+                yield ra.compareToIgnoreCase(rb);
+            }
+        };
+        if (result == 0) {
+            result = directionOrder(a.direction) - directionOrder(b.direction);
+        }
+        return sortReversed ? -result : result;
+    }
+
+    private static int directionOrder(String direction) {
+        if ("in".equals(direction)) {
+            return 0;
+        }
+        if ("out".equals(direction)) {
+            return 1;
+        }
+        return 2;
+    }
+
+    private int renderEndpointFlow(
+            Frame frame, Rect area, long inTotal, long outTotal, String name, String pid) {
+        flowPanelWidth = Math.max(20, Math.min(flowPanelWidth, area.width() - 20));
+        List<Rect> hParts = Layout.horizontal()
+                .constraints(Constraint.length(flowPanelWidth), Constraint.fill())
+                .split(area);
+        hSplit.setBorderPos(hParts.get(1).x());
+
+        FlowHelper.renderFlowPanel(frame, hParts.get(0), inTotal, outTotal, name);
+
+        Map<String, LinkedList<Long>> inHistMap = switch (filter) {
+            case 1 -> endpointRemoteInHistory;
+            case 2 -> endpointRemoteStubInHistory;
+            default -> endpointInHistory;
+        };
+        Map<String, LinkedList<Long>> outHistMap = switch (filter) {
+            case 1 -> endpointRemoteOutHistory;
+            case 2 -> endpointRemoteStubOutHistory;
+            default -> endpointOutHistory;
+        };
+        LinkedList<Long> inHist = inHistMap.getOrDefault(pid, new LinkedList<>());
+        LinkedList<Long> outHist = outHistMap.getOrDefault(pid, new LinkedList<>());
+
+        int renderPoints = FlowHelper.computeRenderPoints(hParts.get(1));
+        FlowHelper.renderThroughputChart(frame, hParts.get(1), inHist, outHist, null, renderPoints);
+        return renderPoints;
+    }
+
+    private void renderSingleEndpointChart(Frame frame, Rect area, String selectedUri, IntegrationInfo info) {
+        long inTotal = info.endpoints.stream()
+                .filter(ep -> "in".equals(ep.direction) && selectedUri.equals(ep.uri))
+                .mapToLong(ep -> ep.hits)
+                .sum();
+        long outTotal = info.endpoints.stream()
+                .filter(ep -> "out".equals(ep.direction) && selectedUri.equals(ep.uri))
+                .mapToLong(ep -> ep.hits)
+                .sum();
+
+        flowPanelWidth = Math.max(20, Math.min(flowPanelWidth, area.width() - 20));
+        List<Rect> hParts = Layout.horizontal()
+                .constraints(Constraint.length(flowPanelWidth), Constraint.fill())
+                .split(area);
+        hSplit.setBorderPos(hParts.get(1).x());
+
+        FlowHelper.renderFlowPanel(frame, hParts.get(0), inTotal, outTotal, selectedUri);
+
+        String key = info.pid + "|" + selectedUri;
+        LinkedList<Long> inHist = perEndpointInHistory.getOrDefault(key, new LinkedList<>());
+        LinkedList<Long> outHist = perEndpointOutHistory.getOrDefault(key, new LinkedList<>());
+
+        LinkedList<Long> inSizeHist = perEndpointInSizeHistory.getOrDefault(key, new LinkedList<>());
+        LinkedList<Long> outSizeHist = perEndpointOutSizeHistory.getOrDefault(key, new LinkedList<>());
+        boolean hasSizeData;
+        try {
+            hasSizeData = new ArrayList<>(inSizeHist).stream().anyMatch(v -> v > 0)
+                    || new ArrayList<>(outSizeHist).stream().anyMatch(v -> v > 0);
+        } catch (java.util.ConcurrentModificationException e) {
+            hasSizeData = false;
+        }
+
+        if (hasSizeData) {
+            List<Rect> chartSplit = Layout.horizontal()
+                    .constraints(Constraint.percentage(50), Constraint.percentage(50))
+                    .split(hParts.get(1));
+            // use the same render points for both charts so their x-axis timelines align
+            int renderPoints = Math.min(
+                    FlowHelper.computeRenderPoints(chartSplit.get(0)),
+                    FlowHelper.computeRenderPoints(chartSplit.get(1)));
+            FlowHelper.renderThroughputChart(frame, chartSplit.get(0), inHist, outHist, selectedUri, renderPoints);
+            FlowHelper.renderPayloadSizeChart(frame, chartSplit.get(1), inSizeHist, outSizeHist, renderPoints);
+        } else {
+            FlowHelper.renderThroughputChart(frame, hParts.get(1), inHist, outHist, selectedUri);
+        }
+    }
+
+    private void renderThroughputChartDirect(Frame frame, Rect area, String pid, int renderPoints) {
+        Map<String, LinkedList<Long>> inHistMap = switch (filter) {
+            case 1 -> endpointRemoteInHistory;
+            case 2 -> endpointRemoteStubInHistory;
+            default -> endpointInHistory;
+        };
+        Map<String, LinkedList<Long>> outHistMap = switch (filter) {
+            case 1 -> endpointRemoteOutHistory;
+            case 2 -> endpointRemoteStubOutHistory;
+            default -> endpointOutHistory;
+        };
+        LinkedList<Long> inHist = inHistMap.getOrDefault(pid, new LinkedList<>());
+        LinkedList<Long> outHist = outHistMap.getOrDefault(pid, new LinkedList<>());
+        FlowHelper.renderThroughputChart(frame, area, inHist, outHist, null, renderPoints);
+    }
+
+    private void renderPayloadSizeChart(Frame frame, Rect area, String pid, int renderPoints) {
+        LinkedList<Long> inHist = endpointInSizeHistory.getOrDefault(pid, new LinkedList<>());
+        LinkedList<Long> outHist = endpointOutSizeHistory.getOrDefault(pid, new LinkedList<>());
+        FlowHelper.renderPayloadSizeChart(frame, area, inHist, outHist, renderPoints);
+    }
+
+    private void renderDetail(Frame frame, Rect area, List<EndpointInfo> sortedEndpoints, IntegrationInfo info) {
+        Style detailBorderStyle = ctx.paneBorder(detailFocused);
+        Style detailTitleStyle = detailFocused ? Theme.title() : Style.EMPTY.fg(Theme.accent());
+
+        Integer sel = tableState.selected();
+        if (sel == null || sel < 0 || sel >= sortedEndpoints.size()) {
+            frame.renderWidget(
+                    MarkdownView.builder()
+                            .source("*Select an endpoint*")
+                            .block(Block.builder().borderType(BorderType.ROUNDED).borders(Borders.ALL)
+                                    .borderStyle(detailBorderStyle)
+                                    .title(Title.from(Line.from(Span.styled(" Endpoint Detail ", detailTitleStyle)))).build())
+                            .styles(Theme.markdownStyles())
+                            .syntaxTheme(Theme.syntaxTheme())
+                            .build(),
+                    area);
+            return;
+        }
+
+        EndpointInfo ep = sortedEndpoints.get(sel);
+        String uri = ep.uri;
+        String component = ep.component;
+        if (uri == null || component == null) {
+            frame.renderWidget(
+                    MarkdownView.builder()
+                            .source("*No endpoint URI*")
+                            .block(Block.builder().borderType(BorderType.ROUNDED).borders(Borders.ALL)
+                                    .borderStyle(detailBorderStyle)
+                                    .title(Title.from(Line.from(Span.styled(" Endpoint Detail ", detailTitleStyle)))).build())
+                            .styles(Theme.markdownStyles())
+                            .syntaxTheme(Theme.syntaxTheme())
+                            .build(),
+                    area);
+            return;
+        }
+
+        CamelCatalog catalog = getCatalog(info);
+        StringBuilder md = new StringBuilder();
+
+        if (catalog != null) {
+            ComponentModel model = catalog.componentModel(component);
+            if (model != null) {
+                // component title and description
+                String compTitle = model.getTitle() != null ? model.getTitle() : component;
+                md.append("## ").append(compTitle).append("\n\n");
+                if (model.getDescription() != null && !model.getDescription().isEmpty()) {
+                    md.append(model.getDescription()).append("\n\n");
+                }
+
+                // parse the URI into option name/value pairs
+                Map<String, String> parsedOptions;
+                try {
+                    parsedOptions = catalog.endpointProperties(uri);
+                } catch (URISyntaxException e) {
+                    parsedOptions = Map.of();
+                }
+
+                if (parsedOptions.isEmpty()) {
+                    md.append("*No configured options*\n");
+                } else {
+                    // build lookup map from endpoint option models
+                    Map<String, BaseOptionModel> optionDocs = new LinkedHashMap<>();
+                    for (ComponentModel.EndpointOptionModel opt : model.getEndpointOptions()) {
+                        if (opt.getName() != null) {
+                            optionDocs.put(opt.getName(), opt);
+                        }
+                    }
+
+                    for (Map.Entry<String, String> entry : parsedOptions.entrySet()) {
+                        String optName = entry.getKey();
+                        String optValue = entry.getValue();
+                        BaseOptionModel doc = optionDocs.get(optName);
+
+                        md.append("---\n\n");
+                        md.append("**").append(optName).append("** = **").append(optValue).append("**\n\n");
+
+                        if (doc != null) {
+                            if (doc.getDescription() != null && !doc.getDescription().isEmpty()) {
+                                md.append(doc.getDescription()).append("\n\n");
+                            }
+                            List<String> meta = new ArrayList<>();
+                            if (doc.getType() != null) {
+                                meta.add("Type: `" + doc.getType() + "`");
+                            }
+                            if (doc.getDefaultValue() != null) {
+                                meta.add("Default: `" + doc.getDefaultValue() + "`");
+                            }
+                            if (doc.isRequired()) {
+                                meta.add("Required: yes");
+                            }
+                            if (doc.getEnums() != null && !doc.getEnums().isEmpty()) {
+                                meta.add("Enum: " + String.join(", ", doc.getEnums()));
+                            }
+                            if (doc.getGroup() != null && !doc.getGroup().isEmpty()) {
+                                meta.add("Group: " + doc.getGroup());
+                            }
+                            if (doc.isDeprecated()) {
+                                String depText = "Deprecated";
+                                if (doc.getDeprecationNote() != null && !doc.getDeprecationNote().isEmpty()) {
+                                    depText += " — " + doc.getDeprecationNote();
+                                }
+                                meta.add(depText);
+                            }
+                            if (!meta.isEmpty()) {
+                                for (String m : meta) {
+                                    md.append("- ").append(m).append("\n");
+                                }
+                                md.append("\n");
+                            }
+                        }
+                    }
+                }
+            } else {
+                md.append("*No catalog documentation for: ").append(component).append("*\n");
+            }
+        } else {
+            md.append("*Loading catalog...*\n");
+        }
+
+        String title = " " + uri + " ";
+        if (CharWidth.of(title) > area.width() - 4) {
+            title = " " + CharWidth.truncateWithEllipsis(uri, area.width() - 6, CharWidth.TruncatePosition.MIDDLE) + " ";
+        }
+
+        frame.renderWidget(
+                MarkdownView.builder()
+                        .source(md.toString())
+                        .scroll(detailScroll)
+                        .block(Block.builder().borderType(BorderType.ROUNDED).borders(Borders.ALL)
+                                .borderStyle(detailBorderStyle)
+                                .title(Title.from(Line.from(Span.styled(title, detailTitleStyle)))).build())
+                        .styles(Theme.markdownStyles())
+                        .syntaxTheme(Theme.syntaxTheme())
+                        .build(),
+                area);
+    }
+
+    private CamelCatalog getCatalog(IntegrationInfo info) {
+        return catalogCache.get(info);
+    }
+
+    @Override
+    public SelectionContext getSelectionContext() {
+        IntegrationInfo info = ctx.findSelectedIntegration();
+        if (info == null || info.endpoints.isEmpty()) {
+            return null;
+        }
+        List<EndpointInfo> sorted = new ArrayList<>(info.endpoints);
+        if (filter == 1) {
+            sorted.removeIf(ep -> !ep.remote);
+        } else if (filter == 2) {
+            sorted.removeIf(ep -> !ep.remote && !ep.stub);
+        }
+        sorted.sort(this::sortEndpoint);
+        List<String> items = sorted.stream().map(ep -> ep.uri != null ? ep.uri : "").toList();
+        Integer sel = tableState.selected();
+        return new SelectionContext("table", items, sel != null ? sel : -1, items.size(), "Endpoints");
+    }
+
+    @Override
+    public Boolean isDetailFocused() {
+        if (panelMode != PANEL_DETAIL) {
+            return null;
+        }
+        return detailFocused;
+    }
+
+    @Override
+    public String description() {
+        return "Registered endpoints with usage statistics (hits, direction)";
+    }
+
+    @Override
+    public String getHelpText() {
+        return DocHelper.loadHelpText("endpoints");
+    }
+
+    @Override
+    public JsonObject getTableDataAsJson() {
+        IntegrationInfo info = ctx.findSelectedIntegration();
+        if (info == null) {
+            return null;
+        }
+        JsonObject result = new JsonObject();
+        result.put("tab", "Endpoints");
+        JsonArray rows = new JsonArray();
+        for (EndpointInfo ei : info.endpoints) {
+            JsonObject row = new JsonObject();
+            row.put("uri", ei.uri);
+            row.put("component", ei.component);
+            row.put("direction", ei.direction);
+            row.put("routeId", ei.routeId);
+            row.put("hits", ei.hits);
+            row.put("remote", ei.remote);
+            row.put("stub", ei.stub);
+            if (ei.meanBodySize >= 0) {
+                row.put("meanBodySize", ei.meanBodySize);
+            }
+            if (ei.maxBodySize >= 0) {
+                row.put("maxBodySize", ei.maxBodySize);
+            }
+            if (ei.meanHeadersSize >= 0) {
+                row.put("meanHeadersSize", ei.meanHeadersSize);
+            }
+            rows.add(row);
+        }
+        result.put("rows", rows);
+        result.put("totalRows", info.endpoints.size());
+        Integer sel = tableState.selected();
+        result.put("selectedIndex", sel != null ? sel : -1);
+        return result;
+    }
+}

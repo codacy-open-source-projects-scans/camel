@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
  * @param <T> The type of the service to be wrapped
  */
 public class SingletonService<T extends InfrastructureService>
-        implements ExtensionContext.Store.CloseableResource, TestService {
+        implements AutoCloseable, TestService {
     private static final Logger LOG = LoggerFactory.getLogger(SingletonService.class);
 
     private final T service;
@@ -78,8 +78,7 @@ public class SingletonService<T extends InfrastructureService>
 
     @Override
     public final void shutdown() {
-        LOG.error("Singleton services must not be shutdown manually");
-        throw new IllegalArgumentException("Singleton services must not be shutdown manually");
+        LOG.debug("Ignoring shutdown request for singleton service {}: will be shutdown via JVM shutdown hook", name);
     }
 
     @Override

@@ -1,7 +1,7 @@
 = Circuit Breaker EIP
 :doctitle: Circuit Breaker
 :shortname: circuitBreaker
-:description: Route messages in a fault tolerance way using Circuit Breaker
+:description: Wraps message processing with a circuit breaker for fault tolerance. Prevents cascading failures by short-circuiting calls to an unhealthy service and routing to a fallback
 :since: 
 :supportlevel: Stable
 :tabs-sync-option:
@@ -34,12 +34,60 @@ include::partial$eip-options.adoc[]
 include::partial$eip-exchangeProperties.adoc[]
 // eip exchangeProperties: END
 
+Inside the `onFallback` these properties tell why the fallback runs. `CamelCircuitBreakerResponseFromFallback`
+and `CamelCircuitBreakerResponseShortCircuited` are `true` whenever the fallback runs, whatever the cause. To know
+what happened to the call itself:
+
+[width="100%",cols="3,1,1",options="header"]
+|===
+| What happened | `CamelCircuitBreakerResponseRejected` | `CamelCircuitBreakerResponseTimedOut`
+| The call was made and failed | `false` | not set
+| The call was made and timed out | `false` | `true`
+| The call was not attempted: the breaker is open, or the bulkhead is full | `true` | not set
+|===
+
+`CamelCircuitBreakerState` is the state of the breaker after the call was recorded, so the call that opens the
+breaker reports `OPEN` although it was attempted; use the rejected property to know whether a call was made.
+The caught exception is available in the fallback, for example as `${exception.message}` in the Simple language.
+
+For example, a fallback that answers differently when the service is down rather than failing once:
+
+[source,yaml]
+----
+- route:
+    from:
+      uri: timer:stock?period=1000
+      steps:
+        - circuitBreaker:
+            steps:
+              - to:
+                  uri: direct:supplier
+            onFallback:
+              steps:
+                - choice:
+                    when:
+                      - expression:
+                          simple:
+                            expression: "${exchangeProperty.CamelCircuitBreakerResponseRejected} == true"
+                        steps:
+                          - setBody:
+                              expression:
+                                constant:
+                                  expression: "supplier is down, using the last known stock"
+                    otherwise:
+                      steps:
+                        - setBody:
+                            expression:
+                              constant:
+                                expression: "stock check failed, will try again"
+----
+
 == Example
 
 Below is an example route showing a circuit breaker endpoint that protects against
 slow operation by falling back to the in-lined fallback route.
 
-By default, the timeout request is just *1000ms, so the HTTP endpoint has to be fairly quick to succeed.
+In this example, the circuit breaker protects against slow operation by falling back to the in-lined fallback route.
 
 [tabs]
 ====
@@ -86,16 +134,22 @@ YAML::
             steps:
               - to:
                   uri: http://fooservice.com/slow
-              - onFallback:
-                  steps:
-                    - transform:
-                        expression:
-                          constant:
-                            expression: Fallback message
+            onFallback:
+              steps:
+                - transform:
+                    expression:
+                      constant:
+                        expression: Fallback message
         - to:
             uri: mock:result
 ----
 ====
+
+== Route lifecycle and breaker state
+
+When a route is stopped and started, the circuit breaker state is reset (an OPEN breaker returns to CLOSED)
+and any collected metrics are cleared. This is by design — a route stop/start is a full lifecycle reset,
+equivalent to a fresh boot.
 
 == Circuit Breaker components
 

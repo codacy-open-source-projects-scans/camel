@@ -33,6 +33,7 @@ import org.apache.camel.processor.BaseProcessorSupport;
 import org.apache.camel.spi.IdAware;
 import org.apache.camel.spi.IdempotentRepository;
 import org.apache.camel.spi.RouteIdAware;
+import org.apache.camel.spi.StepIdAware;
 import org.apache.camel.spi.Synchronization;
 import org.apache.camel.support.AsyncProcessorConverterHelper;
 import org.apache.camel.support.service.ServiceHelper;
@@ -48,13 +49,14 @@ import org.slf4j.LoggerFactory;
  * @see org.apache.camel.spi.IdempotentRepository
  */
 public class IdempotentConsumer extends BaseProcessorSupport
-        implements CamelContextAware, Navigate<Processor>, IdAware, RouteIdAware {
+        implements CamelContextAware, Navigate<Processor>, IdAware, RouteIdAware, StepIdAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(IdempotentConsumer.class);
 
     private CamelContext camelContext;
     private String id;
     private String routeId;
+    private String stepId;
     private final Expression messageIdExpression;
     private final AsyncProcessor processor;
     private final IdempotentRepository idempotentRepository;
@@ -110,6 +112,16 @@ public class IdempotentConsumer extends BaseProcessorSupport
     }
 
     @Override
+    public String getStepId() {
+        return stepId;
+    }
+
+    @Override
+    public void setStepId(String stepId) {
+        this.stepId = stepId;
+    }
+
+    @Override
     public boolean process(final Exchange exchange, final AsyncCallback callback) {
         final AsyncCallback target;
 
@@ -150,19 +162,24 @@ public class IdempotentConsumer extends BaseProcessorSupport
                     callback.done(true);
                     return true;
                 }
-            }
 
-            final Synchronization onCompletion
-                    = new IdempotentOnCompletion(idempotentRepository, messageId, eager, removeOnFailure);
-
-            if (completionEager) {
-                // the callback will eager complete
-                target = new IdempotentConsumerCallback(exchange, onCompletion, callback);
-            } else {
-                // we can use existing callback as target
+                // the duplicate is routed on, but it did not add the key (the exchange that did owns it),
+                // so the duplicate must not confirm the key, nor remove it if it fails
                 target = callback;
-                // the scope is to do the idempotent completion work as an unit of work on the exchange when its done being routed
-                exchange.getExchangeExtension().addOnCompletion(onCompletion);
+            } else {
+                final Synchronization onCompletion
+                        = new IdempotentOnCompletion(idempotentRepository, messageId, eager, removeOnFailure);
+
+                if (completionEager) {
+                    // the callback will eager complete
+                    target = new IdempotentConsumerCallback(exchange, onCompletion, callback);
+                } else {
+                    // we can use existing callback as target
+                    target = callback;
+                    // the scope is to do the idempotent completion work as an unit of work on the exchange
+                    // when its done being routed
+                    exchange.getExchangeExtension().addOnCompletion(onCompletion);
+                }
             }
         } catch (Exception e) {
             exchange.setException(e);
@@ -221,7 +238,10 @@ public class IdempotentConsumer extends BaseProcessorSupport
 
     @Override
     protected void doStop() throws Exception {
-        ServiceHelper.stopService(processor, idempotentRepository);
+        // the idempotent repository may be shared with other routes or EIPs, so do not stop it when the route is
+        // stopped (stopping an in-memory repository clears it); it is stopped when the route is removed
+        // or CamelContext is stopped (doShutdown)
+        ServiceHelper.stopService(processor);
     }
 
     @Override

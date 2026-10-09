@@ -1,0 +1,609 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.camel.dsl.jbang.core.commands.tui;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+
+import dev.tamboui.buffer.Buffer;
+import dev.tamboui.layout.Rect;
+import dev.tamboui.terminal.Frame;
+import dev.tamboui.text.Span;
+import dev.tamboui.tui.event.KeyCode;
+import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.KeyModifiers;
+import dev.tamboui.tui.event.MouseButton;
+import dev.tamboui.tui.event.MouseEvent;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Tests for SourceViewer plain-text edit mode (CAMEL-24287).
+ */
+class SourceViewerEditTest {
+
+    @TempDir
+    Path tempDir;
+
+    private SourceViewer viewer;
+    private Path sourceFile;
+    private final AtomicReference<String> lastNotification = new AtomicReference<>();
+    private final AtomicReference<Boolean> lastNotificationError = new AtomicReference<>();
+
+    @BeforeEach
+    void setUp() throws Exception {
+        Theme.resetForTesting();
+        viewer = new SourceViewer();
+        viewer.setValidateOnSave(false);
+        viewer.setNotificationCallback((msg, error) -> {
+            lastNotification.set(msg);
+            lastNotificationError.set(error);
+        });
+        sourceFile = tempDir.resolve("route.camel.yaml");
+        Files.writeString(sourceFile, """
+                - route:
+                    from:
+                      uri: timer:tick
+                      steps:
+                        - to: log:info
+                """, StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void loadFileMarksLocalWritableFileEditable() {
+        viewer.loadFile(sourceFile);
+
+        assertThat(viewer.isVisible()).isTrue();
+        assertThat(viewer.isEditable()).isTrue();
+        assertThat(viewer.isEditMode()).isFalse();
+    }
+
+    @Test
+    void eEntersEditModeForLocalFile() {
+        viewer.loadFile(sourceFile);
+
+        assertThat(viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F4, KeyModifiers.NONE))).isTrue();
+
+        assertThat(viewer.isEditMode()).isTrue();
+        assertThat(viewer.isTextInputActive()).isTrue();
+    }
+
+    @Test
+    void escCancelsEditModeWithoutClosingViewer() {
+        viewer.loadFile(sourceFile);
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F4, KeyModifiers.NONE));
+        assertThat(viewer.isEditMode()).isTrue();
+
+        assertThat(viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.ESCAPE, KeyModifiers.NONE))).isTrue();
+
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(viewer.isVisible()).isTrue();
+        assertThat(viewer.isEditable()).isTrue();
+    }
+
+    @Test
+    void undoingEveryChangeLeavesTheFileUnmodified() {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        viewer.handleKeyEvent(KeyEvent.ofChar('x', KeyModifiers.NONE));
+        assertThat(viewer.isDirty()).isTrue();
+
+        viewer.handleKeyEvent(KeyEvent.ofChar('z', KeyModifiers.CTRL));
+
+        assertThat(viewer.isDirty()).isFalse();
+        // redo brings the change back
+        viewer.handleKeyEvent(KeyEvent.ofChar('y', KeyModifiers.CTRL));
+        assertThat(viewer.isDirty()).isTrue();
+    }
+
+    @Test
+    void typingInEditModeDoesNotCloseViewer() {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+
+        assertThat(viewer.handleKeyEvent(KeyEvent.ofChar('c', KeyModifiers.NONE))).isTrue();
+        assertThat(viewer.handleKeyEvent(KeyEvent.ofChar('q', KeyModifiers.NONE))).isTrue();
+        assertThat(viewer.handleKeyEvent(KeyEvent.ofChar('1', KeyModifiers.NONE))).isTrue();
+
+        assertThat(viewer.isEditMode()).isTrue();
+        assertThat(viewer.isVisible()).isTrue();
+    }
+
+    @Test
+    void f5SavesEditedContentToDisk() throws Exception {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+
+        // Append a newline and a comment via editor keys
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.END, KeyModifiers.NONE));
+        // move to end of document
+        for (int i = 0; i < 20; i++) {
+            viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.DOWN, KeyModifiers.NONE));
+        }
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.END, KeyModifiers.NONE));
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.ENTER, KeyModifiers.NONE));
+        for (char ch : "# edited".toCharArray()) {
+            viewer.handleKeyEvent(KeyEvent.ofChar(ch, KeyModifiers.NONE));
+        }
+
+        assertThat(viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE))).isTrue();
+
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(viewer.isVisible()).isTrue();
+        String saved = Files.readString(sourceFile, StandardCharsets.UTF_8);
+        assertThat(saved).contains("# edited");
+        assertThat(saved).contains("timer:tick");
+    }
+
+    @Test
+    void cancelDiscardsUnsavedEdits() throws Exception {
+        String original = Files.readString(sourceFile, StandardCharsets.UTF_8);
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+
+        for (char ch : "CHANGED".toCharArray()) {
+            viewer.handleKeyEvent(KeyEvent.ofChar(ch, KeyModifiers.NONE));
+        }
+        // first Esc shows discard warning, Enter confirms discard
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.ESCAPE, KeyModifiers.NONE));
+        assertThat(viewer.isEditMode()).isTrue();
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.ENTER, KeyModifiers.NONE));
+
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(Files.readString(sourceFile, StandardCharsets.UTF_8)).isEqualTo(original);
+    }
+
+    @Test
+    void pasteInsertsIntoEditBuffer() throws Exception {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        viewer.handlePaste("\n# pasted-line\n");
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+
+        assertThat(Files.readString(sourceFile, StandardCharsets.UTF_8)).contains("# pasted-line");
+    }
+
+    @Test
+    void remoteLoadSourceIsNotEditable() {
+        MonitorContext ctx = new MonitorContext(
+                new AtomicReference<>(List.of()),
+                new AtomicReference<>(List.of()));
+        viewer.loadSource(ctx, "myRoute", 0);
+
+        assertThat(viewer.isVisible()).isFalse();
+        assertThat(viewer.isEditable()).isFalse();
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F4, KeyModifiers.NONE))).isFalse();
+    }
+
+    @Test
+    void loadSourceClearsEditableStateFromPriorLocalFile() {
+        viewer.loadFile(sourceFile);
+        assertThat(viewer.isEditable()).isTrue();
+
+        MonitorContext ctx = new MonitorContext(
+                new AtomicReference<>(List.of()),
+                new AtomicReference<>(List.of()));
+        viewer.loadSource(ctx, "myRoute", 0);
+
+        assertThat(viewer.isEditable()).isFalse();
+        assertThat(viewer.isEditMode()).isFalse();
+    }
+
+    @Test
+    void footerShowsEditHintWhenEditable() {
+        viewer.loadFile(sourceFile);
+        List<Span> spans = new ArrayList<>();
+        viewer.renderFooter(spans);
+
+        String footer = spansToString(spans);
+        assertThat(footer).contains("e");
+        assertThat(footer).containsIgnoringCase("edit");
+    }
+
+    @Test
+    void footerShowsSaveHintInEditMode() {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        List<Span> spans = new ArrayList<>();
+        viewer.renderFooter(spans);
+
+        String footer = spansToString(spans);
+        assertThat(footer).contains("F5");
+        assertThat(footer).containsIgnoringCase("save");
+        assertThat(footer).contains("Esc");
+        assertThat(footer).containsIgnoringCase("cancel");
+    }
+
+    @Test
+    void renderEditModeDrawsEditTitle() {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+
+        Rect area = new Rect(0, 0, 80, 24);
+        Buffer buffer = Buffer.empty(area);
+        Frame frame = Frame.forTesting(buffer);
+        viewer.render(frame, area);
+
+        String rendered = TuiTestHelper.bufferToString(buffer);
+        assertThat(rendered).contains("Edit");
+        assertThat(rendered).contains("route.camel.yaml");
+    }
+
+    @Test
+    void hideExitsEditMode() {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        assertThat(viewer.isEditMode()).isTrue();
+
+        viewer.hide();
+
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(viewer.isVisible()).isFalse();
+        assertThat(viewer.isTextInputActive()).isFalse();
+    }
+
+    @Test
+    void readOnlyFileIsNotEditable() throws Exception {
+        Path readOnly = tempDir.resolve("readonly.properties");
+        Files.writeString(readOnly, "foo=bar\n", StandardCharsets.UTF_8);
+        assertThat(readOnly.toFile().setWritable(false)).isTrue();
+        try {
+            viewer.loadFile(readOnly);
+            assertThat(viewer.isEditable()).isFalse();
+            assertThat(viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F4, KeyModifiers.NONE))).isFalse();
+            assertThat(viewer.isEditMode()).isFalse();
+        } finally {
+            readOnly.toFile().setWritable(true);
+        }
+    }
+
+    @Test
+    void emptyFileCanBeEditedAndSaved() throws Exception {
+        Path empty = tempDir.resolve("empty.txt");
+        Files.writeString(empty, "", StandardCharsets.UTF_8);
+        viewer.loadFile(empty);
+        viewer.enterEditMode();
+
+        for (char ch : "hello".toCharArray()) {
+            viewer.handleKeyEvent(KeyEvent.ofChar(ch, KeyModifiers.NONE));
+        }
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+
+        assertThat(Files.readString(empty, StandardCharsets.UTF_8)).isEqualTo("hello");
+        assertThat(viewer.isEditMode()).isFalse();
+    }
+
+    @Test
+    void cancelEditRestoresMarkdownMode() throws Exception {
+        Path md = tempDir.resolve("readme.md");
+        Files.writeString(md, "# Hello\n\nWorld\n", StandardCharsets.UTF_8);
+        viewer.loadFile(md);
+        assertThat(viewer.isMarkdownMode()).isTrue();
+
+        viewer.enterEditMode();
+        assertThat(viewer.isEditMode()).isTrue();
+        assertThat(viewer.isMarkdownMode()).isFalse();
+
+        assertThat(viewer.cancelEdit()).isTrue();
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(viewer.isMarkdownMode()).isTrue();
+    }
+
+    @Test
+    void cancelEditViaPublicApi() {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        assertThat(viewer.cancelEdit()).isTrue();
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(viewer.cancelEdit()).isFalse();
+    }
+
+    @Test
+    void sourceTabHandleEscapeCancelsEditAndKeepsViewer() throws Exception {
+        // SourceTab.handleEscape must cancel edit (CamelMonitor routes Esc there first)
+        MonitorContext ctx = new MonitorContext(
+                new AtomicReference<>(List.of()),
+                new AtomicReference<>(List.of()));
+        SourceTab tab = new SourceTab(ctx);
+
+        // Use SourceViewer directly to validate the cancelEdit contract SourceTab depends on
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        assertThat(viewer.cancelEdit()).isTrue();
+        assertThat(viewer.isVisible()).isTrue();
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(tab.handleEscape()).isFalse();
+    }
+
+    @Test
+    void sourceTabIgnoresTabKeyWhileEditing() throws Exception {
+        MonitorContext ctx = new MonitorContext(
+                new AtomicReference<>(List.of()),
+                new AtomicReference<>(List.of()));
+        SourceTab tab = new SourceTab(ctx);
+        // Without a selected integration SourceTab won't open files; still verify Tab is swallowed
+        // when the viewer reports edit mode by exercising SourceViewer Tab handling path:
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        assertThat(viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.TAB, KeyModifiers.NONE))).isTrue();
+        assertThat(viewer.isEditMode()).isTrue();
+        assertThat(viewer.isVisible()).isTrue();
+        // Keep tab reference used so the integration surface is exercised for construction
+        assertThat(tab.isOverlayActive()).isFalse();
+    }
+
+    @Test
+    void gotoPopupsTakeTypedDigits() {
+        // CAMEL-25192: a digit typed in go to route / go to line must not switch tabs
+        MonitorContext ctx = new MonitorContext(
+                new AtomicReference<>(List.of()),
+                new AtomicReference<>(List.of()));
+        SourceTab tab = new SourceTab(ctx);
+        assertThat(tab.isSourceViewerTextInputActive()).isFalse();
+
+        tab.gotoRoutePopup.open(List.of(new SourceTab.RouteEntry("a", "direct:a", "a.java", 0)));
+        assertThat(tab.isSourceViewerTextInputActive()).isTrue();
+        assertThat(tab.isOverlayActive()).isTrue();
+        tab.gotoRoutePopup.close();
+
+        tab.gotoSourceNodePopup.open(List.of(), 10);
+        assertThat(tab.isSourceViewerTextInputActive()).isTrue();
+        assertThat(tab.isOverlayActive()).isTrue();
+    }
+
+    @Test
+    void saveMessageClearedOnSubsequentLoad() throws Exception {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        viewer.handleKeyEvent(KeyEvent.ofChar('x', KeyModifiers.NONE));
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+
+        Path other = tempDir.resolve("other.properties");
+        Files.writeString(other, "a=b\n", StandardCharsets.UTF_8);
+        viewer.loadFile(other);
+
+        List<Span> spans = new ArrayList<>();
+        viewer.renderFooter(spans);
+        assertThat(spansToString(spans)).doesNotContain("Saved");
+    }
+
+    @Test
+    void savePreservesRawMarkdownViewAfterEdit() throws Exception {
+        Path md = tempDir.resolve("notes.md");
+        Files.writeString(md, "# Title\n", StandardCharsets.UTF_8);
+        viewer.loadFile(md);
+        assertThat(viewer.isMarkdownMode()).isTrue();
+        viewer.handleKeyEvent(KeyEvent.ofChar(' ', KeyModifiers.NONE));
+        assertThat(viewer.isMarkdownMode()).isFalse();
+
+        viewer.enterEditMode();
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.END, KeyModifiers.NONE));
+        viewer.handleKeyEvent(KeyEvent.ofChar('!', KeyModifiers.NONE));
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(viewer.isMarkdownMode()).isFalse();
+        assertThat(Files.readString(md, StandardCharsets.UTF_8)).endsWith("!");
+    }
+
+    @Test
+    void sourceTabForwardsKeysToViewerWhileEditing() throws Exception {
+        IntegrationInfo info = new IntegrationInfo();
+        info.pid = "1234";
+        info.name = "test-app";
+        info.directory = tempDir.toString();
+
+        AtomicReference<List<IntegrationInfo>> data = new AtomicReference<>(List.of(info));
+        MonitorContext ctx = new MonitorContext(data, new AtomicReference<>(List.of()));
+        ctx.selectedPid = "1234";
+        ctx.validateOnSave = false;
+
+        SourceTab tab = new SourceTab(ctx);
+        tab.onTabSelected();
+        assertThat(tab.handleKeyEvent(KeyEvent.ofKey(KeyCode.ENTER, KeyModifiers.NONE))).isTrue();
+        assertThat(tab.handleKeyEvent(KeyEvent.ofKey(KeyCode.F4, KeyModifiers.NONE))).isTrue();
+        assertThat(tab.isSourceViewerEditMode()).isTrue();
+
+        Rect area = new Rect(0, 0, 80, 24);
+        Buffer buffer = Buffer.empty(area);
+        Frame frame = Frame.forTesting(buffer);
+        tab.render(frame, area);
+
+        // Click file list so focusOnViewer is false while edit mode stays active
+        tab.handleMouseEvent(MouseEvent.press(MouseButton.LEFT, 1, 2), area);
+
+        assertThat(tab.handleKeyEvent(KeyEvent.ofChar('z', KeyModifiers.NONE))).isTrue();
+        assertThat(tab.isSourceViewerEditMode()).isTrue();
+        assertThat(tab.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE))).isTrue();
+
+        assertThat(tab.isSourceViewerEditMode()).isFalse();
+        assertThat(Files.readString(sourceFile, StandardCharsets.UTF_8)).contains("z");
+    }
+
+    @Test
+    void saveNotifiesViaCallback() {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        viewer.handleKeyEvent(KeyEvent.ofChar('x', KeyModifiers.NONE));
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+
+        assertThat(lastNotification.get()).contains("Saved");
+        assertThat(lastNotificationError.get()).isFalse();
+
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.ESCAPE, KeyModifiers.NONE));
+        assertThat(viewer.isVisible()).isFalse();
+
+        List<Span> spans = new ArrayList<>();
+        viewer.loadFile(sourceFile);
+        viewer.renderFooter(spans);
+        assertThat(spansToString(spans)).doesNotContain("Saved");
+    }
+
+    @Test
+    void cKeyDismissClearsViewerState() {
+        viewer.loadFile(sourceFile);
+        viewer.enterEditMode();
+        viewer.handleKeyEvent(KeyEvent.ofChar('x', KeyModifiers.NONE));
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+
+        assertThat(viewer.handleKeyEvent(KeyEvent.ofChar('c', KeyModifiers.NONE))).isTrue();
+
+        assertThat(viewer.isVisible()).isFalse();
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(viewer.isTextInputActive()).isFalse();
+    }
+
+    @Test
+    void propertiesValidationOnSaveShowsErrors() throws Exception {
+        Path propsFile = tempDir.resolve("application.properties");
+        Files.writeString(propsFile, "camel.component.seda.queueSize=1234\n", StandardCharsets.UTF_8);
+        viewer.setValidateOnSave(true);
+        viewer.setPropertiesValidator(line -> {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("camel.component.seda.foo")) {
+                return "Unknown option: camel.component.seda.foo";
+            }
+            return null;
+        });
+
+        viewer.loadFile(propsFile);
+        viewer.enterEditMode();
+
+        // move to end and add an invalid property
+        for (int i = 0; i < 20; i++) {
+            viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.DOWN, KeyModifiers.NONE));
+        }
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.END, KeyModifiers.NONE));
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.ENTER, KeyModifiers.NONE));
+        for (char ch : "camel.component.seda.foo=abc".toCharArray()) {
+            viewer.handleKeyEvent(KeyEvent.ofChar(ch, KeyModifiers.NONE));
+        }
+
+        // save — should stay in edit mode with validation errors
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+        assertThat(viewer.isEditMode()).isTrue();
+
+        // dismiss errors via Esc — must stay in edit mode
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.ESCAPE, KeyModifiers.NONE));
+        assertThat(viewer.isEditMode()).isTrue();
+
+        // file is NOT saved when validation fails
+        String saved = Files.readString(propsFile, StandardCharsets.UTF_8);
+        assertThat(saved).doesNotContain("camel.component.seda.foo=abc");
+    }
+
+    @Test
+    void cancelEditDismissesValidationErrorsFirst() throws Exception {
+        Path propsFile = tempDir.resolve("application.properties");
+        Files.writeString(propsFile, "camel.component.seda.queueSize=1234\n", StandardCharsets.UTF_8);
+        viewer.setValidateOnSave(true);
+        viewer.setPropertiesValidator(line -> {
+            if (line.trim().startsWith("camel.component.seda.foo")) {
+                return "Unknown option";
+            }
+            return null;
+        });
+
+        viewer.loadFile(propsFile);
+        viewer.enterEditMode();
+
+        for (int i = 0; i < 20; i++) {
+            viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.DOWN, KeyModifiers.NONE));
+        }
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.END, KeyModifiers.NONE));
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.ENTER, KeyModifiers.NONE));
+        for (char ch : "camel.component.seda.foo=abc".toCharArray()) {
+            viewer.handleKeyEvent(KeyEvent.ofChar(ch, KeyModifiers.NONE));
+        }
+
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+        assertThat(viewer.isEditMode()).isTrue();
+
+        // cancelEdit (used by CamelMonitor via handleEscape) should dismiss popup first
+        assertThat(viewer.cancelEdit()).isTrue();
+        assertThat(viewer.isEditMode()).isTrue();
+
+        // second cancelEdit triggers unsaved-changes prompt (dirty=true)
+        assertThat(viewer.cancelEdit()).isTrue();
+        assertThat(viewer.isEditMode()).isTrue();
+
+        // third cancelEdit dismisses the unsaved-changes prompt and exits edit mode
+        assertThat(viewer.cancelEdit()).isTrue();
+        assertThat(viewer.isEditMode()).isFalse();
+    }
+
+    @Test
+    void propertiesValidationSkipsCommentsAndBlankLines() throws Exception {
+        Path propsFile = tempDir.resolve("application.properties");
+        Files.writeString(propsFile, "# comment\n\ncamel.component.seda.queueSize=1234\n", StandardCharsets.UTF_8);
+        viewer.setValidateOnSave(true);
+        viewer.setPropertiesValidator(line -> null);
+
+        viewer.loadFile(propsFile);
+        viewer.enterEditMode();
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+
+        // no errors — should exit edit mode
+        assertThat(viewer.isEditMode()).isFalse();
+        assertThat(lastNotification.get()).contains("Saved");
+    }
+
+    @Test
+    void yamlEndpointValidationOnSaveShowsErrors() throws Exception {
+        String yaml = """
+                - from:
+                    uri: timer:tick
+                    parameters:
+                      period: 1000
+                      badOption: xyz
+                  steps:
+                    - log: "${body}"
+                """;
+        Path yamlFile = tempDir.resolve("route.camel.yaml");
+        Files.writeString(yamlFile, yaml, StandardCharsets.UTF_8);
+
+        viewer.setValidateOnSave(true);
+        List<String> capturedErrors = new ArrayList<>();
+        viewer.setEndpointValidator(content -> {
+            capturedErrors.add("timer: Unknown option. Did you mean: [fixedRate]");
+            return List.of("timer: Unknown option. Did you mean: [fixedRate]");
+        });
+
+        viewer.loadFile(yamlFile);
+        viewer.enterEditMode();
+        viewer.handleKeyEvent(KeyEvent.ofKey(KeyCode.F5, KeyModifiers.NONE));
+
+        assertThat(viewer.isEditMode()).isTrue();
+        assertThat(capturedErrors).isNotEmpty();
+    }
+
+    private static String spansToString(List<Span> spans) {
+        StringBuilder sb = new StringBuilder();
+        for (Span span : spans) {
+            sb.append(span.content());
+        }
+        return sb.toString();
+    }
+}

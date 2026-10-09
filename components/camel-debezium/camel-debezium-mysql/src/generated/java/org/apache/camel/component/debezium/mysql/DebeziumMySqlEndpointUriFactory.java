@@ -21,9 +21,10 @@ public class DebeziumMySqlEndpointUriFactory extends org.apache.camel.support.co
 
     private static final Set<String> PROPERTY_NAMES;
     private static final Set<String> SECRET_PROPERTY_NAMES;
+    private static final Set<String> ENDPOINT_IDENTITY_PROPERTY_NAMES;
     private static final Map<String, String> MULTI_VALUE_PREFIXES;
     static {
-        Set<String> props = new HashSet<>(127);
+        Set<String> props = new HashSet<>(133);
         props.add("additionalProperties");
         props.add("bigintUnsignedHandlingMode");
         props.add("binlogBufferSize");
@@ -58,6 +59,7 @@ public class DebeziumMySqlEndpointUriFactory extends org.apache.camel.support.co
         props.add("databaseSslTruststorePassword");
         props.add("databaseUser");
         props.add("datatypePropagateSourceType");
+        props.add("ddlParserType");
         props.add("decimalHandlingMode");
         props.add("enableTimeAdjuster");
         props.add("errorsMaxRetries");
@@ -67,6 +69,7 @@ public class DebeziumMySqlEndpointUriFactory extends org.apache.camel.support.co
         props.add("exchangePattern");
         props.add("executorShutdownTimeoutMs");
         props.add("extendedHeadersEnabled");
+        props.add("gtidIgnoreOnRecovery");
         props.add("gtidSourceExcludes");
         props.add("gtidSourceFilterDmlEvents");
         props.add("gtidSourceIncludes");
@@ -84,9 +87,12 @@ public class DebeziumMySqlEndpointUriFactory extends org.apache.camel.support.co
         props.add("incrementalSnapshotWatermarkingStrategy");
         props.add("internalKeyConverter");
         props.add("internalValueConverter");
+        props.add("legacySnapshotMaxThreads");
         props.add("maxBatchSize");
         props.add("maxQueueSize");
         props.add("maxQueueSizeInBytes");
+        props.add("memoryManagementSchemasClass");
+        props.add("memoryManagementTablesClass");
         props.add("messageKeyColumns");
         props.add("minRowCountToStreamResults");
         props.add("name");
@@ -141,6 +147,7 @@ public class DebeziumMySqlEndpointUriFactory extends org.apache.camel.support.co
         props.add("snapshotSelectStatementOverrides");
         props.add("snapshotTablesOrderByRowCount");
         props.add("sourceinfoStructMaker");
+        props.add("statisticsMetricsEnabled");
         props.add("streamingDelayMs");
         props.add("tableExcludeList");
         props.add("tableIgnoreBuiltin");
@@ -152,7 +159,12 @@ public class DebeziumMySqlEndpointUriFactory extends org.apache.camel.support.co
         props.add("transactionMetadataFactory");
         props.add("useNongracefulDisconnect");
         PROPERTY_NAMES = Collections.unmodifiableSet(props);
-        SECRET_PROPERTY_NAMES = Collections.emptySet();
+        Set<String> secretProps = new HashSet<>(3);
+        secretProps.add("databasePassword");
+        secretProps.add("databaseSslKeystorePassword");
+        secretProps.add("databaseSslTruststorePassword");
+        SECRET_PROPERTY_NAMES = Collections.unmodifiableSet(secretProps);
+        ENDPOINT_IDENTITY_PROPERTY_NAMES = Collections.emptySet();
         Map<String, String> prefixes = new HashMap<>(1);
         prefixes.put("additionalProperties", "additionalProperties.");
         MULTI_VALUE_PREFIXES = Collections.unmodifiableMap(prefixes);
@@ -168,7 +180,7 @@ public class DebeziumMySqlEndpointUriFactory extends org.apache.camel.support.co
         String syntax = scheme + BASE;
         String uri = syntax;
 
-        Map<String, Object> copy = new HashMap<>(properties);
+        Map<String, Object> copy = copyParameters(properties);
 
         uri = buildPathParameter(syntax, uri, "name", null, true, copy);
         uri = buildQueryParameters(uri, copy, encode);
@@ -183,6 +195,11 @@ public class DebeziumMySqlEndpointUriFactory extends org.apache.camel.support.co
     @Override
     public Set<String> secretPropertyNames() {
         return SECRET_PROPERTY_NAMES;
+    }
+
+    @Override
+    public Set<String> endpointIdentityPropertyNames() {
+        return ENDPOINT_IDENTITY_PROPERTY_NAMES;
     }
 
     @Override

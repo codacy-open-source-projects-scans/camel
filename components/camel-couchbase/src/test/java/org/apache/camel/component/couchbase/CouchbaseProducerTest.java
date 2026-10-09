@@ -126,7 +126,7 @@ public class CouchbaseProducerTest {
         // Mock out some headers so we can set an expiry
         int expiry = 5000;
         Map<String, Object> testHeaders = new HashMap<>();
-        testHeaders.put("CCB_TTL", Integer.toString(expiry));
+        testHeaders.put(HEADER_TTL, Integer.toString(expiry));
         when(msg.getHeaders()).thenReturn(testHeaders);
         when(collection.upsert(anyString(), any(), any())).thenReturn(response);
         when(msg.getHeader(HEADER_TTL, String.class)).thenReturn(Integer.toString(expiry));
@@ -139,5 +139,18 @@ public class CouchbaseProducerTest {
         producer.process(exchange);
 
         verify(collection).upsert(anyString(), any(), options.capture());
+    }
+
+    /**
+     * PersistTo.TWO exists in the SDK and 2 sits inside the range the failure message advertises, but it was the one
+     * value in 0..4 the switch did not map.
+     */
+    @Test
+    void everyPersistToValueInTheAdvertisedRangeIsAccepted() {
+        for (int persistTo = 0; persistTo <= 4; persistTo++) {
+            int value = persistTo;
+            assertDoesNotThrow(() -> new CouchbaseProducer(endpoint, client, value, 0),
+                    "persistTo=" + value + " is within the documented range and should be accepted");
+        }
     }
 }

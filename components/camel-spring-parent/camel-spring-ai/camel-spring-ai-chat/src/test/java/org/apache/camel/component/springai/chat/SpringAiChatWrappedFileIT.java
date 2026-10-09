@@ -18,16 +18,19 @@ package org.apache.camel.component.springai.chat;
 
 import java.net.URL;
 
+import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
-import org.springframework.retry.support.RetryTemplate;
+import org.springframework.core.retry.RetryPolicy;
+import org.springframework.core.retry.RetryTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,7 +60,7 @@ public class SpringAiChatWrappedFileIT extends OllamaTestSupport {
     }
 
     @Override
-    protected org.springframework.ai.chat.model.ChatModel createModel() {
+    protected ChatModel createModel() {
         OllamaApi ollamaApi = OllamaApi.builder()
                 .baseUrl(OLLAMA.baseUrl())
                 .build();
@@ -66,14 +69,13 @@ public class SpringAiChatWrappedFileIT extends OllamaTestSupport {
                 = OllamaChatOptions.builder()
                         .model(modelName())
                         .temperature(0.3)
+                        .disableThinking()
                         .build();
 
         return OllamaChatModel.builder()
                 .ollamaApi(ollamaApi)
-                .defaultOptions(ollamaOptions)
-                .retryTemplate(RetryTemplate.builder()
-                        .maxAttempts(1)
-                        .build())
+                .options(ollamaOptions)
+                .retryTemplate(new RetryTemplate(RetryPolicy.withMaxRetries(0)))
                 .build();
     }
 
@@ -162,7 +164,7 @@ public class SpringAiChatWrappedFileIT extends OllamaTestSupport {
                         .pollEnrich("file:" + testFilesPath + "?fileName=test-image.png&noop=true&idempotent=false")
                         .setHeader(SpringAiChatConstants.USER_MESSAGE, constant("Describe this image."))
                         // Simulate FILE_CONTENT_TYPE header that would be set by file component with probeContentType=true
-                        .setHeader(org.apache.camel.Exchange.FILE_CONTENT_TYPE, constant("image/png"))
+                        .setHeader(Exchange.FILE_CONTENT_TYPE, constant("image/png"))
                         .to("spring-ai-chat:wrapped-file-ct?chatModel=#chatModel");
             }
         };

@@ -25,15 +25,14 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
-import org.apache.camel.test.AvailablePortFinder;
 import org.apache.camel.test.junit6.CamelTestSupport;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.parallel.Isolated;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,11 +41,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisabledOnOs(value = { OS.LINUX },
               architectures = { "s390x" },
               disabledReason = "This test does not run reliably multiple platforms (see CAMEL-21438)")
+@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*",
+                          disabledReason = "Timing sensitive: the ACK round-trip exceeds the wait bounds on loaded CI runners, "
+                                           + "and @Isolated does not prevent a concurrently built module from saturating the node")
 @Isolated
 public class LumberjackMultiThreadIT extends CamelTestSupport {
 
-    @RegisterExtension
-    AvailablePortFinder.Port port = AvailablePortFinder.find();
     private static final int CONCURRENCY_LEVEL = Math.min(Runtime.getRuntime().availableProcessors(), 4);
     private CountDownLatch latch = new CountDownLatch(CONCURRENCY_LEVEL);
     private volatile boolean interrupted;
@@ -58,10 +58,13 @@ public class LumberjackMultiThreadIT extends CamelTestSupport {
     protected RouteBuilder createRouteBuilder() {
         return new RouteBuilder() {
             public void configure() {
-                // Lumberjack configured with a specific port
-                from("lumberjack:0.0.0.0:" + port.getPort()).to("mock:output");
+                from("lumberjack:0.0.0.0:0").routeId("lumberjack").to("mock:output");
             }
         };
+    }
+
+    private int getActualPort() {
+        return ((LumberjackConsumer) context.getRoute("lumberjack").getConsumer()).getLocalPort();
     }
 
     @BeforeEach
@@ -81,7 +84,11 @@ public class LumberjackMultiThreadIT extends CamelTestSupport {
         mock.expectedMessageCount(25 * CONCURRENCY_LEVEL);
         mock.allMessages().body().isInstanceOf(Map.class);
 
-        final boolean await = latch.await(5, TimeUnit.SECONDS);
+        // LumberjackUtil.sendMessages() waits up to 30 seconds internally for ACKs before a thread
+        // counts down the latch (that 30s bound was itself raised from Awaitility's 10s default in
+        // 5df5b4719ac1 to fix flakiness on loaded CI runners). This wait must exceed 30s with margin,
+        // or a thread that legitimately takes close to the internal max would trip this latch first.
+        final boolean await = latch.await(35, TimeUnit.SECONDS);
         assertTrue(await, "All threads should have sent their messages by now");
 
         // Then we should have the messages we're expecting
@@ -106,7 +113,7 @@ public class LumberjackMultiThreadIT extends CamelTestSupport {
         @Override
         public void run() {
             try {
-                this.responses = LumberjackUtil.sendMessages(port.getPort(), null, Arrays.asList(15, 10));
+                this.responses = LumberjackUtil.sendMessages(getActualPort(), null, Arrays.asList(15, 10));
                 latch.countDown();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

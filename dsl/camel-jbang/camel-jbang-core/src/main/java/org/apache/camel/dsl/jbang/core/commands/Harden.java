@@ -20,6 +20,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -27,6 +28,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
@@ -474,7 +476,7 @@ public class Harden extends CamelCommand {
         }
 
         prompt.append("File: ").append(fileName).append("\n");
-        prompt.append("Format: ").append(fileExtension.toUpperCase()).append("\n\n");
+        prompt.append("Format: ").append(fileExtension.toUpperCase(Locale.ROOT)).append("\n\n");
         prompt.append("Route definition:\n```").append(fileExtension).append("\n");
         prompt.append(routeContent).append("\n```\n\n");
         prompt.append("Please perform a security analysis of this Camel route and provide hardening recommendations:");
@@ -646,7 +648,7 @@ public class Harden extends CamelCommand {
             printer().println();
             return fullResponse.toString();
 
-        } catch (java.net.http.HttpTimeoutException e) {
+        } catch (HttpTimeoutException e) {
             printer().printErr("\nRequest timed out after " + timeout + " seconds.");
             return null;
         } catch (Exception e) {
@@ -676,7 +678,7 @@ public class Harden extends CamelCommand {
             handleErrorStatus(response.statusCode(), response.body());
             return null;
 
-        } catch (java.net.http.HttpTimeoutException e) {
+        } catch (HttpTimeoutException e) {
             printer().printErr("Request timed out after " + timeout + " seconds.");
             return null;
         } catch (Exception e) {

@@ -23,6 +23,7 @@ import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriParams;
 import org.apache.camel.spi.UriPath;
+import org.apache.camel.support.jsse.SSLContextParameters;
 import org.apache.http.HttpHost;
 
 @UriParams
@@ -49,7 +50,10 @@ public class ElasticsearchConfiguration {
     private String hostAddresses;
     @UriParam(defaultValue = "" + ElasticsearchConstants.DEFAULT_SOCKET_TIMEOUT)
     private int socketTimeout = ElasticsearchConstants.DEFAULT_SOCKET_TIMEOUT;
-    @UriParam(defaultValue = "" + ElasticsearchConstants.MAX_RETRY_TIMEOUT)
+    @Deprecated
+    @UriParam(defaultValue = "" + ElasticsearchConstants.MAX_RETRY_TIMEOUT,
+              description = "Deprecated: this option has no effect. It was used by the old low-level REST client and is"
+                            + " ignored by the current client.")
     private int maxRetryTimeout = ElasticsearchConstants.MAX_RETRY_TIMEOUT;
     @UriParam(defaultValue = "" + ElasticsearchConstants.DEFAULT_CONNECTION_TIMEOUT)
     private int connectionTimeout = ElasticsearchConstants.DEFAULT_CONNECTION_TIMEOUT;
@@ -62,6 +66,8 @@ public class ElasticsearchConfiguration {
     @UriParam(label = "security")
     @Metadata(supportFileReference = true)
     private String certificatePath;
+    @UriParam(label = "security")
+    private SSLContextParameters sslContextParameters;
     @UriParam
     private boolean useScroll;
     @UriParam(defaultValue = "" + ElasticsearchConstants.DEFAULT_SCROLL_KEEP_ALIVE_MS)
@@ -227,13 +233,30 @@ public class ElasticsearchConfiguration {
         this.certificatePath = certificatePath;
     }
 
+    public SSLContextParameters getSslContextParameters() {
+        return sslContextParameters;
+    }
+
+    /**
+     * To configure security using SSLContextParameters. When configured, this takes precedence over the
+     * {@code certificatePath} option. This allows configuring named groups, signature schemes, cipher suites, and
+     * protocols for the TLS connection.
+     */
+    public void setSslContextParameters(SSLContextParameters sslContextParameters) {
+        this.sslContextParameters = sslContextParameters;
+    }
+
     /**
      * The time in ms before retry
+     *
+     * @deprecated this option has no effect and is ignored by the current client
      */
+    @Deprecated
     public int getMaxRetryTimeout() {
         return maxRetryTimeout;
     }
 
+    @Deprecated
     public void setMaxRetryTimeout(int maxRetryTimeout) {
         this.maxRetryTimeout = maxRetryTimeout;
     }

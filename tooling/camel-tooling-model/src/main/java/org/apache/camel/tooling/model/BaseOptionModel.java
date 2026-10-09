@@ -55,9 +55,11 @@ public abstract class BaseOptionModel {
     protected String description;
     protected String nestedType;  // optional and currently only used by configurer
     protected boolean supportFileReference;
+    protected boolean supportSimpleExpression;
     protected boolean largeInput;
     protected String inputLanguage;
     protected boolean important;
+    protected boolean endpointIdentity;
 
     // todo: move this as a helper method
     protected boolean newGroup; // special for documentation rendering
@@ -315,6 +317,14 @@ public abstract class BaseOptionModel {
         this.supportFileReference = supportFileReference;
     }
 
+    public boolean isSupportSimpleExpression() {
+        return supportSimpleExpression;
+    }
+
+    public void setSupportSimpleExpression(boolean supportSimpleExpression) {
+        this.supportSimpleExpression = supportSimpleExpression;
+    }
+
     public boolean isLargeInput() {
         return largeInput;
     }
@@ -337,6 +347,14 @@ public abstract class BaseOptionModel {
 
     public void setImportant(boolean important) {
         this.important = important;
+    }
+
+    public boolean isEndpointIdentity() {
+        return endpointIdentity;
+    }
+
+    public void setEndpointIdentity(boolean endpointIdentity) {
+        this.endpointIdentity = endpointIdentity;
     }
 
     public String getShortGroup() {

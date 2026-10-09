@@ -18,6 +18,7 @@ package org.apache.camel.component.smpp;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 import org.apache.camel.Message;
 import org.jsmpp.bean.Alphabet;
@@ -54,7 +55,7 @@ public abstract class SmppSmCommand extends AbstractSmppCommand {
                 case ALLOW:
                     return segments;
                 case TRUNCATE:
-                    return new byte[][] { java.util.Arrays.copyOfRange(shortMessage, 0, segments[0].length) };
+                    return new byte[][] { Arrays.copyOfRange(shortMessage, 0, segments[0].length) };
                 case REJECT:
                     // FIXME - JSMPP needs to have an enum of the negative response
                     // codes instead of just using them like this
@@ -91,7 +92,9 @@ public abstract class SmppSmCommand extends AbstractSmppCommand {
         String body = message.getBody(String.class);
 
         if (SmppUtils.is8Bit(alphabet)) {
-            splitter = new Smpp8BitSplitter(body.length());
+            // an 8-bit message is split by its length in bytes (the signature of this method is kept, so subclasses
+            // that override it keep working, at the cost of encoding the body again)
+            splitter = new Smpp8BitSplitter(getShortMessage(message).length);
         } else if (alphabet == Alphabet.ALPHA_UCS2) {
             splitter = new SmppUcs2Splitter(body.length());
         } else {

@@ -32,6 +32,7 @@ import org.apache.camel.Processor;
 import org.apache.camel.component.file.GenericFile;
 import org.apache.camel.component.file.GenericFileConsumer;
 import org.apache.camel.component.file.GenericFileEndpoint;
+import org.apache.camel.component.file.GenericFileHelper;
 import org.apache.camel.component.file.GenericFileOperationFailedException;
 import org.apache.camel.component.file.GenericFileOperations;
 import org.apache.camel.component.file.GenericFileProcessStrategy;
@@ -46,6 +47,11 @@ import org.slf4j.LoggerFactory;
 public class SmbConsumer extends GenericFileConsumer<FileIdBothDirectoryInformation> {
 
     private static final Logger LOG = LoggerFactory.getLogger(SmbConsumer.class);
+
+    /**
+     * Remote paths always use {@code /}, regardless of the platform Camel runs on.
+     */
+    private static final char REMOTE_PATH_SEPARATOR = '/';
 
     private final SmbEndpoint endpoint;
     private final SmbConfiguration configuration;
@@ -71,6 +77,21 @@ public class SmbConsumer extends GenericFileConsumer<FileIdBothDirectoryInformat
         return (GenericFileEndpoint<FileIdBothDirectoryInformation>) super.getEndpoint();
     }
 
+    /**
+     * The file name comes from the directory listing returned by the remote share and is not guaranteed to be a single
+     * path segment, so the path resolved from it is compacted and checked to still be inside the directory being polled
+     * before the file is accepted for retrieval, deletion or renaming.
+     */
+    @Override
+    protected boolean isWithinStartingDirectory(String absoluteFilePath) {
+        if (absoluteFilePath == null) {
+            return false;
+        }
+        return GenericFileHelper.isWithinDirectory(
+                FileUtil.compactPath(absoluteFilePath, REMOTE_PATH_SEPARATOR),
+                FileUtil.compactPath(endpointPath, REMOTE_PATH_SEPARATOR), REMOTE_PATH_SEPARATOR);
+    }
+
     @Override
     protected boolean pollDirectory(
             Exchange dynamic, String path, List<GenericFile<FileIdBothDirectoryInformation>> fileList, int depth) {
@@ -84,7 +105,7 @@ public class SmbConsumer extends GenericFileConsumer<FileIdBothDirectoryInformat
         }
 
         if (getEndpoint().isPreSort()) {
-            Arrays.sort(files, Comparator.comparing(FileIdBothDirectoryInformation::getFileName));
+            Arrays.sort(files, preSortComparator(getEndpoint().getPreSort()));
         }
 
         for (FileIdBothDirectoryInformation file : files) {
@@ -426,5 +447,23 @@ public class SmbConsumer extends GenericFileConsumer<FileIdBothDirectoryInformat
 
     private boolean isDirectory(FileIdBothDirectoryInformation file) {
         return EnumWithValue.EnumUtils.isSet(file.getFileAttributes(), FileAttributes.FILE_ATTRIBUTE_DIRECTORY);
+    }
+
+    private static Comparator<FileIdBothDirectoryInformation> preSortComparator(String preSort) {
+        boolean reverse = preSort.startsWith("-");
+        String field = reverse ? preSort.substring(1) : preSort;
+        Comparator<FileIdBothDirectoryInformation> cmp;
+        switch (field) {
+            case "modified":
+                cmp = Comparator.comparingLong(f -> f.getLastWriteTime().toEpochMillis());
+                break;
+            case "size":
+                cmp = Comparator.comparingLong(FileIdBothDirectoryInformation::getEndOfFile);
+                break;
+            default:
+                cmp = Comparator.comparing(FileIdBothDirectoryInformation::getFileName);
+                break;
+        }
+        return reverse ? cmp.reversed() : cmp;
     }
 }

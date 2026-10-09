@@ -7,8 +7,6 @@
 :supportlevel: Stable
 :tabs-sync-option:
 :component-header: Only consumer is supported
-//Manually maintained attributes
-:camel-spring-boot-name: master
 
 *Since Camel {since}*
 
@@ -37,17 +35,55 @@ include::partial$component-endpoint-headers.adoc[]
 
 == Usage
 
+=== Starting the delegated consumer
+
+When a node takes the leadership, the delegated consumer is started in the background, and the start is
+retried when it fails, for instance because the back end it consumes from is not reachable yet. The retries
+are configured on the component with `backOffDelay` (the delay between attempts, 5000 millis by default)
+and `backOffMaxAttempts` (the number of attempts, 10 by default).
+
+Once the attempts are used up, the node keeps the leadership but consumes nothing until the leadership
+changes again, which is logged at ERROR level. Set `backOffMaxAttempts` to 0 to keep retrying for as long as
+the node is the leader instead.
+
 === Using the master endpoint
 
 Prefix any camel endpoint with **master:someName:** where _someName_ is a logical name and is
 used to acquire the master lock.
 For instance:
 
+[tabs]
+====
+Java::
++
 [source,java]
 ----
 from("master:cheese:jms:foo")
-  .to("activemq:wine");
+    .to("activemq:wine");
 ----
+
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="master:cheese:jms:foo"/>
+  <to uri="activemq:wine"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: master:cheese:jms:foo
+      steps:
+        - to:
+            uri: activemq:wine
+----
+====
 
 In this example, the master component ensures that the route is only active in one node, at any given time, in the cluster.
 So if there are 8 nodes in the cluster, then the master component will elect one route to be the leader, and only
@@ -62,7 +98,7 @@ TIP: Apache ActiveMQ 5.x has such a feature out of the box called https://active
 
 You can protect a clustered Camel application to only consume files from one active node.
 
-
+._Java-only: string concatenation to build the master endpoint URI_
 [source,java]
 ----
 // the file endpoint we want to consume from
@@ -81,6 +117,7 @@ The master component leverages CamelClusterService you can configure using
 
 * *Java*
 +
+._Java-only: programmatic ZooKeeperClusterService configuration_
 [source,java]
 ----
 ZooKeeperClusterService service = new ZooKeeperClusterService();
@@ -117,14 +154,14 @@ context.addService(service)
 </beans>
 ----
 
-* *Spring boot*
+* *Camel Main / Spring Boot*
 +
 [source,properties]
 ----
-camel.component.zookeeper.cluster.service.enabled   = true
-camel.component.zookeeper.cluster.service.id        = camel-node-1
-camel.component.zookeeper.cluster.service.base-path = /camel/cluster
-camel.component.zookeeper.cluster.service.nodes     = myzk:2181
+camel.cluster.zookeeper.enabled  = true
+camel.cluster.zookeeper.id       = camel-node-1
+camel.cluster.zookeeper.basePath = /camel/cluster
+camel.cluster.zookeeper.nodes    = myzk:2181
 ----
 
 == Implementations
@@ -138,6 +175,3 @@ Camel provides the following ClusterService implementations:
 - camel-jgroups
 - camel-kubernetes
 - camel-zookeeper
-
-
-include::spring-boot:partial$starter.adoc[]

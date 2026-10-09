@@ -82,11 +82,10 @@ public class SpringRedisIdempotentRepository extends ServiceSupport implements I
     @Override
     @ManagedOperation(description = "Adds the key to the store")
     public boolean add(String key) {
-        if (!contains(key)) {
-            return setOperations.add(repositoryName, key) != null;
-        } else {
-            return false;
-        }
+        // SADD is atomic and returns the number of members it added, which is 0 when the key is already in the set
+        // (also when another consumer added it concurrently), so only one caller adds a given key
+        Long added = setOperations.add(repositoryName, key);
+        return added != null && added > 0;
     }
 
     @Override
@@ -98,13 +97,15 @@ public class SpringRedisIdempotentRepository extends ServiceSupport implements I
     @Override
     @ManagedOperation(description = "Remove the key from the store")
     public boolean remove(String key) {
-        return setOperations.remove(repositoryName, key) != null;
+        // SREM returns the number of members it removed, which is 0 when the key is not in the set
+        Long removed = setOperations.remove(repositoryName, key);
+        return removed != null && removed > 0;
     }
 
     @Override
     @ManagedOperation(description = "Clear the store")
     public void clear() {
-        redisTemplate.getConnectionFactory().getConnection().flushDb();
+        redisTemplate.getConnectionFactory().getConnection().serverCommands().flushDb();
     }
 
     public void setRepositoryName(String repositoryName) {
@@ -133,7 +134,7 @@ public class SpringRedisIdempotentRepository extends ServiceSupport implements I
         ObjectHelper.notNull(this.redisTemplate, "redisTemplate", this);
         this.setOperations = redisTemplate.opsForSet();
         if (flushOnStartup) {
-            redisTemplate.getConnectionFactory().getConnection().flushDb();
+            redisTemplate.getConnectionFactory().getConnection().serverCommands().flushDb();
         }
     }
 

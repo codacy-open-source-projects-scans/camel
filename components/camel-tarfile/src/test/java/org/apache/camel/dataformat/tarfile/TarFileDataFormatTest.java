@@ -297,6 +297,24 @@ class TarFileDataFormatTest extends CamelTestSupport {
                 () -> template.sendBody("direct:untarMaxDecompressedSize", files));
     }
 
+    @Test
+    void testUntarMaxDecompressedSizeWithIterator() throws Exception {
+        final byte[] files = getTaredText("file");
+
+        // maxDecompressedSize must also be enforced in iterator/splitter mode
+        assertThrows(CamelExecutionException.class,
+                () -> template.sendBody("direct:untarMaxDecompressedSizeIterator", files));
+    }
+
+    @Test
+    void testUntarMaxDecompressedSizeWithSplitter() throws Exception {
+        final byte[] files = getTaredText("file");
+
+        // maxDecompressedSize must also be enforced via TarSplitter
+        assertThrows(CamelExecutionException.class,
+                () -> template.sendBody("direct:tarSplitterMaxDecompressedSize", files));
+    }
+
     @AfterEach
     public void cleanOutputDirectory() {
         deleteDirectory(TEST_DIR);
@@ -346,7 +364,9 @@ class TarFileDataFormatTest extends CamelTestSupport {
                                 InputStream is = new FileInputStream("src/test/resources/data/hello.tar");
 
                                 TarArchiveEntry entry
-                                        = new TarArchiveEntry((String) exchange.getIn().getHeader(Exchange.FILE_NAME));
+                                        // CamelFileName is now the stripped basename (Tar Slip prevention); rebuild structure from the full entry name
+                                        = new TarArchiveEntry(
+                                                (String) exchange.getIn().getHeader(TarIterator.TARFILE_ENTRY_NAME_HEADER));
                                 File outputFile = new File("hello_out", entry.getName());
                                 if (entry.isDirectory()) {
                                     outputFile.mkdirs();
@@ -371,6 +391,22 @@ class TarFileDataFormatTest extends CamelTestSupport {
                 // Only allow 10 bytes to be decompressed
                 maxDecompressedSizeTar.setMaxDecompressedSize(10L);
                 from("direct:untarMaxDecompressedSize").unmarshal(maxDecompressedSizeTar).to("mock:untar");
+
+                TarFileDataFormat maxDecompSizeIterTar = new TarFileDataFormat();
+                maxDecompSizeIterTar.setUsingIterator(true);
+                maxDecompSizeIterTar.setMaxDecompressedSize(10L);
+                from("direct:untarMaxDecompressedSizeIterator")
+                        .unmarshal(maxDecompSizeIterTar)
+                        .split(bodyAs(Iterator.class)).streaming()
+                            .to("mock:untarMaxDecompressedSizeIterator")
+                        .end();
+
+                TarSplitter tarSplitter = new TarSplitter();
+                tarSplitter.setMaxDecompressedSize(10L);
+                from("direct:tarSplitterMaxDecompressedSize")
+                        .split(tarSplitter).streaming()
+                            .to("mock:tarSplitterMaxDecompressedSize")
+                        .end();
             }
         };
     }

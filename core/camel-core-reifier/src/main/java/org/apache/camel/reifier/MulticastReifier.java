@@ -31,7 +31,6 @@ import org.apache.camel.model.ProcessorDefinition;
 import org.apache.camel.processor.MulticastProcessor;
 import org.apache.camel.processor.aggregate.AggregationStrategyBeanAdapter;
 import org.apache.camel.processor.aggregate.AggregationStrategyBiFunctionAdapter;
-import org.apache.camel.processor.aggregate.ShareUnitOfWorkAggregationStrategy;
 import org.apache.camel.processor.aggregate.UseLatestAggregationStrategy;
 
 public class MulticastReifier extends ProcessorReifier<MulticastDefinition> {
@@ -43,9 +42,6 @@ public class MulticastReifier extends ProcessorReifier<MulticastDefinition> {
     @Override
     public Processor createProcessor() throws Exception {
         Processor answer = this.createChildProcessor(true);
-        if (answer instanceof DisabledAware da) {
-            da.setDisabled(isDisabled(camelContext, definition));
-        }
 
         // force the answer as a multicast processor even if there is only one
         // child processor in the multicast
@@ -53,6 +49,10 @@ public class MulticastReifier extends ProcessorReifier<MulticastDefinition> {
             List<Processor> list = new ArrayList<>(1);
             list.add(answer);
             answer = createCompositeProcessor(list);
+        }
+        // set disabled on the multicast (and not on a single output, which it wraps)
+        if (answer instanceof DisabledAware da) {
+            da.setDisabled(isDisabled(camelContext, definition));
         }
         return answer;
     }
@@ -91,7 +91,7 @@ public class MulticastReifier extends ProcessorReifier<MulticastDefinition> {
         AggregationStrategy strategy = definition.getAggregationStrategyBean();
         String ref = parseString(definition.getAggregationStrategy());
         if (strategy == null && ref != null) {
-            Object aggStrategy = lookupByName(ref);
+            Object aggStrategy = lookupByName(ref, AggregationStrategy.class);
             if (aggStrategy == null) {
                 aggStrategy = lookupByNameAndType(ref, AggregationStrategy.class);
             }
@@ -127,11 +127,6 @@ public class MulticastReifier extends ProcessorReifier<MulticastDefinition> {
             strategy = new UseLatestAggregationStrategy();
         }
         CamelContextAware.trySetCamelContext(strategy, camelContext);
-
-        if (parseBoolean(definition.getShareUnitOfWork(), false)) {
-            // wrap strategy in share unit of work
-            strategy = new ShareUnitOfWorkAggregationStrategy(strategy);
-        }
 
         return strategy;
     }

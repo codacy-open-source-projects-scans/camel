@@ -22,7 +22,11 @@ import org.apache.camel.spi.ExchangeFactory;
  * Pooled {@link Exchange} which contains the methods and APIs that are not intended for Camel end users but used
  * internally by Camel for optimizing memory footprint by reusing exchanges created by {@link Consumer}s via
  * {@link ExchangeFactory}.
+ *
+ * @since      3.9
+ * @deprecated Exchange pooling is deprecated and will be removed in a future release.
  */
+@Deprecated(since = "4.23.0")
 public interface PooledExchange extends Exchange {
 
     /**

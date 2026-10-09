@@ -17,6 +17,7 @@
 package org.apache.camel.component.platform.http.main.authentication;
 
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.auth.JWTOptions;
 import io.vertx.ext.auth.authentication.AuthenticationProvider;
 import io.vertx.ext.auth.jwt.JWTAuth;
 import io.vertx.ext.auth.jwt.JWTAuthOptions;
@@ -27,6 +28,7 @@ import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig.
 import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig.AuthenticationHandlerFactory;
 import org.apache.camel.main.HttpManagementServerConfigurationProperties;
 import org.apache.camel.main.HttpServerConfigurationProperties;
+import org.apache.camel.util.ObjectHelper;
 
 public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer {
 
@@ -38,6 +40,9 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
         String path = resolveAuthenticationPath(properties.getAuthenticationPath(), properties.getPath());
         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
 
+        assertIssuerOrAudienceConfigured(properties.getJwtAudience(), properties.getJwtIssuer(),
+                properties.isJwtAllowMissingIssuerAndAudience(), "camel.server");
+
         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
         entry.setPath(path);
         entry.setAuthenticationHandlerFactory(new AuthenticationHandlerFactory() {
@@ -48,13 +53,20 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
                 return JWTAuthHandler.create(authProvider, realm);
             }
         });
-        entry.setAuthenticationProviderFactory(vertx -> JWTAuth.create(
-                vertx,
-                new JWTAuthOptions(
-                        new JsonObject().put("keyStore", new JsonObject()
-                                .put("type", properties.getJwtKeystoreType())
-                                .put("path", properties.getJwtKeystorePath())
-                                .put("password", properties.getJwtKeystorePassword())))));
+
+        entry.setAuthenticationProviderFactory(vertx -> {
+            JWTAuthOptions jwtAuthOptions = new JWTAuthOptions(
+                    new JsonObject().put("keyStore", new JsonObject()
+                            .put("type", properties.getJwtKeystoreType())
+                            .put("path", properties.getJwtKeystorePath())
+                            .put("password", properties.getJwtKeystorePassword())));
+
+            JWTOptions jwtOptions = buildJwtOptions(properties.getJwtAudience(), properties.getJwtIssuer());
+            if (jwtOptions != null) {
+                jwtAuthOptions.setJWTOptions(jwtOptions);
+            }
+            return JWTAuth.create(vertx, jwtAuthOptions);
+        });
 
         authenticationConfig.getEntries().add(entry);
         authenticationConfig.setEnabled(true);
@@ -68,6 +80,9 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
         String path = resolveAuthenticationPath(properties.getAuthenticationPath(), properties.getPath());
         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
 
+        assertIssuerOrAudienceConfigured(properties.getJwtAudience(), properties.getJwtIssuer(),
+                properties.isJwtAllowMissingIssuerAndAudience(), "camel.management");
+
         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
         entry.setPath(path);
         entry.setAuthenticationHandlerFactory(new AuthenticationHandlerFactory() {
@@ -78,15 +93,66 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
                 return JWTAuthHandler.create(authProvider, realm);
             }
         });
-        entry.setAuthenticationProviderFactory(vertx -> JWTAuth.create(
-                vertx,
-                new JWTAuthOptions(
-                        new JsonObject().put("keyStore", new JsonObject()
-                                .put("type", properties.getJwtKeystoreType())
-                                .put("path", properties.getJwtKeystorePath())
-                                .put("password", properties.getJwtKeystorePassword())))));
+
+        entry.setAuthenticationProviderFactory(vertx -> {
+            JWTAuthOptions jwtAuthOptions = new JWTAuthOptions(
+                    new JsonObject().put("keyStore", new JsonObject()
+                            .put("type", properties.getJwtKeystoreType())
+                            .put("path", properties.getJwtKeystorePath())
+                            .put("password", properties.getJwtKeystorePassword())));
+
+            JWTOptions jwtOptions = buildJwtOptions(properties.getJwtAudience(), properties.getJwtIssuer());
+            if (jwtOptions != null) {
+                jwtAuthOptions.setJWTOptions(jwtOptions);
+            }
+            return JWTAuth.create(vertx, jwtAuthOptions);
+        });
 
         authenticationConfig.getEntries().add(entry);
         authenticationConfig.setEnabled(true);
+    }
+
+    /**
+     * A JWT authenticator built without an issuer or an audience only verifies the token signature and the exp/nbf
+     * claims, which is weaker than the configuration suggests. Fail closed unless that was asked for explicitly.
+     */
+    private static void assertIssuerOrAudienceConfigured(
+            String audience, String issuer, boolean allowMissing, String configPrefix) {
+        if (allowMissing) {
+            return;
+        }
+        if (ObjectHelper.isEmpty(audience) && ObjectHelper.isEmpty(issuer)) {
+            throw new IllegalArgumentException(
+                    "JWT authentication requires " + configPrefix + ".jwtIssuer or " + configPrefix
+                                               + ".jwtAudience to be configured, otherwise tokens are only checked for"
+                                               + " signature and expiry. Set " + configPrefix
+                                               + ".jwtAllowMissingIssuerAndAudience=true to opt out.");
+        }
+    }
+
+    private static JWTOptions buildJwtOptions(String audience, String issuer) {
+
+        boolean isAudienceEmpty = ObjectHelper.isEmpty(audience);
+        boolean isIssuerEmpty = ObjectHelper.isEmpty(issuer);
+
+        if (isAudienceEmpty && isIssuerEmpty) {
+            return null;
+        }
+
+        JWTOptions options = new JWTOptions();
+
+        if (!isAudienceEmpty) {
+            for (String a : audience.split(",")) {
+                if (ObjectHelper.isNotEmpty(a)) {
+                    options.addAudience(a.trim());
+                }
+            }
+        }
+
+        if (!isIssuerEmpty) {
+            options.setIssuer(issuer);
+        }
+
+        return options;
     }
 }

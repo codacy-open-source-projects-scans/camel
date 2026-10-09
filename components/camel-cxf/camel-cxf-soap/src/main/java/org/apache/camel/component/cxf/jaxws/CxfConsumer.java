@@ -18,11 +18,17 @@ package org.apache.camel.component.cxf.jaxws;
 
 import java.lang.reflect.Method;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import jakarta.xml.ws.WebFault;
 
+import javax.xml.namespace.QName;
+
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import org.apache.camel.AsyncCallback;
 import org.apache.camel.ExchangePattern;
@@ -30,23 +36,25 @@ import org.apache.camel.ExchangeTimedOutException;
 import org.apache.camel.Processor;
 import org.apache.camel.Suspendable;
 import org.apache.camel.component.cxf.common.CxfBinding;
+import org.apache.camel.component.cxf.common.CxfPayload;
 import org.apache.camel.component.cxf.common.DataFormat;
 import org.apache.camel.component.cxf.common.UnitOfWorkCloserInterceptor;
 import org.apache.camel.component.cxf.common.message.CxfConstants;
 import org.apache.camel.support.DefaultConsumer;
 import org.apache.camel.util.ObjectHelper;
+import org.apache.cxf.binding.soap.SoapFault;
 import org.apache.cxf.continuations.Continuation;
 import org.apache.cxf.continuations.ContinuationProvider;
 import org.apache.cxf.endpoint.Server;
 import org.apache.cxf.frontend.ServerFactoryBean;
 import org.apache.cxf.interceptor.Fault;
+import org.apache.cxf.logging.FaultListener;
 import org.apache.cxf.message.Exchange;
 import org.apache.cxf.message.FaultMode;
 import org.apache.cxf.message.Message;
 import org.apache.cxf.phase.Phase;
 import org.apache.cxf.service.invoker.Invoker;
 import org.apache.cxf.service.model.BindingOperationInfo;
-import org.apache.cxf.transport.MessageObserver;
 import org.apache.cxf.ws.addressing.ContextUtils;
 import org.apache.cxf.ws.addressing.EndpointReferenceType;
 import org.slf4j.Logger;
@@ -60,6 +68,8 @@ import org.slf4j.LoggerFactory;
 public class CxfConsumer extends DefaultConsumer implements Suspendable {
 
     private static final Logger LOG = LoggerFactory.getLogger(CxfConsumer.class);
+    // skips the default logging of a fault by CXF
+    private static final FaultListener NO_FAULT_LOGGING = (exception, description, message) -> false;
 
     private Server server;
     private CxfEndpoint cxfEndpoint;
@@ -86,11 +96,6 @@ public class CxfConsumer extends DefaultConsumer implements Suspendable {
         if (ObjectHelper.isNotEmpty(cxfEndpoint.getPublishedEndpointUrl())) {
             ret.getEndpoint().getEndpointInfo().setProperty("publishedEndpointUrl", cxfEndpoint.getPublishedEndpointUrl());
         }
-
-        final MessageObserver originalOutFaultObserver = ret.getEndpoint().getOutFaultObserver();
-        ret.getEndpoint().setOutFaultObserver(message -> {
-            originalOutFaultObserver.onMessage(message);
-        });
 
         // setup the UnitOfWorkCloserInterceptor for OneWayMessageProcessor
         ret.getEndpoint().getInInterceptors().add(new UnitOfWorkCloserInterceptor(Phase.POST_INVOKE, true));
@@ -150,6 +155,9 @@ public class CxfConsumer extends DefaultConsumer implements Suspendable {
 
     private class CxfConsumerInvoker implements Invoker {
 
+        private static final String COMPLETED = "org.apache.camel.component.cxf.jaxws.completed";
+        private static final String MUTED_FAULT_MESSAGE = "Exchange processing failed";
+
         private final CxfEndpoint endpoint;
 
         CxfConsumerInvoker(CxfEndpoint endpoint) {
@@ -163,11 +171,34 @@ public class CxfConsumer extends DefaultConsumer implements Suspendable {
             Continuation continuation;
             if (!endpoint.isSynchronous() && isAsyncInvocationSupported(cxfExchange)
                     && (continuation = getContinuation(cxfExchange)) != null) {
+                // a resumed continuation belongs to a request that is in flight and must complete
+                if (continuation.isNew()) {
+                    rejectIfSuspended(cxfExchange);
+                }
                 LOG.trace("Calling the Camel async processors.");
                 return asyncInvoke(cxfExchange, continuation);
             } else {
+                rejectIfSuspended(cxfExchange);
                 LOG.trace("Calling the Camel sync processors.");
                 return syncInvoke(cxfExchange);
+            }
+        }
+
+        // a suspended consumer (suspended route, graceful shutdown) does not accept new requests, like the HTTP
+        // consumers, which answer 503
+        private void rejectIfSuspended(Exchange cxfExchange) {
+            if (isSuspendingOrSuspended()) {
+                LOG.debug("Consumer suspended, cannot service request");
+                // CXF logs a fault it does not expect at WARN level with its stack trace (PhaseInterceptorChain),
+                // unless a FaultListener of the message says otherwise: a rejected request is expected while
+                // suspended (e.g. every request during a graceful shutdown under load), so it is only logged above
+                Message in = cxfExchange.getInMessage();
+                if (in != null) {
+                    in.put(FaultListener.class.getName(), NO_FAULT_LOGGING);
+                }
+                Fault fault = new Fault(new IllegalStateException("Service unavailable: the consumer is suspended"));
+                fault.setStatusCode(503);
+                throw fault;
             }
         }
 
@@ -179,8 +210,11 @@ public class CxfConsumer extends DefaultConsumer implements Suspendable {
                 if (continuation.isNew()) {
                     final org.apache.camel.Exchange camelExchange = prepareCamelExchange(cxfExchange);
 
-                    // Now we don't set up the timeout value
                     LOG.trace("Suspending continuation of exchangeId: {}", camelExchange.getExchangeId());
+
+                    // guard so exactly one of {timeout, async completion} owns the response and UoW lifecycle
+                    final AtomicBoolean completed = new AtomicBoolean(false);
+                    cxfExchange.put(COMPLETED, completed);
 
                     // The continuation could be called before the suspend is called
                     continuation.suspend(cxfEndpoint.getContinuationTimeout());
@@ -192,9 +226,16 @@ public class CxfConsumer extends DefaultConsumer implements Suspendable {
                         public void done(boolean doneSync) {
                             // make sure the continuation resume will not be called before the suspend method in other thread
                             synchronized (continuation) {
-                                LOG.trace("Resuming continuation of exchangeId: {}", camelExchange.getExchangeId());
-                                // resume processing after both, sync and async callbacks
-                                continuation.resume();
+                                if (completed.compareAndSet(false, true)) {
+                                    LOG.trace("Resuming continuation of exchangeId: {}", camelExchange.getExchangeId());
+                                    // resume processing after both, sync and async callbacks
+                                    continuation.resume();
+                                } else {
+                                    // timeout already sent the response; close the UoW now that the worker has finished
+                                    LOG.trace("Timeout already handled response for exchangeId: {}; closing UoW",
+                                            camelExchange.getExchangeId());
+                                    CxfConsumer.this.doneUoW(camelExchange);
+                                }
                             }
                         }
                     });
@@ -209,16 +250,23 @@ public class CxfConsumer extends DefaultConsumer implements Suspendable {
                     }
 
                 } else if (continuation.isTimeout() || !continuation.isResumed() && !continuation.isPending()) {
-                    org.apache.camel.Exchange camelExchange = (org.apache.camel.Exchange) continuation.getObject();
-                    try {
-                        if (!continuation.isPending()) {
-                            camelExchange.setException(
-                                    new ExchangeTimedOutException(camelExchange, cxfEndpoint.getContinuationTimeout()));
+                    AtomicBoolean completed = (AtomicBoolean) cxfExchange.get(COMPLETED);
+                    if (completed != null && completed.compareAndSet(false, true)) {
+                        org.apache.camel.Exchange camelExchange = (org.apache.camel.Exchange) continuation.getObject();
+                        try {
+                            if (!continuation.isPending()) {
+                                camelExchange.setException(
+                                        new ExchangeTimedOutException(camelExchange, cxfEndpoint.getContinuationTimeout()));
+                            }
+                            setResponseBack(cxfExchange, camelExchange);
+                            // detach so UnitOfWorkCloserInterceptor won't close UoW;
+                            // the late async callback will close it after the worker finishes
+                            cxfExchange.put(org.apache.camel.Exchange.class, null);
+                        } catch (Exception ex) {
+                            cxfExchange.put(org.apache.camel.Exchange.class, null);
+                            CxfConsumer.this.doneUoW(camelExchange);
+                            throw ex;
                         }
-                        setResponseBack(cxfExchange, camelExchange);
-                    } catch (Exception ex) {
-                        CxfConsumer.this.doneUoW(camelExchange);
-                        throw ex;
                     }
                 }
             }
@@ -338,18 +386,43 @@ public class CxfConsumer extends DefaultConsumer implements Suspendable {
         }
 
         private void checkFailure(org.apache.camel.Exchange camelExchange, Exchange cxfExchange) throws Fault {
-            final Throwable t = extractThrowable(camelExchange);
+            // an exception set on the exchange is a route failure; one carried in the body is a fault the route
+            // chose to return, and stays part of the contract either way
+            final Throwable routeFailure = camelExchange.getException();
+            final Throwable t = routeFailure != null ? routeFailure : extractFromBody(camelExchange, null);
 
             if (t != null) {
                 cxfExchange.getInMessage().put(FaultMode.class, FaultMode.UNCHECKED_APPLICATION_FAULT);
                 if (t instanceof Fault fault) {
                     handleFault(cxfExchange, fault);
+                } else if (routeFailure != null && isMuted(t)) {
+                    buildFaultFromThrowable(mutedThrowable());
                 } else {
                     // This is not a CXF Fault. Build the CXF Fault manually.
                     buildFaultFromThrowable(t);
                 }
 
             }
+        }
+
+        /**
+         * Only an <em>undeclared</em> route failure is muted. An exception the service contract declares - annotated
+         * {@code @WebFault} - is what a SOAP client is written against, so suppressing it would break the contract
+         * rather than protect anything.
+         */
+        private boolean isMuted(Throwable t) {
+            return ((CxfEndpoint) getEndpoint()).isMuteException()
+                    && t.getClass().getAnnotation(WebFault.class) == null;
+        }
+
+        /**
+         * Carries no class name, no message and no stack trace of the route's exception: CXF copies the message into
+         * the SOAP faultstring, and can be configured to put the stack trace in the fault detail.
+         */
+        private static Throwable mutedThrowable() {
+            Exception muted = new Exception(MUTED_FAULT_MESSAGE);
+            muted.setStackTrace(new StackTraceElement[0]);
+            return muted;
         }
 
         private static void buildFaultFromThrowable(Throwable t) {
@@ -389,21 +462,92 @@ public class CxfConsumer extends DefaultConsumer implements Suspendable {
             throw t;
         }
 
-        private static Throwable extractThrowable(org.apache.camel.Exchange camelExchange) {
-            Throwable t = camelExchange.getException();
-            if (t == null) {
-                // SOAP faults can be stored as exceptions as message body (to be backwards compatible)
-                t = extractFromBody(camelExchange, t);
-            }
-            return t;
-        }
-
+        /**
+         * SOAP faults can be stored as exceptions as message body (to be backwards compatible).
+         */
         private static Throwable extractFromBody(org.apache.camel.Exchange camelExchange, Throwable t) {
             Object body = camelExchange.getMessage().getBody();
             if (body instanceof Throwable throwable) {
                 t = throwable;
+            } else if (body instanceof CxfPayload<?> payload) {
+                // Check if the CxfPayload contains a SOAP Fault element set directly as body
+                t = extractFaultFromPayload(payload);
             }
             return t;
+        }
+
+        /**
+         * Detects a SOAP Fault element inside a CxfPayload body and converts it to a proper SoapFault. This handles the
+         * case where a route sets a CxfPayload containing a raw {@code <soap:Fault>} XML element directly on the
+         * message body, ensuring it is routed through CXF's standard fault handling path rather than the normal
+         * response path.
+         */
+        private static SoapFault extractFaultFromPayload(CxfPayload<?> payload) {
+            List<Element> elements = payload.getBody();
+            if (elements == null || elements.size() != 1) {
+                return null;
+            }
+            Element element = elements.get(0);
+            if (!"Fault".equals(element.getLocalName())) {
+                return null;
+            }
+            String nsUri = element.getNamespaceURI();
+            if (!"http://schemas.xmlsoap.org/soap/envelope/".equals(nsUri)
+                    && !"http://www.w3.org/2003/05/soap-envelope".equals(nsUri)) {
+                return null;
+            }
+
+            // Extract faultcode, faultstring, and detail from the Fault element
+            String faultString = null;
+            QName faultCode = null;
+            Element detail = null;
+
+            NodeList children = element.getChildNodes();
+            for (int i = 0; i < children.getLength(); i++) {
+                Node child = children.item(i);
+                if (child.getNodeType() != Node.ELEMENT_NODE) {
+                    continue;
+                }
+                Element childElem = (Element) child;
+                String localName = childElem.getLocalName();
+                if ("faultcode".equals(localName) || "Code".equals(localName)) {
+                    faultCode = parseFaultCode(childElem);
+                } else if ("faultstring".equals(localName) || "Reason".equals(localName)) {
+                    faultString = childElem.getTextContent();
+                } else if ("detail".equals(localName) || "Detail".equals(localName)) {
+                    detail = childElem;
+                }
+            }
+
+            if (faultCode == null) {
+                faultCode = new QName(nsUri, "Server");
+            }
+            SoapFault fault = new SoapFault(faultString != null ? faultString : "", faultCode);
+            if (detail != null) {
+                fault.setDetail(detail);
+            }
+            return fault;
+        }
+
+        private static QName parseFaultCode(Element codeElement) {
+            String codeText = codeElement.getTextContent();
+            if (codeText == null || codeText.isBlank()) {
+                return null;
+            }
+            codeText = codeText.trim();
+            int colonIndex = codeText.indexOf(':');
+            if (colonIndex > 0) {
+                String prefix = codeText.substring(0, colonIndex);
+                String localPart = codeText.substring(colonIndex + 1);
+                // Look up from codeElement (not faultElement) so that namespace declarations
+                // on the <faultcode>/<Code> element itself are also visible
+                String namespaceURI = codeElement.lookupNamespaceURI(prefix);
+                if (namespaceURI != null) {
+                    return new QName(namespaceURI, localPart, prefix);
+                }
+                return new QName("", localPart, prefix);
+            }
+            return new QName("", codeText);
         }
 
     }

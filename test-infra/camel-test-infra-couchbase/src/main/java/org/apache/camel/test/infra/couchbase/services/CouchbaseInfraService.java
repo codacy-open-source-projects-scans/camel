@@ -19,6 +19,8 @@ package org.apache.camel.test.infra.couchbase.services;
 
 import org.apache.camel.test.infra.common.services.InfrastructureService;
 
+// Credentials are intentional test-only fixtures for testcontainer services — no security risk
+@SuppressWarnings("java:S2068")
 public interface CouchbaseInfraService extends InfrastructureService {
 
     String getConnectionString();
@@ -62,5 +64,9 @@ public interface CouchbaseInfraService extends InfrastructureService {
 
     default String connectionBase() {
         return String.format("couchbase:%s://%s:%d", protocol(), hostname(), port());
+    }
+
+    default String uiUrl() {
+        return String.format("http://%s:%d", hostname(), port());
     }
 }

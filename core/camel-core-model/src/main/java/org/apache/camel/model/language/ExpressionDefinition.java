@@ -45,7 +45,7 @@ import org.apache.camel.util.ObjectHelper;
 /**
  * A useful base class for an expression
  */
-@Metadata(label = "language", title = "Expression")
+@Metadata(label = "language", title = "Expression", description = "A useful base class for an expression")
 @XmlRootElement
 @XmlType(name = "expression") // must be named expression
 @XmlAccessorType(XmlAccessType.FIELD)
@@ -62,13 +62,23 @@ public class ExpressionDefinition
 
     @XmlAttribute
     @XmlID
+    @Metadata(description = "The id of this node.")
     private String id;
     @XmlValue
-    @Metadata(required = true)
+    @Metadata(required = true, description = "The expression value in your chosen language syntax.")
     private String expression;
     @XmlAttribute
-    @Metadata(label = "advanced", defaultValue = "true", javaType = "java.lang.Boolean")
+    @Metadata(label = "advanced", defaultValue = "true", javaType = "java.lang.Boolean",
+              description = "Whether to trim the source code to remove leading and trailing whitespaces and line breaks.")
     private String trim;
+    @XmlAttribute
+    @Metadata(label = "advanced", defaultValue = "false", javaType = "java.lang.Boolean",
+              description = "Whether a result of the expression that is a String starting with resource: is loaded as a resource"
+                            + " and its content becomes the result, e.g. a script that returns resource:file:order.json or"
+                            + " resource:classpath:templates/order.json (a name without a scheme is a classpath resource)."
+                            + " Off by default; the resource: prefix on the expression text itself is always resolved."
+                            + " Applies to the expression used as a value, not as a predicate.")
+    private String resolveResource;
 
     public ExpressionDefinition() {
     }
@@ -80,6 +90,7 @@ public class ExpressionDefinition
         this.id = source.id;
         this.expression = source.expression;
         this.trim = source.trim;
+        this.resolveResource = source.resolveResource;
     }
 
     public ExpressionDefinition(String expression) {
@@ -98,6 +109,7 @@ public class ExpressionDefinition
         this.id = builder.id;
         this.expression = builder.expression;
         this.trim = builder.trim;
+        this.resolveResource = builder.resolveResource;
         this.predicate = builder.predicate;
     }
 
@@ -143,9 +155,6 @@ public class ExpressionDefinition
         return expression;
     }
 
-    /**
-     * The expression value in your chosen language syntax
-     */
     public void setExpression(String expression) {
         this.expression = expression;
     }
@@ -154,9 +163,6 @@ public class ExpressionDefinition
         return id;
     }
 
-    /**
-     * Sets the id of this node
-     */
     public void setId(String value) {
         this.id = value;
     }
@@ -178,10 +184,6 @@ public class ExpressionDefinition
         return expressionType;
     }
 
-    /**
-     * Allows derived classes and DSLs to set a lazily created expressionType instance such as if using the
-     * {@link org.apache.camel.builder.ExpressionClause}
-     */
     @Override
     public void setExpressionType(ExpressionDefinition expressionType) {
         this.expressionType = expressionType;
@@ -191,19 +193,18 @@ public class ExpressionDefinition
         return trim;
     }
 
-    /**
-     * Whether to trim the source code to remove leading and trailing whitespaces and line breaks.
-     *
-     * For example when using DSLs where the source will span across multiple lines and there may be additional line
-     * breaks at both the beginning and end.
-     */
     public void setTrim(String trim) {
         this.trim = trim;
     }
 
-    /**
-     * Returns some descriptive text to describe this node
-     */
+    public String getResolveResource() {
+        return resolveResource;
+    }
+
+    public void setResolveResource(String resolveResource) {
+        this.resolveResource = resolveResource;
+    }
+
     public String getLabel() {
         Predicate predicate = getPredicate();
         if (predicate != null) {
@@ -295,6 +296,7 @@ public class ExpressionDefinition
         private String id;
         private String expression;
         private String trim;
+        private String resolveResource;
         private Predicate predicate;
 
         /**
@@ -324,6 +326,28 @@ public class ExpressionDefinition
          */
         public T trim(boolean trim) {
             this.trim = Boolean.toString(trim);
+            return (T) this;
+        }
+
+        /**
+         * Whether a result of the expression that is a String starting with <tt>resource:</tt> is loaded as a resource
+         * and its content becomes the result, such as a script that returns <tt>resource:file:order.json</tt> or
+         * <tt>resource:classpath:templates/order.json</tt> (a name without a scheme is a classpath resource). Off by
+         * default; the <tt>resource:</tt> prefix on the expression text itself is always resolved.
+         */
+        public T resolveResource(String resolveResource) {
+            this.resolveResource = resolveResource;
+            return (T) this;
+        }
+
+        /**
+         * Whether a result of the expression that is a String starting with <tt>resource:</tt> is loaded as a resource
+         * and its content becomes the result, such as a script that returns <tt>resource:file:order.json</tt> or
+         * <tt>resource:classpath:templates/order.json</tt> (a name without a scheme is a classpath resource). Off by
+         * default; the <tt>resource:</tt> prefix on the expression text itself is always resolved.
+         */
+        public T resolveResource(boolean resolveResource) {
+            this.resolveResource = Boolean.toString(resolveResource);
             return (T) this;
         }
 

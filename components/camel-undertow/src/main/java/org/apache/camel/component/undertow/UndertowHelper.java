@@ -18,13 +18,15 @@ package org.apache.camel.component.undertow;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.util.Map;
 
 import io.undertow.util.HttpString;
 import io.undertow.util.Methods;
 import org.apache.camel.Exchange;
-import org.apache.camel.RuntimeExchangeException;
 import org.apache.camel.util.CollectionHelper;
+import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.URISupport;
 import org.apache.camel.util.UnsafeUriCharactersEncoder;
@@ -51,12 +53,8 @@ public final class UndertowHelper {
             uri = endpoint.getHttpURI().toASCIIString();
         }
 
-        // resolve placeholders in uri
-        try {
-            uri = exchange.getContext().resolvePropertyPlaceholders(uri);
-        } catch (Exception e) {
-            throw new RuntimeExchangeException("Cannot resolve property placeholders with uri: " + uri, exchange, e);
-        }
+        // NOTE: property placeholders are resolved at build time on the endpoint uri written in the route,
+        // never on the message-supplied override headers (see CAMEL-24282 / CAMEL-24418)
 
         // append HTTP_PATH to HTTP_URI if it is provided in the header
         String path = exchange.getIn().getHeader(UndertowConstants.HTTP_PATH, String.class);
@@ -126,12 +124,8 @@ public final class UndertowHelper {
         String queryString = exchange.getIn().getHeader(UndertowConstants.HTTP_QUERY, String.class);
         // We need also check the HTTP_URI header query part
         String uriString = exchange.getIn().getHeader(UndertowConstants.HTTP_URI, String.class);
-        // resolve placeholders in uriString
-        try {
-            uriString = exchange.getContext().resolvePropertyPlaceholders(uriString);
-        } catch (Exception e) {
-            throw new RuntimeExchangeException("Cannot resolve property placeholders with uri: " + uriString, exchange, e);
-        }
+        // NOTE: property placeholders are resolved at build time on the endpoint uri written in the route,
+        // never on this header value, which carries message content (see CAMEL-24282 / CAMEL-24418)
         if (uriString != null) {
             URI uri = new URI(uriString);
             queryString = uri.getQuery();
@@ -181,6 +175,50 @@ public final class UndertowHelper {
         } else {
             return httpURI;
         }
+    }
+
+    /**
+     * Encodes a String body to send over HTTP in the charset that the Content-Type of the message declares, so that the
+     * bytes match the header.
+     *
+     * @param  body        the String body
+     * @param  contentType the Content-Type of the request or response being sent, may be <tt>null</tt>
+     * @return             the encoded body, or <tt>null</tt> when the Content-Type declares no charset or one that is
+     *                     not supported, in which case the body is converted as before (UTF-8 by default)
+     */
+    public static ByteBuffer toByteBuffer(String body, String contentType) {
+        String name = getCharsetFromContentType(contentType);
+        if (name == null) {
+            return null;
+        }
+        try {
+            return ByteBuffer.wrap(body.getBytes(Charset.forName(name)));
+        } catch (IllegalArgumentException e) {
+            // unknown or unsupported charset in the Content-Type
+            return null;
+        }
+    }
+
+    /**
+     * Gets the charset parameter of a Content-Type. The parameter name is case-insensitive (RFC 9110), as in the other
+     * HTTP components. Unlike {@link IOHelper#getCharsetNameFromContentType(String)}, there is no default: a
+     * Content-Type without a charset gives <tt>null</tt>.
+     *
+     * @param  contentType the Content-Type, may be <tt>null</tt>
+     * @return             the charset name, or <tt>null</tt> when the Content-Type declares no charset
+     */
+    public static String getCharsetFromContentType(String contentType) {
+        if (contentType == null) {
+            return null;
+        }
+        for (String parameter : contentType.split(";")) {
+            parameter = parameter.trim();
+            if (parameter.regionMatches(true, 0, "charset=", 0, 8)) {
+                String name = IOHelper.normalizeCharset(parameter.substring(8));
+                return ObjectHelper.isEmpty(name) ? null : name;
+            }
+        }
+        return null;
     }
 
 }

@@ -358,7 +358,7 @@ public interface ChunkEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final ChunkHeaderNameBuilder INSTANCE = new ChunkHeaderNameBuilder();
+        public static final ChunkHeaderNameBuilder INSTANCE = new ChunkHeaderNameBuilder();
 
         /**
          * A URI for the template resource to use instead of the endpoint
@@ -371,7 +371,7 @@ public interface ChunkEndpointBuilderFactory {
          * @return the name of the header {@code ChunkResourceUri}.
          */
         public String chunkResourceUri() {
-            return "ChunkResourceUri";
+            return "CamelChunkResourceUri";
         }
         /**
          * The template to use instead of the endpoint configured.
@@ -383,7 +383,7 @@ public interface ChunkEndpointBuilderFactory {
          * @return the name of the header {@code ChunkTemplate}.
          */
         public String chunkTemplate() {
-            return "ChunkTemplate";
+            return "CamelChunkTemplate";
         }
     }
     static ChunkEndpointBuilder endpointBuilder(String componentName, String path) {

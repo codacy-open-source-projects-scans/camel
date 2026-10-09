@@ -44,7 +44,7 @@ import org.jboss.forge.roaster.model.source.FieldSource;
 import org.jboss.forge.roaster.model.source.JavaClassSource;
 
 /**
- * Prepares camel-jbang by generating Camel JBang configuration metadata for tooling support.
+ * Prepares camel-jbang by generating Camel CLI configuration metadata for tooling support.
  */
 @Mojo(name = "prepare-jbang", defaultPhase = LifecyclePhase.PROCESS_CLASSES, threadSafe = true,
       requiresDependencyResolution = ResolutionScope.COMPILE)
@@ -59,14 +59,14 @@ public class PrepareCamelJBangMojo extends AbstractGeneratorMojo {
     }
 
     /**
-     * Parses the Camel JBang configuration java source file.
+     * Parses the Camel CLI configuration java source file.
      */
     public static List<JBangModel.JBangOptionModel> parseConfigurationSource(String fileName) throws IOException {
         return parseConfigurationSource(new File(fileName));
     }
 
     /**
-     * Parses the Camel JBang configuration java source file.
+     * Parses the Camel CLI configuration java source file.
      */
     public static List<JBangModel.JBangOptionModel> parseConfigurationSource(File file) throws IOException {
         final List<JBangModel.JBangOptionModel> answer = new ArrayList<>();
@@ -83,6 +83,10 @@ public class PrepareCamelJBangMojo extends AbstractGeneratorMojo {
                 String desc = as.getStringValue("description");
                 String label = as.getStringValue("label");
                 boolean secret = "true".equals(as.getStringValue("secret"));
+                String security = as.getStringValue("security");
+                if ("secret".equals(security) && !secret) {
+                    secret = true;
+                }
                 boolean required = "true".equals(as.getStringValue("required"));
                 boolean deprecated = clazz.getAnnotation(Deprecated.class) != null || f.getAnnotation(Deprecated.class) != null;
                 JBangModel.JBangOptionModel model = new JBangModel.JBangOptionModel();
@@ -93,6 +97,7 @@ public class PrepareCamelJBangMojo extends AbstractGeneratorMojo {
                 model.setSourceType(null);
                 model.setDeprecated(deprecated);
                 model.setSecret(secret);
+                model.setSecurity(security);
                 model.setRequired(required);
                 List<String> enums = null;
                 String text = as.getStringValue("enums");
@@ -142,7 +147,7 @@ public class PrepareCamelJBangMojo extends AbstractGeneratorMojo {
         final List<JBangModel.JBangOptionModel> data = new ArrayList<>();
 
         for (File file : files) {
-            getLog().info("Parsing Camel JBang configuration file: " + file);
+            getLog().info("Parsing Camel CLI configuration file: " + file);
             try {
                 List<JBangModel.JBangOptionModel> model = parseConfigurationSource(file);
                 data.addAll(model);
@@ -158,7 +163,7 @@ public class PrepareCamelJBangMojo extends AbstractGeneratorMojo {
             JBangModel model = new JBangModel();
             model.getOptions().addAll(data);
             model.getGroups().add(new JBangModel.JBangGroupModel(
-                    "camel.jbang", "Camel JBang configurations", null));
+                    "camel.jbang", "Camel CLI configurations", null));
             String json = JsonMapper.createJsonSchema(model);
 
             updateResource(outFolder.toPath(), "META-INF/camel-jbang-configuration-metadata.json", json);

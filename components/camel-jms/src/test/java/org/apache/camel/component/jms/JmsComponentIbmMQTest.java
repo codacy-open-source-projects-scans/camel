@@ -16,6 +16,8 @@
  */
 package org.apache.camel.component.jms;
 
+import java.util.concurrent.TimeUnit;
+
 import jakarta.jms.ConnectionFactory;
 
 import org.apache.camel.CamelContext;
@@ -27,15 +29,18 @@ import org.apache.camel.test.infra.ibmmq.services.IbmMQServiceFactory;
 import org.apache.camel.test.junit6.CamelTestSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
+import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static org.apache.camel.component.jms.JmsComponent.jmsComponentAutoAcknowledge;
 
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Flaky on GitHub Actions")
+@DisabledIfSystemProperty(named = "ci.env.name", matches = "github.com",
+                          disabledReason = "The IBM MQ image on icr.io is not reliably pullable from GitHub Actions")
+@DisabledOnOs(architectures = { "aarch64", "aarch_64" }, disabledReason = "IBM MQ has no Linux ARM64 native image")
 public class JmsComponentIbmMQTest extends CamelTestSupport {
 
     @RegisterExtension
-    public static IbmMQService service = IbmMQServiceFactory.createService();
+    public static IbmMQService service = IbmMQServiceFactory.createSingletonService();
 
     @Test
     public void testSend() throws Exception {
@@ -44,9 +49,11 @@ public class JmsComponentIbmMQTest extends CamelTestSupport {
         resultEndpoint.message(0).header("cheese").isEqualTo(123);
         resultEndpoint.message(0).body().isEqualTo("Hello there!");
 
+        JmsTestHelper.waitForJmsConsumerRoutes(context, "consumer");
+
         template.sendBodyAndHeader("direct:start", "Hello world", "cheese", 123);
 
-        MockEndpoint.assertIsSatisfied(context);
+        MockEndpoint.assertIsSatisfied(context, 20, TimeUnit.SECONDS);
     }
 
     @Override
@@ -58,6 +65,7 @@ public class JmsComponentIbmMQTest extends CamelTestSupport {
                         .to("jms:queue:DEV.QUEUE.1");
 
                 from("jms:queue:DEV.QUEUE.1")
+                        .routeId("consumer")
                         .process(exchange -> exchange.getIn().setBody("Hello there!"))
                         .to("mock:result");
             }

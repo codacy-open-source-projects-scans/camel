@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.apache.camel</groupId>
         <artifactId>camel-as2-parent</artifactId>
-        <version>4.21.0-SNAPSHOT</version>
+        <version>4.23.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>camel-as2-api</artifactId>
@@ -94,9 +94,14 @@
         </dependency>
         <!-- added for binary content transfer encoding test because Camel AS2 client doesn't support binary currently -->
         <dependency>
-            <groupId>com.helger.as2</groupId>
-            <artifactId>as2-lib</artifactId>
-            <version>${as2-lib-version}</version>
+            <groupId>com.helger.phase2</groupId>
+            <artifactId>phase2-lib</artifactId>
+            <version>${phase2-lib-version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

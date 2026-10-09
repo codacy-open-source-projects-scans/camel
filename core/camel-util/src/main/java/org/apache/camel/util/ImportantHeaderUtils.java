@@ -30,6 +30,7 @@ public final class ImportantHeaderUtils {
                     "CamelAggregatedCorrelationKey",
                     "CamelAggregatedSize",
                     "CamelAsteriskEventName",
+                    "CamelAtmosphereWebsocketEventType",
                     "CamelExecExitValue",
                     "CamelFileLength",
                     "CamelFileName",
@@ -37,6 +38,11 @@ public final class ImportantHeaderUtils {
                     "CamelFtpReplyString",
                     "CamelHttpResponseCode",
                     "CamelHttpResponseText",
+                    "CamelKafkaKey",
+                    "CamelKafkaOffset",
+                    "CamelKafkaPartition",
+                    "CamelKafkaShareDeliveryCount",
+                    "CamelKafkaTopic",
                     "CamelMqttTopic",
                     "CamelNatsDeliveryCounter",
                     "CamelNatsSID",
@@ -51,10 +57,6 @@ public final class ImportantHeaderUtils {
                     "CamelSqlUpdateCount",
                     "CamelSshExitValue",
                     "Content-Type",
-                    "kafka.KEY",
-                    "kafka.OFFSET",
-                    "kafka.PARTITION",
-                    "kafka.TOPIC",
                     "websocket.eventType"
             // IMPORTANT-HEADER-KEYS: END
             )));

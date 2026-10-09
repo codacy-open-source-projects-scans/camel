@@ -42,6 +42,7 @@ import org.apache.camel.component.file.FileComponent;
 import org.apache.camel.component.file.GenericFile;
 import org.apache.camel.component.file.GenericFileEndpoint;
 import org.apache.camel.component.file.GenericFileExist;
+import org.apache.camel.component.file.GenericFileHelper;
 import org.apache.camel.component.file.GenericFileOperationFailedException;
 import org.apache.camel.component.file.remote.FtpConstants;
 import org.apache.camel.component.file.remote.RemoteFile;
@@ -65,6 +66,7 @@ import org.apache.sshd.common.cipher.Cipher;
 import org.apache.sshd.common.compression.BuiltinCompressions;
 import org.apache.sshd.common.config.keys.OpenSshCertificate;
 import org.apache.sshd.common.kex.BuiltinDHFactories;
+import org.apache.sshd.common.kex.KexProposalOption;
 import org.apache.sshd.common.kex.KeyExchangeFactory;
 import org.apache.sshd.common.signature.BuiltinSignatures;
 import org.apache.sshd.common.signature.Signature;
@@ -743,10 +745,10 @@ public class MinaSftpOperations implements RemoteFileOperations<SftpRemoteFile> 
         try {
             // Get the negotiated compression algorithms (client-to-server and server-to-client)
             String c2sCompression = session.getKexState() != null
-                    ? session.getNegotiatedKexParameter(org.apache.sshd.common.kex.KexProposalOption.C2SCOMP)
+                    ? session.getNegotiatedKexParameter(KexProposalOption.C2SCOMP)
                     : null;
             String s2cCompression = session.getKexState() != null
-                    ? session.getNegotiatedKexParameter(org.apache.sshd.common.kex.KexProposalOption.S2CCOMP)
+                    ? session.getNegotiatedKexParameter(KexProposalOption.S2CCOMP)
                     : null;
 
             boolean compressionNone = "none".equals(c2sCompression) || "none".equals(s2cCompression);
@@ -828,7 +830,20 @@ public class MinaSftpOperations implements RemoteFileOperations<SftpRemoteFile> 
                     LOG.debug("Error closing session: {}", e.getMessage(), e);
                 }
             }
+            // Stop the SSH client to release NIO2 and timer daemon threads (CAMEL-24273).
+            // Without this, each connect/disconnect cycle leaks threads that accumulate
+            // until the system's thread limit is exhausted.
+            if (sshClient != null) {
+                try {
+                    sshClient.stop();
+                } catch (Exception e) {
+                    LOG.debug("Error stopping SSH client: {}", e.getMessage(), e);
+                }
+            }
         } finally {
+            sftpClient = null;
+            session = null;
+            sshClient = null;
             lock.unlock();
         }
     }
@@ -1224,8 +1239,15 @@ public class MinaSftpOperations implements RemoteFileOperations<SftpRemoteFile> 
 
         try {
             String relativeName = file.getRelativeFilePath();
+            File localWorkDir = local;
             temp = new File(local, relativeName + ".inprogress");
             local = new File(local, relativeName);
+
+            // ensure the local work file stays within the local work directory (CAMEL-23765)
+            if (endpoint.isJailStartingDirectory()) {
+                GenericFileHelper.jailToLocalWorkDirectory(temp, localWorkDir);
+                GenericFileHelper.jailToLocalWorkDirectory(local, localWorkDir);
+            }
             local.mkdirs();
 
             if (temp.exists()) {

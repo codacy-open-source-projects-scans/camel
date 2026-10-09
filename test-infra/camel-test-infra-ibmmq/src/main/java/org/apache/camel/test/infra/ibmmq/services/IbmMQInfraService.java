@@ -21,6 +21,8 @@ import org.apache.camel.test.infra.common.services.InfrastructureService;
 /**
  * Test infra service for IBM MQ.
  */
+// Credentials are intentional test-only fixtures for testcontainer services — no security risk
+@SuppressWarnings("java:S2068")
 public interface IbmMQInfraService extends InfrastructureService {
 
     String channel();
@@ -47,5 +49,9 @@ public interface IbmMQInfraService extends InfrastructureService {
 
     default String brokerUrl() {
         return String.format("amqp://%s:%d", host(), port());
+    }
+
+    default String uiUrl() {
+        return null;
     }
 }

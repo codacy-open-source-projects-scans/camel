@@ -16,6 +16,8 @@
  */
 package org.apache.camel;
 
+import org.apache.camel.spi.Metadata;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -43,14 +45,23 @@ import org.slf4j.LoggerFactory;
  * market data prices; where old values are of little use.
  * <p/>
  * If an implementation also implements {@link org.apache.camel.Service} then any
- * <a href="http://camel.apache.org/eip">EIP</a> that allowing configuring a {@link AggregationStrategy} will invoke the
- * {@link org.apache.camel.Service#start()} and {@link org.apache.camel.Service#stop()} to control the lifecycle aligned
- * with the EIP itself.
+ * <a href="https://camel.apache.org/eip">EIP</a> that allowing configuring a {@link AggregationStrategy} will invoke
+ * the {@link org.apache.camel.Service#start()} and {@link org.apache.camel.Service#stop()} to control the lifecycle
+ * aligned with the EIP itself.
  * <p/>
  * If an implementation also implements {@link org.apache.camel.CamelContextAware} then any
- * <a href="http://camel.apache.org/eip">EIP</a> that allowing configuring a {@link AggregationStrategy} will inject the
- * {@link org.apache.camel.CamelContext} prior to using the aggregation strategy.
+ * <a href="https://camel.apache.org/eip">EIP</a> that allowing configuring a {@link AggregationStrategy} will inject
+ * the {@link org.apache.camel.CamelContext} prior to using the aggregation strategy.
+ *
+ * @since 3.0
  */
+@Metadata(label = "api",
+          description = "Merges the incoming exchange into the aggregated one, in aggregate, split, multicast, "
+                        + "recipientList, enrich and pollEnrich. On the first call oldExchange is null: return "
+                        + "newExchange, do not touch oldExchange. Return the exchange to keep, usually oldExchange with "
+                        + "the merged body; do not create a new one. The built-in strategies "
+                        + "(GroupedBodyAggregationStrategy, StringAggregationStrategy, ...) are catalog beans "
+                        + "(camel_catalog_find kind=bean term=AggregationStrategy).")
 public interface AggregationStrategy {
 
     /**
@@ -64,7 +75,17 @@ public interface AggregationStrategy {
      * @return             a combined composite of the two exchanges, return either the old or new exchange from the
      *                     input parameters; favor returning the old exchange whenever possible)
      */
-    Exchange aggregate(Exchange oldExchange, Exchange newExchange);
+    @Nullable
+    @Metadata(label = "api",
+              important = true,
+              description = "The aggregated exchange: when oldExchange is null (first message) return newExchange, else "
+                            + "merge newExchange into oldExchange and return oldExchange. A failed newExchange has its error "
+                            + "in newExchange.getException().",
+              examples = {
+                      "if (oldExchange == null) { return newExchange; } "
+                           + "oldExchange.getMessage().setBody(oldExchange.getMessage().getBody(String.class) "
+                           + "+ newExchange.getMessage().getBody(String.class)); return oldExchange;" })
+    Exchange aggregate(@Nullable Exchange oldExchange, @Nullable Exchange newExchange);
 
     /**
      * Aggregates an old and new exchange together to create a single combined exchange.
@@ -82,7 +103,8 @@ public interface AggregationStrategy {
      * @return               a combined composite of the two exchanges, return either the old or new exchange from the
      *                       input parameters; favor returning the old exchange whenever possible)
      */
-    default Exchange aggregate(Exchange oldExchange, Exchange newExchange, Exchange inputExchange) {
+    default @Nullable Exchange aggregate(
+            @Nullable Exchange oldExchange, @Nullable Exchange newExchange, Exchange inputExchange) {
         return aggregate(oldExchange, newExchange);
     }
 
@@ -105,7 +127,7 @@ public interface AggregationStrategy {
      * @return             <tt>true</tt> to complete current group and start a new group, or <tt>false</tt> to keep
      *                     using current
      */
-    default boolean preComplete(Exchange oldExchange, Exchange newExchange) {
+    default boolean preComplete(@Nullable Exchange oldExchange, @Nullable Exchange newExchange) {
         return false;
     }
 

@@ -16,7 +16,10 @@
  */
 package org.apache.camel.component.platform.http;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.apache.camel.AsyncEndpoint;
 import org.apache.camel.Category;
@@ -25,9 +28,12 @@ import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import org.apache.camel.Producer;
 import org.apache.camel.component.platform.http.cookie.CookieConfiguration;
+import org.apache.camel.component.platform.http.spi.OAuthPlatformHttpSecurityHandler;
 import org.apache.camel.component.platform.http.spi.PlatformHttpConsumer;
 import org.apache.camel.component.platform.http.spi.PlatformHttpEngine;
+import org.apache.camel.component.platform.http.spi.PlatformHttpSecurityHandler;
 import org.apache.camel.http.base.HttpHeaderFilterStrategy;
+import org.apache.camel.http.base.OAuthHttpSecuritySupport;
 import org.apache.camel.spi.EndpointServiceLocation;
 import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.spi.HeaderFilterStrategyAware;
@@ -37,6 +43,7 @@ import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriPath;
 import org.apache.camel.support.DefaultEndpoint;
 import org.apache.camel.util.MimeTypeHelper;
+import org.apache.camel.util.ObjectHelper;
 
 /**
  * Expose HTTP endpoints using the HTTP server available in the current platform.
@@ -49,7 +56,12 @@ public class PlatformHttpEndpoint extends DefaultEndpoint
 
     private static final String PROXY_PATH = "proxy";
 
-    private static final Set<String> COMMON_HTTP_REQUEST_HEADERS = Set.of(
+    /**
+     * Request headers that must not be echoed back on the response. Compared without regard to case: exchange headers
+     * keep the casing of the inbound request, and HTTP/2 requires field names to be lower case, so an exact-case lookup
+     * against these canonical spellings never matches an HTTP/2 request.
+     */
+    private static final Set<String> COMMON_HTTP_REQUEST_HEADERS = caseInsensitiveSet(
             "A-IM",
             "Accept",
             "Accept-Charset",
@@ -79,6 +91,12 @@ public class PlatformHttpEndpoint extends DefaultEndpoint
             "TE",
             "User-Agent");
 
+    private static Set<String> caseInsensitiveSet(String... names) {
+        Set<String> set = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        set.addAll(Arrays.asList(names));
+        return Collections.unmodifiableSet(set);
+    }
+
     @UriPath(description = "The path under which this endpoint serves the HTTP requests, for proxy use 'proxy'")
     @Metadata(required = true)
     private final String path;
@@ -86,6 +104,18 @@ public class PlatformHttpEndpoint extends DefaultEndpoint
               description = "Whether or not the consumer should try to find a target consumer "
                             + "by matching the URI prefix if no exact match is found.")
     private boolean matchOnUriPrefix;
+    @UriParam(label = "consumer", defaultValue = "false",
+              description = "Whether to strip the registered consumer path from CamelHttpPath after the request has been"
+                            + " matched, so the exchange sees the path relative to this consumer instead of the full raw"
+                            + " request path. Combined with the http producer's bridgeEndpoint option this allows building a"
+                            + " path-based reverse proxy without manual header manipulation, e.g. a route on"
+                            + " platform-http:/reverse-proxy with matchOnUriPrefix=true and stripUriPrefix=true bridged to"
+                            + " http://backend forwards /reverse-proxy/get to http://backend/get instead of"
+                            + " http://backend/reverse-proxy/get. CamelHttpUri and CamelHttpUrl are left untouched. The other"
+                            + " HTTP consumers (camel-servlet, camel-jetty, camel-netty-http, camel-undertow) already behave"
+                            + " this way by default; this option brings platform-http in line with them without changing its"
+                            + " default behavior.")
+    private boolean stripUriPrefix;
     @UriParam(label = "consumer", description = "A comma separated list of HTTP methods to serve, e.g. GET,POST ."
                                                 + " If no methods are specified, all methods will be served.")
     private String httpMethodRestrict;
@@ -136,6 +166,18 @@ public class PlatformHttpEndpoint extends DefaultEndpoint
     @UriParam(label = "advanced,consumer",
               description = "The period in milliseconds after which the request should be timed out.")
     private long requestTimeout;
+    @UriParam(label = "consumer,security", displayName = "OAuth Profile",
+              description = "OAuth profile name for validating incoming Authorization: Bearer tokens. "
+                            + "When set, the request is authenticated before the route is processed. "
+                            + "This requires an OAuthTokenValidationFactory; camel-oauth provides the default implementation.")
+    private String oauthProfile;
+    @UriParam(label = "consumer,advanced", defaultValue = "platform", enums = "platform,camel",
+              description = "Who answers requests that match no registered operation when using rest-dsl contract-first"
+                            + " (such as the rest-openapi component): the HTTP layer (platform) or Camel via the route"
+                            + " (camel). When set to camel, a catch-all is registered so unmatched requests are routed to"
+                            + " Camel. Currently supported by camel-platform-http-vertx (Camel Main, Quarkus) and the"
+                            + " Spring Boot platform-http-starter.")
+    private String unmatchedRequestHandling = "platform";
 
     public PlatformHttpEndpoint(String uri, String remaining, Component component) {
         super(uri, component);
@@ -169,15 +211,32 @@ public class PlatformHttpEndpoint extends DefaultEndpoint
 
     @Override
     public DefaultPlatformHttpConsumer createConsumer(Processor processor) throws Exception {
-        DefaultPlatformHttpConsumer consumer = new DefaultPlatformHttpConsumer(this, processor);
+        PlatformHttpSecurityHandler securityHandler = createSecurityHandler();
+        DefaultPlatformHttpConsumer consumer = new DefaultPlatformHttpConsumer(this, processor, securityHandler);
         configureConsumer(consumer);
         return consumer;
     }
 
     protected PlatformHttpConsumer createPlatformHttpConsumer(Processor processor) throws Exception {
-        PlatformHttpConsumer consumer = getOrCreateEngine().createConsumer(this, processor);
+        return createPlatformHttpConsumer(processor, null);
+    }
+
+    protected PlatformHttpConsumer createPlatformHttpConsumer(
+            Processor processor, PlatformHttpSecurityHandler securityHandler)
+            throws Exception {
+        PlatformHttpConsumer consumer = securityHandler != null
+                ? getOrCreateEngine().createConsumer(this, processor, securityHandler)
+                : getOrCreateEngine().createConsumer(this, processor);
         configureConsumer(consumer);
         return consumer;
+    }
+
+    protected PlatformHttpSecurityHandler createSecurityHandler() throws Exception {
+        if (ObjectHelper.isNotEmpty(oauthProfile)) {
+            return new OAuthPlatformHttpSecurityHandler(
+                    OAuthHttpSecuritySupport.create(getCamelContext(), oauthProfile));
+        }
+        return null;
     }
 
     @Override
@@ -229,6 +288,21 @@ public class PlatformHttpEndpoint extends DefaultEndpoint
 
     public void setMatchOnUriPrefix(boolean matchOnUriPrefix) {
         this.matchOnUriPrefix = matchOnUriPrefix;
+    }
+
+    public boolean isStripUriPrefix() {
+        return stripUriPrefix;
+    }
+
+    /**
+     * If the option is true, the registered consumer path is stripped from the CamelHttpPath header after the request
+     * has been matched, so the exchange sees the path relative to this consumer instead of the full raw request path.
+     * This is useful in reverse proxy applications built with the http producer's bridgeEndpoint option, where the
+     * downstream target should receive the path with this consumer's own prefix removed. CamelHttpUri and CamelHttpUrl
+     * are left untouched.
+     */
+    public void setStripUriPrefix(boolean stripUriPrefix) {
+        this.stripUriPrefix = stripUriPrefix;
     }
 
     public String getHttpMethodRestrict() {
@@ -301,8 +375,16 @@ public class PlatformHttpEndpoint extends DefaultEndpoint
                 : getComponent().getOrCreateEngine();
     }
 
+    /**
+     * Whether this endpoint is the documented {@code platform-http:proxy} endpoint.
+     * <p>
+     * Compared for equality rather than as a prefix. Proxy mode makes {@link #getPath()} return {@code "/"}, turning
+     * the endpoint into a catch-all, and the consumer then takes the forward target from the request's own {@code Host}
+     * header - so a path that merely begins with "proxy", such as {@code proxyStats}, would become a forwarding proxy
+     * its author never asked for.
+     */
     public boolean isHttpProxy() {
-        return this.path.startsWith(PROXY_PATH);
+        return PROXY_PATH.equals(this.path);
     }
 
     public boolean isReturnHttpRequestHeaders() {
@@ -343,5 +425,21 @@ public class PlatformHttpEndpoint extends DefaultEndpoint
 
     public void setRequestTimeout(long requestTimeout) {
         this.requestTimeout = requestTimeout;
+    }
+
+    public String getOauthProfile() {
+        return oauthProfile;
+    }
+
+    public void setOauthProfile(String oauthProfile) {
+        this.oauthProfile = oauthProfile;
+    }
+
+    public String getUnmatchedRequestHandling() {
+        return unmatchedRequestHandling;
+    }
+
+    public void setUnmatchedRequestHandling(String unmatchedRequestHandling) {
+        this.unmatchedRequestHandling = unmatchedRequestHandling;
     }
 }

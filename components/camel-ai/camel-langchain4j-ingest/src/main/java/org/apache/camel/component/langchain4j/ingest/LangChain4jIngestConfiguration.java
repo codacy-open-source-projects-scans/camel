@@ -1,0 +1,342 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.camel.component.langchain4j.ingest;
+
+import dev.langchain4j.data.document.DocumentSplitter;
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import org.apache.camel.Predicate;
+import org.apache.camel.RuntimeCamelException;
+import org.apache.camel.spi.Configurer;
+import org.apache.camel.spi.IdempotentRepository;
+import org.apache.camel.spi.Metadata;
+import org.apache.camel.spi.UriParam;
+import org.apache.camel.spi.UriParams;
+
+/**
+ * Configuration for the LangChain4j Ingest component.
+ */
+@Configurer
+@UriParams
+public class LangChain4jIngestConfiguration implements Cloneable {
+
+    @UriParam(description = "The EmbeddingStore to write segments to. When not set, the single bean of that type"
+                            + " in the registry is used; zero or several beans fail the endpoint start with an"
+                            + " error naming this option.")
+    @Metadata(autowired = true)
+    private EmbeddingStore<TextSegment> embeddingStore;
+
+    @UriParam(description = "The EmbeddingModel to embed segments with. When not set, the single bean of that type"
+                            + " in the registry is used; zero or several beans fail the endpoint start with an"
+                            + " error naming this option.")
+    @Metadata(autowired = true)
+    private EmbeddingModel embeddingModel;
+
+    @UriParam(description = "Maximum size of one segment, in characters.", defaultValue = "500")
+    private int maxSegmentSize = 500;
+
+    @UriParam(description = "How much of the previous segment each segment repeats, in characters. Overlap keeps a"
+                            + " sentence split across a boundary retrievable from either side.",
+              defaultValue = "50")
+    private int maxOverlapSize = 50;
+
+    @UriParam(description = "How many segments are embedded per request to the embedding model. Providers with"
+                            + " generous per-request limits ingest large documents faster with a bigger batch; a"
+                            + " batch carries at most embeddingBatchSize x maxSegmentSize characters, so tune the"
+                            + " two together against the provider's token limits.",
+              defaultValue = "32")
+    private int embeddingBatchSize = 32;
+
+    @UriParam(description = "Maximum size of one document: characters of the text about to be split, or bytes of"
+                            + " a media body with modality=media; 0, the default, means no limit. The pipeline holds a document in memory whole, so"
+                            + " the cap is the protection against oversized - on a consumer-fed pipeline,"
+                            + " attacker-sized - payloads. An oversized document fails the exchange cleanly and,"
+                            + " with a repository configured, releases its dedup claim. With modality=media the size a file"
+                            + " consumer announces in CamelFileLength is checked before the body is read.",
+              defaultValue = "0", label = "advanced")
+    private int maxDocumentSize;
+
+    @UriParam(description = "The DocumentSplitter deciding how a document becomes segments, referenced as #bean:name"
+                            + " - LangChain4j ships alternatives beside the default recursive one. When set,"
+                            + " maxSegmentSize and maxOverlapSize are ignored (they parameterize the default splitter"
+                            + " only). Segments returned without the identity metadata are re-stamped, so a custom"
+                            + " splitter cannot break citation. Not looked up by type on purpose - an application may"
+                            + " hold unrelated splitters.",
+              label = "advanced")
+    private DocumentSplitter documentSplitter;
+
+    @UriParam(description = "Name of the header carrying the document id, such as CamelAwsS3Key for an S3 consumer"
+                            + " or CamelKafkaKey for a Kafka one. The CamelLangChain4jIngestDocumentId exchange"
+                            + " property, when set, takes precedence - a route that parses documents captures the"
+                            + " id into that property before the parse, so a document cannot forge its own"
+                            + " identity. An exchange without an id fails.",
+              defaultValue = LangChain4jIngestHeaders.DOCUMENT_ID)
+    private String documentIdHeader = LangChain4jIngestHeaders.DOCUMENT_ID;
+
+    @UriParam(description = "Comma-separated list of Ant-style patterns the document id must match to be ingested."
+                            + " A non-matching delivery is answered with a filtered result, before the dedup claim"
+                            + " and without reading the body. When not set, every id is accepted. Matching is"
+                            + " case-sensitive, and a pattern only matches an id that agrees with it on a leading"
+                            + " path separator - an id derived from an absolute path needs a pattern starting with"
+                            + " one. See the component documentation for pattern examples.",
+              label = "filter")
+    private String includeId;
+
+    @UriParam(description = "Comma-separated list of Ant-style patterns for document ids to skip. Exclusion wins"
+                            + " over includeId. A matching delivery is answered with a filtered result, before the"
+                            + " dedup claim and without reading the body. Matching is case-sensitive, and a pattern"
+                            + " only matches an id that agrees with it on a leading path separator. See the"
+                            + " component documentation for pattern examples.",
+              label = "filter")
+    private String excludeId;
+
+    @UriParam(description = "Minimum size of one document in characters (bytes with modality=media); 0, the"
+                            + " default, means no minimum. A"
+                            + " shorter document - boilerplate too small to carry retrievable content - is answered"
+                            + " with a filtered result instead of being written, and releases its dedup claim like"
+                            + " a blank one.",
+              defaultValue = "0", label = "filter")
+    private int minDocumentSize;
+
+    @UriParam(description = "A Predicate deciding whether a delivery is ingested, referenced as #bean:name and"
+                            + " evaluated with the message body available. A rejected delivery is answered with a"
+                            + " filtered result and releases its dedup claim. Runs after the id patterns and after"
+                            + " the dedup claim, so a duplicate is answered skipped without the filter being"
+                            + " evaluated. The body is still as the consumer delivered it, a file or stream say, not"
+                            + " yet read as text or bytes. Not looked up by type on purpose -"
+                            + " an application may hold unrelated predicates.",
+              label = "filter")
+    private Predicate documentFilter;
+
+    @UriParam(description = "The IdempotentRepository remembering already ingested document ids, referenced as"
+                            + " #bean:name. When set, a delivery whose id was already written is answered with a"
+                            + " skipped result instead of being re-ingested: first write wins per id. A blank"
+                            + " document releases its claim, so a later, populated delivery under the same id"
+                            + " still ingests. The claim is eager: a duplicate racing an in-flight first delivery"
+                            + " is answered skipped even if that delivery then fails - with an at-least-once source"
+                            + " the skipped duplicate is acknowledged and the failed original may be the only other"
+                            + " copy, so pair eager deduplication with a source that redelivers on failure. Not"
+                            + " looked up by type on purpose - an application may hold unrelated idempotent"
+                            + " repositories. The repository is started but never stopped by the endpoint (it may"
+                            + " be shared); a persistent repository's lifecycle belongs to whoever created it.",
+              label = "advanced")
+    private IdempotentRepository idempotentRepository;
+
+    @UriParam(description = "What the message body is. text, the default, is read as a String, split into segments"
+                            + " and embedded segment by segment. media is read as bytes and embedded whole, as one"
+                            + " vector: audio, an image, video or a PDF, told apart by the MIME type, each needing"
+                            + " an embedding model whose supportedContentTypes() include the matching type - the"
+                            + " endpoint refuses to start with a text-only model. In media mode the splitter options"
+                            + " and embeddingBatchSize do not apply, documentSplitter must not be set, and"
+                            + " maxDocumentSize and minDocumentSize count bytes.",
+              defaultValue = "TEXT")
+    private IngestModality modality = IngestModality.TEXT;
+
+    @UriParam(description = "MIME type of a media body, such as audio/wav or image/png, handed to the embedding"
+                            + " model; matched case-insensitively, parameters after a semicolon are dropped. When"
+                            + " not set, it is derived from the document id's file extension through Camel's own"
+                            + " MIME table (the x- audio variants rewritten to their registered form): wav, mp3,"
+                            + " flac, ogg, opus, m4a, aac, aiff, png, jpg, gif, webp, mp4, mov, webm (video), pdf"
+                            + " and every other extension the table knows. A document whose type cannot be"
+                            + " determined, whose type is no medium (text/plain, say), or whose medium the model"
+                            + " does not declare, fails the exchange before its dedup claim and before its body is"
+                            + " read. Only valid with modality=media - with"
+                            + " modality=text the endpoint refuses to start, the option being a sign that"
+                            + " modality=media was forgotten.")
+    private String contentType;
+
+    public EmbeddingStore<TextSegment> getEmbeddingStore() {
+        return embeddingStore;
+    }
+
+    /**
+     * Sets the embedding store to write to.
+     */
+    public void setEmbeddingStore(EmbeddingStore<TextSegment> embeddingStore) {
+        this.embeddingStore = embeddingStore;
+    }
+
+    public EmbeddingModel getEmbeddingModel() {
+        return embeddingModel;
+    }
+
+    /**
+     * Sets the embedding model to embed with.
+     */
+    public void setEmbeddingModel(EmbeddingModel embeddingModel) {
+        this.embeddingModel = embeddingModel;
+    }
+
+    public int getMaxSegmentSize() {
+        return maxSegmentSize;
+    }
+
+    /**
+     * Sets the maximum size of one segment, in characters.
+     */
+    public void setMaxSegmentSize(int maxSegmentSize) {
+        this.maxSegmentSize = maxSegmentSize;
+    }
+
+    public int getMaxOverlapSize() {
+        return maxOverlapSize;
+    }
+
+    /**
+     * Sets how much of the previous segment each segment repeats, in characters.
+     */
+    public void setMaxOverlapSize(int maxOverlapSize) {
+        this.maxOverlapSize = maxOverlapSize;
+    }
+
+    public int getEmbeddingBatchSize() {
+        return embeddingBatchSize;
+    }
+
+    /**
+     * Sets how many segments are embedded per request to the embedding model.
+     */
+    public void setEmbeddingBatchSize(int embeddingBatchSize) {
+        this.embeddingBatchSize = embeddingBatchSize;
+    }
+
+    public int getMaxDocumentSize() {
+        return maxDocumentSize;
+    }
+
+    /**
+     * Sets the maximum size of one document in characters, or bytes with modality=media; 0 means no limit.
+     */
+    public void setMaxDocumentSize(int maxDocumentSize) {
+        this.maxDocumentSize = maxDocumentSize;
+    }
+
+    public DocumentSplitter getDocumentSplitter() {
+        return documentSplitter;
+    }
+
+    /**
+     * Sets the splitter deciding how a document becomes segments, replacing the default recursive one.
+     */
+    public void setDocumentSplitter(DocumentSplitter documentSplitter) {
+        this.documentSplitter = documentSplitter;
+    }
+
+    public String getDocumentIdHeader() {
+        return documentIdHeader;
+    }
+
+    /**
+     * Sets the name of the header carrying the document id.
+     */
+    public void setDocumentIdHeader(String documentIdHeader) {
+        this.documentIdHeader = documentIdHeader;
+    }
+
+    public String getIncludeId() {
+        return includeId;
+    }
+
+    /**
+     * Sets the Ant-style patterns the document id must match to be ingested.
+     */
+    public void setIncludeId(String includeId) {
+        this.includeId = includeId;
+    }
+
+    public String getExcludeId() {
+        return excludeId;
+    }
+
+    /**
+     * Sets the Ant-style patterns for document ids to skip; exclusion wins over inclusion.
+     */
+    public void setExcludeId(String excludeId) {
+        this.excludeId = excludeId;
+    }
+
+    public int getMinDocumentSize() {
+        return minDocumentSize;
+    }
+
+    /**
+     * Sets the minimum size of one document in characters, or bytes with modality=media; 0 means no minimum.
+     */
+    public void setMinDocumentSize(int minDocumentSize) {
+        this.minDocumentSize = minDocumentSize;
+    }
+
+    public Predicate getDocumentFilter() {
+        return documentFilter;
+    }
+
+    /**
+     * Sets the predicate deciding whether a delivery is ingested.
+     */
+    public void setDocumentFilter(Predicate documentFilter) {
+        this.documentFilter = documentFilter;
+    }
+
+    public IdempotentRepository getIdempotentRepository() {
+        return idempotentRepository;
+    }
+
+    /**
+     * Sets the repository remembering already ingested document ids.
+     */
+    public void setIdempotentRepository(IdempotentRepository idempotentRepository) {
+        this.idempotentRepository = idempotentRepository;
+    }
+
+    public IngestModality getModality() {
+        return modality;
+    }
+
+    /**
+     * Sets what the message body is: text, split and embedded segment by segment, or media (audio, an image, video or a
+     * PDF, told apart by the MIME type), embedded whole.
+     */
+    public void setModality(IngestModality modality) {
+        this.modality = modality;
+    }
+
+    public String getContentType() {
+        return contentType;
+    }
+
+    /**
+     * Sets the MIME type of a media body; when not set, it is derived from the document id's file extension.
+     */
+    public void setContentType(String contentType) {
+        this.contentType = contentType;
+    }
+
+    // ************************
+    //
+    // Clone
+    //
+    // ************************
+
+    public LangChain4jIngestConfiguration copy() {
+        try {
+            return (LangChain4jIngestConfiguration) super.clone();
+        } catch (CloneNotSupportedException e) {
+            throw new RuntimeCamelException(e);
+        }
+    }
+}

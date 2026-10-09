@@ -68,7 +68,7 @@ public class CouchDbConsumer extends ScheduledBatchPollingConsumer implements Re
         exchange.getIn().setHeader(CouchDbConstants.HEADER_SEQ, seq);
         exchange.getIn().setHeader(CouchDbConstants.HEADER_DOC_ID, id);
         exchange.getIn().setHeader(CouchDbConstants.HEADER_METHOD, deleted ? "DELETE" : "UPDATE");
-        exchange.getIn().setBody(new JsonParser().parseString(changesResultItem.toString()));
+        exchange.getIn().setBody(JsonParser.parseString(changesResultItem.toString()));
         return exchange;
     }
 
@@ -78,19 +78,17 @@ public class CouchDbConsumer extends ScheduledBatchPollingConsumer implements Re
                 = couchClient.pollChanges(endpoint.getStyle(), since, endpoint.getHeartbeat(), getMaxMessagesPerPoll());
 
         for (ChangesResultItem changesResultItem : changesResultResponse.getResult().getResults()) {
-            if (changesResultItem.isDeleted() != null) {
-                if (changesResultItem.isDeleted() && !endpoint.isDeletes()) {
-                    continue;
-                }
-                if (!changesResultItem.isDeleted() && !endpoint.isUpdates()) {
-                    continue;
-                }
+            // CouchDB sets deleted only on the changes of deleted documents
+            boolean deleted = Boolean.TRUE.equals(changesResultItem.isDeleted());
+            if (deleted ? !endpoint.isDeletes() : !endpoint.isUpdates()) {
+                // move past the skipped change, or a page of skipped changes is polled again forever
+                since = changesResultItem.getSeq();
+                continue;
             }
 
             lastSequence = changesResultItem.getSeq();
 
-            Exchange exchange = this.createExchange(lastSequence, changesResultItem.getId(), changesResultItem,
-                    changesResultItem.isDeleted() == null ? false : changesResultItem.isDeleted());
+            Exchange exchange = this.createExchange(lastSequence, changesResultItem.getId(), changesResultItem, deleted);
 
             if (LOG.isTraceEnabled()) {
                 LOG.trace("Created exchange [exchange={}, _id={}, seq={}", exchange, changesResultItem.getId(), lastSequence);

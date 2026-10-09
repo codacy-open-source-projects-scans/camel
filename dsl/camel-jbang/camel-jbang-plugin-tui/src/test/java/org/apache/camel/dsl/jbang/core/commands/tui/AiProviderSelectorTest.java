@@ -1,0 +1,232 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.camel.dsl.jbang.core.commands.tui;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import org.apache.camel.dsl.jbang.core.commands.LlmClient;
+import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Verifies the provider-choice ordering/de-duplication rules and provider-name validation that used to live as private
+ * methods on {@link AiPanel}, now independently testable on {@link AiProviderSelector}.
+ */
+@Isolated
+class AiProviderSelectorTest {
+
+    private final AiProviderSelector selector = new AiProviderSelector();
+    private String originalHome;
+
+    @AfterEach
+    void tearDown() {
+        if (originalHome != null) {
+            CommandLineHelper.useHomeDir(originalHome);
+        }
+    }
+
+    private void useHome(Path dir) {
+        originalHome = CommandLineHelper.getHomeDir().toString();
+        CommandLineHelper.useHomeDir(dir.toString());
+    }
+
+    @Test
+    void buildChoicesAlwaysListsAllProvidersForManualSelection(@TempDir Path tempDir) {
+        useHome(tempDir);
+
+        List<AiProviderSwitchPopup.ProviderChoice> choices = selector.buildChoices();
+
+        assertEquals(List.of("auto", "anthropic", "openai", "gemini", "ollama", "watsonx",
+                "acp:claude", "acp:codex", "acp:bob", "acp:qwen", "acp:opencode", "acp:dsh"),
+                choices.stream().map(AiProviderSwitchPopup.ProviderChoice::provider).toList(),
+                "all known providers must be offered, even without a detected API key, so they remain selectable");
+        assertTrue(choices.get(0).persistedDefault());
+    }
+
+    @Test
+    void defaultProviderIsNotDuplicated(@TempDir Path tempDir) {
+        useHome(tempDir);
+        TuiSettings settings = TuiSettings.load();
+        settings.setAiProvider("anthropic");
+        settings.save();
+
+        List<AiProviderSwitchPopup.ProviderChoice> choices = selector.buildChoices();
+
+        assertEquals(List.of("anthropic", "openai", "gemini", "ollama", "watsonx",
+                "acp:claude", "acp:codex", "acp:bob", "acp:qwen", "acp:opencode", "acp:dsh"),
+                choices.stream().map(AiProviderSwitchPopup.ProviderChoice::provider).toList(),
+                "anthropic must not be listed twice when it's already the default");
+    }
+
+    @Test
+    void ollamaDefaultIsNotDuplicated(@TempDir Path tempDir) {
+        useHome(tempDir);
+        TuiSettings settings = TuiSettings.load();
+        settings.setAiProvider("ollama");
+        settings.save();
+
+        List<AiProviderSwitchPopup.ProviderChoice> choices = selector.buildChoices();
+
+        assertEquals(List.of("ollama", "anthropic", "openai", "gemini", "watsonx",
+                "acp:claude", "acp:codex", "acp:bob", "acp:qwen", "acp:opencode", "acp:dsh"),
+                choices.stream().map(AiProviderSwitchPopup.ProviderChoice::provider).toList());
+    }
+
+    @Test
+    void watsonxDefaultIsNotDuplicated(@TempDir Path tempDir) {
+        useHome(tempDir);
+        TuiSettings settings = TuiSettings.load();
+        settings.setAiProvider("watsonx");
+        settings.save();
+
+        List<AiProviderSwitchPopup.ProviderChoice> choices = selector.buildChoices();
+
+        assertEquals(List.of("watsonx", "anthropic", "openai", "gemini", "ollama",
+                "acp:claude", "acp:codex", "acp:bob", "acp:qwen", "acp:opencode", "acp:dsh"),
+                choices.stream().map(AiProviderSwitchPopup.ProviderChoice::provider).toList());
+    }
+
+    @Test
+    void applyChoiceSetsApiTypeModelAndUrl() {
+        LlmClient client = LlmClient.create();
+
+        selector.applyChoice(client, "openai", "gpt-4o", "https://api.example.com");
+
+        assertEquals(LlmClient.ApiType.openai, client.apiType());
+        assertEquals("gpt-4o", client.model());
+    }
+
+    @Test
+    void applyChoiceLeavesApiTypeUntouchedForAutoOrBlank() {
+        LlmClient client = LlmClient.create();
+        LlmClient.ApiType before = client.apiType();
+
+        selector.applyChoice(client, "auto", null, null);
+        assertEquals(before, client.apiType());
+
+        selector.applyChoice(client, "  ", null, null);
+        assertEquals(before, client.apiType());
+    }
+
+    @Test
+    void applyChoiceAcceptsGeminiProvider() {
+        LlmClient client = LlmClient.create();
+
+        selector.applyChoice(client, "gemini", "gemini-2.0-flash", "");
+
+        assertThat(client.apiType()).isEqualTo(LlmClient.ApiType.gemini);
+        assertThat(client.model()).isEqualTo("gemini-2.0-flash");
+    }
+
+    @Test
+    void applyChoiceRejectsUnknownProviderWithActionableMessage() {
+        LlmClient client = LlmClient.create();
+
+        assertThatThrownBy(() -> selector.applyChoice(client, "bogus", null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("bogus")
+                .hasMessageContaining("gemini")
+                .hasMessageContaining("ollama")
+                .hasMessageContaining("openai")
+                .hasMessageContaining("anthropic")
+                .hasMessageContaining("watsonx");
+    }
+
+    @Test
+    void customAcpRowAppearsOnlyWhenCommandIsConfigured(@TempDir Path tempDir) {
+        useHome(tempDir);
+        assertFalse(selector.buildChoices().stream().anyMatch(c -> "acp:custom".equals(c.provider())));
+        TuiSettings settings = TuiSettings.load();
+        settings.setAiAcpCommand("npx -y pi-acp");
+        settings.save();
+        assertTrue(selector.buildChoices().stream().anyMatch(c -> "acp:custom".equals(c.provider())));
+    }
+
+    @Test
+    void acpDefaultIsListedFirstAndNotDuplicated(@TempDir Path tempDir) {
+        useHome(tempDir);
+        TuiSettings settings = TuiSettings.load();
+        settings.setAiProvider("acp:codex");
+        settings.save();
+        List<String> ids = selector.buildChoices().stream().map(AiProviderSwitchPopup.ProviderChoice::provider).toList();
+        assertEquals("acp:codex", ids.get(0));
+        assertEquals(1, ids.stream().filter("acp:codex"::equals).count());
+    }
+
+    @Test
+    void applyChoiceLeavesLlmClientUntouchedForAcpProviders() {
+        LlmClient client = LlmClient.create();
+        LlmClient.ApiType before = client.apiType();
+        selector.applyChoice(client, "acp:claude", "", "");
+        assertEquals(before, client.apiType());
+    }
+
+    @Test
+    void acpPresetResolvesCommandsAndCustomCommand(@TempDir Path tempDir) {
+        useHome(tempDir);
+        TuiSettings settings = TuiSettings.load();
+        AiProviderSelector.AcpPreset claude = selector.acpPreset("acp:claude", settings);
+        assertEquals(List.of("npx", "-y", "@agentclientprotocol/claude-agent-acp"), claude.command());
+        assertEquals("npx", claude.executable());
+        assertEquals("Claude Code (ACP)", AiProviderSelector.acpLabel("acp:claude"));
+        assertThrows(IllegalArgumentException.class, () -> selector.acpPreset("acp:custom", settings));
+        settings.setAiAcpCommand("  /opt/agent/bin/agent   --acp ");
+        AiProviderSelector.AcpPreset custom = selector.acpPreset("acp:custom", settings);
+        assertEquals(List.of("/opt/agent/bin/agent", "--acp"), custom.command());
+        assertEquals("/opt/agent/bin/agent", custom.executable());
+        assertEquals("Custom (ACP)", custom.label());
+        assertEquals("✱", claude.glyph());
+        assertEquals("●", custom.glyph());
+        assertThrows(IllegalArgumentException.class, () -> selector.acpPreset("acp:nope", settings));
+    }
+
+    @Test
+    @EnabledOnOs({ OS.LINUX, OS.MAC })
+    void resolveExecutableFindsShellButNotNonsense() {
+        assertNotNull(AiProviderSelector.resolveExecutable("sh"));
+        assertNull(AiProviderSelector.resolveExecutable("definitely-not-a-real-binary-42"));
+    }
+
+    @Test
+    void resolveExecutableReturnsTheFileItFoundIncludingACmdShim(@TempDir Path tempDir) throws Exception {
+        Path bob = Files.createFile(tempDir.resolve("fakebob"));
+        assertTrue(bob.toFile().setExecutable(true));
+        Path npx = Files.createFile(tempDir.resolve("fakenpx.cmd"));
+        assertTrue(npx.toFile().setExecutable(true));
+        String path = tempDir.toString();
+        assertEquals(bob.toString(), AiProviderSelector.resolveExecutable("fakebob", path));
+        assertEquals(npx.toString(), AiProviderSelector.resolveExecutable("fakenpx", path));
+        assertEquals(npx.toString(), AiProviderSelector.resolveExecutable(tempDir.resolve("fakenpx").toString(), path));
+        assertNull(AiProviderSelector.resolveExecutable("definitely-not-a-real-binary-42", path));
+    }
+}

@@ -30,6 +30,7 @@ import org.apache.camel.api.management.ManagedCamelContext;
 import org.apache.camel.api.management.mbean.ManagedPerformanceCounterMBean;
 import org.apache.camel.api.management.mbean.ManagedProcessorMBean;
 import org.apache.camel.api.management.mbean.ManagedRouteMBean;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.Resource;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.LoggerHelper;
@@ -39,20 +40,63 @@ import org.apache.camel.support.console.AbstractDevConsole;
 import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.StringHelper;
 import org.apache.camel.util.TimeUtils;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 import org.apache.camel.util.json.Jsoner;
 
 @DevConsole(name = "top", displayName = "Top Routes", description = "Display the top routes")
 public class TopDevConsole extends AbstractDevConsole {
 
-    /**
-     * Filters the routes and processors matching by route id, route uri, processor id, and source location
-     */
+    public record Statistics(
+            @Metadata(description = "Total number of exchanges") long exchangesTotal,
+            @Metadata(description = "Number of failed exchanges") long exchangesFailed,
+            @Metadata(description = "Number of inflight exchanges") long exchangesInflight,
+            @Metadata(description = "Mean processing time in milliseconds") long meanProcessingTime,
+            @Metadata(description = "Max processing time in milliseconds") long maxProcessingTime,
+            @Metadata(description = "Min processing time in milliseconds") long minProcessingTime,
+            @Metadata(description = "Processing time in milliseconds of the last exchange") long lastProcessingTime,
+            @Metadata(description = "Difference in processing time in milliseconds since the previous exchange") long deltaProcessingTime,
+            @Metadata(description = "Total accumulated processing time in milliseconds") long totalProcessingTime,
+            @Metadata(description = "Messages per second throughput (only present when available)") String exchangesThroughput,
+            @Metadata(description = "50th percentile processing time in milliseconds (only present when available)") Long p50ProcessingTime,
+            @Metadata(description = "95th percentile processing time in milliseconds (only present when available)") Long p95ProcessingTime,
+            @Metadata(description = "99th percentile processing time in milliseconds (only present when available)") Long p99ProcessingTime) {
+    }
+
+    public record CodeLine(
+            @Metadata(description = "The source line number") int line,
+            @Metadata(description = "Whether this is the matched line (only present when true)") Boolean match,
+            @Metadata(description = "The source code line") String code) {
+    }
+
+    public record RouteEntry(
+            @Metadata(description = "The route ID") String routeId,
+            @Metadata(description = "The route's endpoint URI") String from,
+            @Metadata(description = "The source location (only present when known)") String source,
+            @Metadata(description = "The route state") String state,
+            @Metadata(description = "Route uptime, human readable text") String uptime,
+            @Metadata(description = "Runtime statistics") Statistics statistics) {
+    }
+
+    public record ProcessorEntry(
+            @Metadata(description = "The route ID") String routeId,
+            @Metadata(description = "The processor ID") String processorId,
+            @Metadata(description = "The source location, optionally with a line number suffix (only present when known)") String location,
+            @Metadata(description = "A snippet of source code around the processor (only present when known)") List<CodeLine> code,
+            @Metadata(description = "Runtime statistics") Statistics statistics) {
+    }
+
+    public record Response(
+            @Metadata(description = "The top routes (only present when no processor path was requested)") List<RouteEntry> routes,
+            @Metadata(description = "The top processors of a route (only present when a processor path was requested)") List<ProcessorEntry> processors) {
+    }
+
+    @Metadata(label = "query",
+              description = "Filters the routes and processors matching by route id, route uri, processor id, and source location",
+              javaType = "java.lang.String")
     public static final String FILTER = "filter";
 
-    /**
-     * Limits the number of entries displayed
-     */
+    @Metadata(label = "query", description = "Limits the number of entries displayed",
+              javaType = "java.lang.Integer")
     public static final String LIMIT = "limit";
 
     public TopDevConsole() {
@@ -61,11 +105,10 @@ public class TopDevConsole extends AbstractDevConsole {
 
     @Override
     protected String doCallText(Map<String, Object> options) {
-        String path = (String) options.get(Exchange.HTTP_PATH);
+        String path = optionString(options, Exchange.HTTP_PATH);
         String subPath = path != null ? StringHelper.after(path, "/") : null;
-        String filter = (String) options.get(FILTER);
-        String limit = (String) options.get(LIMIT);
-        final int max = limit == null ? Integer.MAX_VALUE : Integer.parseInt(limit);
+        String filter = optionString(options, FILTER);
+        final int max = optionInt(options, LIMIT, Integer.MAX_VALUE);
 
         final StringBuilder sb = new StringBuilder();
         ManagedCamelContext mcc = getCamelContext().getCamelContextExtension().getContextPlugin(ManagedCamelContext.class);
@@ -92,6 +135,10 @@ public class TopDevConsole extends AbstractDevConsole {
                             String.format("%n    Delta Time: %s", TimeUtils.printDuration(mrb.getDeltaProcessingTime(), true)));
                     sb.append(
                             String.format("%n    Total Time: %s", TimeUtils.printDuration(mrb.getTotalProcessingTime(), true)));
+                    String thp = mrb.getThroughput();
+                    if (thp != null && !thp.isEmpty()) {
+                        sb.append(String.format("%n    Messages/Sec: %s", thp));
+                    }
                     sb.append("\n");
                     return null;
                 };
@@ -148,6 +195,10 @@ public class TopDevConsole extends AbstractDevConsole {
                             String.format("%n    Delta Time: %s", TimeUtils.printDuration(mpb.getDeltaProcessingTime(), true)));
                     sb.append(
                             String.format("%n    Total Time: %s", TimeUtils.printDuration(mpb.getTotalProcessingTime(), true)));
+                    String thp = mpb.getThroughput();
+                    if (thp != null && !thp.isEmpty()) {
+                        sb.append(String.format("%n    Messages/Sec: %s", thp));
+                    }
                     sb.append("\n");
                     return null;
                 };
@@ -159,51 +210,39 @@ public class TopDevConsole extends AbstractDevConsole {
     }
 
     @Override
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        String path = (String) options.get(Exchange.HTTP_PATH);
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        String path = optionString(options, Exchange.HTTP_PATH);
         String subPath = path != null ? StringHelper.after(path, "/") : null;
-        String filter = (String) options.get(FILTER);
-        String limit = (String) options.get(LIMIT);
-        final int max = limit == null ? Integer.MAX_VALUE : Integer.parseInt(limit);
+        String filter = optionString(options, FILTER);
+        final int max = optionInt(options, LIMIT, Integer.MAX_VALUE);
 
-        final JsonObject root = new JsonObject();
-        final List<JsonObject> list = new ArrayList<>();
+        List<RouteEntry> routes = null;
+        List<ProcessorEntry> processors = null;
 
         ManagedCamelContext mcc = getCamelContext().getCamelContextExtension().getContextPlugin(ManagedCamelContext.class);
         if (mcc != null) {
             if (subPath == null || subPath.isBlank()) {
+                final List<RouteEntry> list = new ArrayList<>();
                 Function<ManagedRouteMBean, Object> task = mrb -> {
-                    JsonObject jo = new JsonObject();
-                    list.add(jo);
-
-                    jo.put("routeId", mrb.getRouteId());
-                    jo.put("from", mrb.getEndpointUri());
-                    if (mrb.getSourceLocation() != null) {
-                        jo.put("source", mrb.getSourceLocation());
-                    }
-                    jo.put("state", mrb.getState());
-                    jo.put("uptime", mrb.getUptime());
-                    final JsonObject stats = getStatsObject(mrb);
-                    jo.put("statistics", stats);
+                    list.add(new RouteEntry(
+                            mrb.getRouteId(), mrb.getEndpointUri(), mrb.getSourceLocation(), mrb.getState(),
+                            mrb.getUptime(), getStatsObject(mrb)));
                     return null;
                 };
                 topRoutes(filter, max, mcc, task);
-                root.put("routes", list);
+                routes = list;
             } else {
+                final List<ProcessorEntry> list = new ArrayList<>();
                 Function<ManagedProcessorMBean, Object> task = mpb -> {
-                    JsonObject jo = new JsonObject();
-                    list.add(jo);
-
-                    jo.put("routeId", mpb.getRouteId());
-                    jo.put("processorId", mpb.getProcessorId());
                     String loc = mpb.getSourceLocation();
-                    List<JsonObject> code = new ArrayList<>();
+                    List<CodeLine> code = null;
                     if (loc != null && mpb.getSourceLineNumber() != null) {
                         int line = mpb.getSourceLineNumber();
                         try {
                             loc = LoggerHelper.stripSourceLocationLineNumber(loc);
                             Resource resource = PluginHelper.getResourceLoader(getCamelContext()).resolveResource(loc);
                             if (resource != null) {
+                                code = new ArrayList<>();
                                 LineNumberReader reader = new LineNumberReader(resource.getReader());
                                 for (int i = 1; i < line + 3; i++) {
                                     String t = reader.readLine();
@@ -211,68 +250,53 @@ public class TopDevConsole extends AbstractDevConsole {
                                         int low = line - 2;
                                         int high = line + 4;
                                         if (i >= low && i <= high) {
-                                            JsonObject c = new JsonObject();
-                                            c.put("line", i);
-                                            if (line == i) {
-                                                c.put("match", true);
-                                            }
-                                            c.put("code", Jsoner.escape(t));
-                                            code.add(c);
+                                            Boolean match = line == i ? true : null;
+                                            code.add(new CodeLine(i, match, Jsoner.escape(t)));
                                         }
                                     }
                                 }
                                 IOHelper.close(reader);
+                                if (code.isEmpty()) {
+                                    code = null;
+                                }
                             }
                             loc += ":" + mpb.getSourceLineNumber();
                         } catch (Exception e) {
                             // ignore
                         }
                     }
-                    if (loc != null) {
-                        jo.put("location", loc);
-                        if (!code.isEmpty()) {
-                            jo.put("code", code);
-                        }
-                    }
 
-                    final JsonObject stats = getStatsObject(mpb);
-                    jo.put("statistics", stats);
+                    list.add(new ProcessorEntry(
+                            mpb.getRouteId(), mpb.getProcessorId(), loc, code, getStatsObject(mpb)));
                     return null;
                 };
                 topProcessors(filter, subPath, max, mcc, task);
-                root.put("processors", list);
+                processors = list;
             }
         }
 
-        return root;
+        Response response = new Response(routes, processors);
+        return JsonRecordSupport.toJsonObject(response);
     }
 
-    private static JsonObject getStatsObject(ManagedProcessorMBean mpb) {
-        JsonObject stats = new JsonObject();
-        stats.put("exchangesTotal", mpb.getExchangesTotal());
-        stats.put("exchangesFailed", mpb.getExchangesFailed());
-        stats.put("exchangesInflight", mpb.getExchangesInflight());
-        stats.put("meanProcessingTime", mpb.getMeanProcessingTime());
-        stats.put("maxProcessingTime", mpb.getMaxProcessingTime());
-        stats.put("minProcessingTime", mpb.getMinProcessingTime());
-        stats.put("lastProcessingTime", mpb.getLastProcessingTime());
-        stats.put("deltaProcessingTime", mpb.getDeltaProcessingTime());
-        stats.put("totalProcessingTime", mpb.getTotalProcessingTime());
-        return stats;
-    }
+    private static Statistics getStatsObject(ManagedPerformanceCounterMBean mbean) {
+        String thp = mbean.getThroughput();
+        String throughput = thp != null && !thp.isEmpty() ? thp : null;
 
-    private static JsonObject getStatsObject(ManagedRouteMBean mrb) {
-        JsonObject stats = new JsonObject();
-        stats.put("exchangesTotal", mrb.getExchangesTotal());
-        stats.put("exchangesFailed", mrb.getExchangesFailed());
-        stats.put("exchangesInflight", mrb.getExchangesInflight());
-        stats.put("meanProcessingTime", mrb.getMeanProcessingTime());
-        stats.put("maxProcessingTime", mrb.getMaxProcessingTime());
-        stats.put("minProcessingTime", mrb.getMinProcessingTime());
-        stats.put("lastProcessingTime", mrb.getLastProcessingTime());
-        stats.put("deltaProcessingTime", mrb.getDeltaProcessingTime());
-        stats.put("totalProcessingTime", mrb.getTotalProcessingTime());
-        return stats;
+        Long p50 = null;
+        Long p95 = null;
+        Long p99 = null;
+        if (mbean.getProcessingTimeP50() >= 0) {
+            p50 = mbean.getProcessingTimeP50();
+            p95 = mbean.getProcessingTimeP95();
+            p99 = mbean.getProcessingTimeP99();
+        }
+
+        return new Statistics(
+                mbean.getExchangesTotal(), mbean.getExchangesFailed(), mbean.getExchangesInflight(),
+                mbean.getMeanProcessingTime(), mbean.getMaxProcessingTime(), mbean.getMinProcessingTime(),
+                mbean.getLastProcessingTime(), mbean.getDeltaProcessingTime(), mbean.getTotalProcessingTime(),
+                throughput, p50, p95, p99);
     }
 
     private void topRoutes(

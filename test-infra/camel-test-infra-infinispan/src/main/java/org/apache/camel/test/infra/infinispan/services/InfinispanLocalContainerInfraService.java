@@ -29,11 +29,15 @@ import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.output.OutputFrame;
 import org.testcontainers.containers.output.Slf4jLogConsumer;
+import org.testcontainers.containers.wait.strategy.HttpWaitStrategy;
 import org.testcontainers.containers.wait.strategy.Wait;
 
+// Credentials are intentional test-only fixtures for testcontainer services — no security risk
+@SuppressWarnings("java:S2068")
 @InfraService(service = InfinispanInfraService.class,
               description = "Infinispan is a distributed in-memory key/value data store",
-              serviceAlias = { "infinispan" })
+              serviceAlias = { "infinispan" },
+              uiSupported = true)
 public class InfinispanLocalContainerInfraService implements InfinispanInfraService, ContainerService<GenericContainer<?>> {
     public static final String CONTAINER_NAME = "infinispan";
     private static final String DEFAULT_USERNAME = "admin";
@@ -84,7 +88,10 @@ public class InfinispanLocalContainerInfraService implements InfinispanInfraServ
                 } else {
                     ContainerEnvironmentUtil.configurePort(this, fixedPort, InfinispanProperties.DEFAULT_SERVICE_PORT);
                     if (!fixedPort) {
-                        waitingFor(Wait.forListeningPort());
+                        waitingFor(new HttpWaitStrategy()
+                                .forPath("/rest/v2/cache-managers/default/health/status")
+                                .forPort(InfinispanProperties.DEFAULT_SERVICE_PORT)
+                                .forResponsePredicate("HEALTHY"::equals));
                     }
                 }
             }

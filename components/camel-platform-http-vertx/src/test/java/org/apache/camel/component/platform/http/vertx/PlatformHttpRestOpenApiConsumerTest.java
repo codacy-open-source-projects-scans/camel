@@ -16,26 +16,23 @@
  */
 package org.apache.camel.component.platform.http.vertx;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.camel.CamelContext;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
-import org.apache.camel.test.AvailablePortFinder;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.equalToCompressingWhiteSpace;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class PlatformHttpRestOpenApiConsumerTest {
-
-    @RegisterExtension
-    AvailablePortFinder.Port port = AvailablePortFinder.find();
-
     @Test
     public void testRestOpenApi() throws Exception {
-        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext(port.getPort());
+        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext();
 
         try {
             context.addRoutes(new RouteBuilder() {
@@ -49,7 +46,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
                 }
             });
 
-            context.start();
+            VertxPlatformHttpEngineTest.startCamelContext(context);
 
             MockEndpoint mock = context.getEndpoint("mock:result", MockEndpoint.class);
             mock.expectedMessageCount(1);
@@ -70,7 +67,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
 
     @Test
     public void testRestOpenApiDevMode() throws Exception {
-        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext(port.getPort());
+        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext();
         // run in developer mode
         context.getCamelContextExtension().setProfile("dev");
 
@@ -86,7 +83,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
                 }
             });
 
-            context.start();
+            VertxPlatformHttpEngineTest.startCamelContext(context);
 
             given()
                     .when()
@@ -101,7 +98,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
 
     @Test
     public void testRestOpenApiMock() throws Exception {
-        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext(port.getPort());
+        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext();
 
         try {
             context.addRoutes(new RouteBuilder() {
@@ -115,7 +112,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
                 }
             });
 
-            context.start();
+            VertxPlatformHttpEngineTest.startCamelContext(context);
 
             given()
                     .when()
@@ -138,22 +135,22 @@ public class PlatformHttpRestOpenApiConsumerTest {
 
     @Test
     public void testRestOpenApiMissingOperation() throws Exception {
-        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext(port.getPort());
+        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext();
 
         try {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("rest-openapi:classpath:openapi-v3.json?missingOperation=fail")
+                            .log("dummy");
+
+                    from("direct:getPetById")
+                            .setBody().constant("{\"pet\": \"tony the tiger\"}");
+                }
+            });
+
             assertThrows(Exception.class, () -> {
-                context.addRoutes(new RouteBuilder() {
-                    @Override
-                    public void configure() {
-                        from("rest-openapi:classpath:openapi-v3.json?missingOperation=fail")
-                                .log("dummy");
-
-                        from("direct:getPetById")
-                                .setBody().constant("{\"pet\": \"tony the tiger\"}");
-                    }
-                });
-
-                context.start();
+                VertxPlatformHttpEngineTest.startCamelContext(context);
             }, "OpenAPI specification has 18 unmapped operations to corresponding routes");
         } finally {
             context.stop();
@@ -162,7 +159,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
 
     @Test
     public void testRestOpenApiNotFound() throws Exception {
-        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext(port.getPort());
+        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext();
 
         try {
             context.addRoutes(new RouteBuilder() {
@@ -176,7 +173,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
                 }
             });
 
-            context.start();
+            VertxPlatformHttpEngineTest.startCamelContext(context);
 
             given()
                     .when()
@@ -190,7 +187,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
 
     @Test
     public void testRestOpenApiNotAllowed() throws Exception {
-        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext(port.getPort());
+        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext();
 
         try {
             context.addRoutes(new RouteBuilder() {
@@ -204,7 +201,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
                 }
             });
 
-            context.start();
+            VertxPlatformHttpEngineTest.startCamelContext(context);
 
             given()
                     .when()
@@ -218,7 +215,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
 
     @Test
     public void testRestOpenApiValidate() throws Exception {
-        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext(port.getPort());
+        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext();
 
         try {
             context.addRoutes(new RouteBuilder() {
@@ -232,7 +229,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
                 }
             });
 
-            context.start();
+            VertxPlatformHttpEngineTest.startCamelContext(context);
 
             given()
                     .when()
@@ -247,7 +244,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
 
     @Test
     public void testRestOpenApiMockData() throws Exception {
-        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext(port.getPort());
+        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext();
 
         try {
             context.addRoutes(new RouteBuilder() {
@@ -258,7 +255,7 @@ public class PlatformHttpRestOpenApiConsumerTest {
                 }
             });
 
-            context.start();
+            VertxPlatformHttpEngineTest.startCamelContext(context);
 
             given()
                     .when()
@@ -276,4 +273,41 @@ public class PlatformHttpRestOpenApiConsumerTest {
         }
     }
 
+    @Test
+    public void testRestOpenApiRouteRestart() throws Exception {
+        final CamelContext context = VertxPlatformHttpEngineTest.createCamelContext();
+        final AtomicInteger counter = new AtomicInteger();
+
+        try {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("rest-openapi:classpath:openapi-v3.json?missingOperation=ignore").routeId("api")
+                            .to("mock:result");
+
+                    from("direct:getPetById")
+                            .process(e -> counter.incrementAndGet())
+                            .setBody().constant("{\"pet\": \"tony the tiger\"}");
+                }
+            });
+
+            VertxPlatformHttpEngineTest.startCamelContext(context);
+
+            // restart the route, which creates the consumer again
+            context.getRouteController().stopRoute("api");
+            context.getRouteController().startRoute("api");
+
+            given()
+                    .when()
+                    .get("/api/v3/pet/123")
+                    .then()
+                    .statusCode(200)
+                    .body(equalTo("{\"pet\": \"tony the tiger\"}"));
+
+            // the operation must only be invoked once
+            assertEquals(1, counter.get());
+        } finally {
+            context.stop();
+        }
+    }
 }

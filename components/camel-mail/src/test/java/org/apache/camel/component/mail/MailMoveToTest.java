@@ -41,11 +41,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Unit test for moveTo.
  */
 public class MailMoveToTest extends CamelTestSupport {
-    private static final MailboxUser jones = Mailbox.getOrCreateUser("jones", "secret");
-    private static final MailboxUser jones2 = Mailbox.getOrCreateUser("jones2", "secret");
+    private static final MailboxUser jones = Mailbox.getOrCreateUser("MailMoveToTest-jones", "secret");
+    private static final MailboxUser jones2 = Mailbox.getOrCreateUser("MailMoveToTest-jones2", "secret");
 
     @Override
-    public void doPreSetup() throws Exception {
+    public void setupResources() throws Exception {
         prepareMailbox();
     }
 
@@ -89,7 +89,9 @@ public class MailMoveToTest extends CamelTestSupport {
     }
 
     private void prepareMailbox() throws Exception {
-        Mailbox.clearAll();
+        Mailbox.clearAll(jones, jones2);
+        jones.clear("moveToFolder");
+        jones2.clear("moveToFolder");
         MailboxUser[] mailUser = new MailboxUser[] { jones, jones2 };
         for (MailboxUser user : mailUser) {
             JavaMailSender sender = new DefaultJavaMailSender();

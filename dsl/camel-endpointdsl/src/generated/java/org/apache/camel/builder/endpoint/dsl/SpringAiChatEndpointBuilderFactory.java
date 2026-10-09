@@ -174,9 +174,12 @@ public interface SpringAiChatEndpointBuilderFactory {
             return this;
         }
         /**
-         * Comma-separated tool names for selecting tools by name via Spring
-         * AI's ToolCallbackResolver. This enables selecting Spring Tool
-         * annotated beans or any registered ToolCallback by name.
+         * Comma-separated tool names for selecting tools by name. Names are
+         * resolved against a ToolCallbackResolver bound in the registry (Spring
+         * Boot applications get Spring AI's auto-configured one), then against
+         * the tools discovered via tags and configured via toolCallbacks, and
+         * finally against a ToolCallback bound in the registry under that name.
+         * An unresolvable name fails the exchange.
          * 
          * The option is a: <code>java.lang.String</code> type.
          * 
@@ -1156,7 +1159,7 @@ public interface SpringAiChatEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final SpringAiChatHeaderNameBuilder INSTANCE = new SpringAiChatHeaderNameBuilder();
+        public static final SpringAiChatHeaderNameBuilder INSTANCE = new SpringAiChatHeaderNameBuilder();
 
         /**
          * The response from the chat model.

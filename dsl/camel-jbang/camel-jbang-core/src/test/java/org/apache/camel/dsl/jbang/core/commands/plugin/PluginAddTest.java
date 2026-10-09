@@ -21,6 +21,7 @@ import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
 import org.apache.camel.dsl.jbang.core.common.PluginHelper;
 import org.apache.camel.dsl.jbang.core.common.PluginType;
+import org.apache.camel.util.json.JsonObject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,12 +42,26 @@ class PluginAddTest extends CamelCommandBaseTestSupport {
         command.name = "kubernetes";
         command.doCall();
 
-        Assertions.assertEquals("", printer.getOutput());
+        Assertions.assertEquals("Plugin kubernetes added", printer.getOutput());
 
         Assertions.assertEquals(
                 "{\"plugins\":{\"kubernetes\":{\"name\":\"kubernetes\",\"command\":\"kubernetes\",\"firstVersion\":\"4.8.0\",\"description\":\"%s\"}}}"
                         .formatted(PluginType.KUBERNETES.getDescription()),
                 PluginHelper.getOrCreatePluginConfig().toJson());
+    }
+
+    @Test
+    public void shouldResolveKitDependencyFromKnownPlugins() throws Exception {
+        PluginAdd command = new PluginAdd(new CamelJBangMain().withPrinter(printer));
+        command.name = "kit";
+        command.version = "0.4.0";
+        command.doCall();
+
+        Assertions.assertEquals("Plugin kit added", printer.getOutput());
+
+        JsonObject plugins = PluginHelper.getOrCreatePluginConfig().getMap("plugins");
+        JsonObject plugin = plugins.getMap("kit");
+        Assertions.assertEquals("io.github.luigidemasi:camel-jbang-plugin-kit:0.4.0", plugin.getString("dependency"));
     }
 
     @Test
@@ -58,7 +73,7 @@ class PluginAddTest extends CamelCommandBaseTestSupport {
         command.firstVersion = "1.2.3";
         command.doCall();
 
-        Assertions.assertEquals("", printer.getOutput());
+        Assertions.assertEquals("Plugin foo-plugin added", printer.getOutput());
 
         Assertions.assertEquals("{\"plugins\":{\"foo-plugin\":{\"name\":\"foo-plugin\",\"command\":\"foo\"," +
                                 "\"firstVersion\":\"1.2.3\",\"description\":\"Some plugin\"}}}",
@@ -71,7 +86,7 @@ class PluginAddTest extends CamelCommandBaseTestSupport {
         command.name = "foo";
         command.doCall();
 
-        Assertions.assertEquals("", printer.getOutput());
+        Assertions.assertEquals("Plugin foo added", printer.getOutput());
 
         Assertions.assertEquals("{\"plugins\":{\"foo\":{\"name\":\"foo\",\"command\":\"foo\"," +
                                 "\"description\":\"Plugin foo called with command foo\"}}}",
@@ -86,7 +101,7 @@ class PluginAddTest extends CamelCommandBaseTestSupport {
         command.gav = "org.apache.camel:foo-plugin:1.0.0";
         command.doCall();
 
-        Assertions.assertEquals("", printer.getOutput());
+        Assertions.assertEquals("Plugin foo-plugin added", printer.getOutput());
 
         Assertions.assertEquals("{\"plugins\":{\"foo-plugin\":{\"name\":\"foo-plugin\",\"command\":\"foo\"," +
                                 "\"description\":\"Plugin foo-plugin called with command foo\",\"dependency\":\"org.apache.camel:foo-plugin:1.0.0\"}}}",
@@ -103,7 +118,7 @@ class PluginAddTest extends CamelCommandBaseTestSupport {
         command.version = "1.0.0";
         command.doCall();
 
-        Assertions.assertEquals("", printer.getOutput());
+        Assertions.assertEquals("Plugin foo-plugin added", printer.getOutput());
 
         Assertions.assertEquals("{\"plugins\":{\"foo-plugin\":{\"name\":\"foo-plugin\",\"command\":\"foo\"," +
                                 "\"firstVersion\":\"1.0.0\",\"description\":\"Plugin foo-plugin called with command foo\"" +

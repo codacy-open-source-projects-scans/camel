@@ -18,11 +18,13 @@ package org.apache.camel.component.seda;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 import org.apache.camel.AsyncEndpoint;
 import org.apache.camel.AsyncProcessor;
@@ -45,6 +47,7 @@ import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriPath;
 import org.apache.camel.support.DefaultEndpoint;
 import org.apache.camel.support.PluginHelper;
+import org.apache.camel.support.UnitOfWorkHelper;
 import org.apache.camel.support.service.ServiceHelper;
 import org.apache.camel.util.URISupport;
 import org.slf4j.Logger;
@@ -227,14 +230,15 @@ public class SedaEndpoint extends DefaultEndpoint implements AsyncEndpoint, Brow
     public BlockingQueue<Exchange> getQueue() {
         lock.lock();
         try {
-            if (queue == null) {
+            if (queue == null || (getComponent() != null && (ref == null || !ref.isReferenced(this)))) {
                 // prefer to lookup queue from component, so if this endpoint is re-created or re-started
                 // then the existing queue from the component can be used, so new producers and consumers
-                // can use the already existing queue referenced from the component
+                // can use the already existing queue referenced from the component; a released or
+                // de-listed reference must not be reused as the component no longer tracks it
                 if (getComponent() != null) {
                     // use null to indicate default size (= use what the existing queue has been configured with)
                     Integer size = (getSize() == Integer.MAX_VALUE || getSize() == SedaConstants.QUEUE_SIZE) ? null : getSize();
-                    QueueReference ref = getComponent().getOrCreateQueue(this, size, isMultipleConsumers(), queueFactory);
+                    ref = getComponent().getOrCreateQueue(this, size, isMultipleConsumers(), queueFactory);
                     queue = ref.getQueue();
                     String key = getComponent().getQueueKey(getEndpointUri());
                     LOG.debug("Endpoint {} is using shared queue: {} with size: {}", this, key,
@@ -314,16 +318,18 @@ public class SedaEndpoint extends DefaultEndpoint implements AsyncEndpoint, Brow
                 consumerMulticastProcessor = null;
             }
 
-            int size = getConsumers().size();
-            if (size >= 1) {
+            // the consumer threads of this endpoint multicast to every consumer of the (shared) queue,
+            // which includes consumers on other endpoints for the same queue name that use different uri options
+            if (!getConsumers().isEmpty()) {
                 if (multicastExecutor == null) {
                     // create multicast executor as we need it when we have more than 1 processor
                     multicastExecutor = getCamelContext().getExecutorServiceManager().newDefaultThreadPool(this,
                             URISupport.sanitizeUri(getEndpointUri()) + "(multicast)");
                 }
                 // create list of consumers to multicast to
-                List<Processor> processors = new ArrayList<>(size);
-                for (SedaConsumer consumer : getConsumers()) {
+                Set<SedaConsumer> queueConsumers = getQueueConsumers();
+                List<Processor> processors = new ArrayList<>(queueConsumers.size());
+                for (SedaConsumer consumer : queueConsumers) {
                     processors.add(consumer.getProcessor());
                 }
                 // create multicast processor
@@ -335,6 +341,40 @@ public class SedaEndpoint extends DefaultEndpoint implements AsyncEndpoint, Brow
             }
         } finally {
             lock.unlock();
+        }
+    }
+
+    /**
+     * Gets the active consumers of this endpoint and of the other multiple consumers endpoints that share the same
+     * queue, as they may be using the same queue name with different uri options.
+     */
+    private Set<SedaConsumer> getQueueConsumers() {
+        Set<SedaConsumer> answer = new LinkedHashSet<>(getConsumers());
+        QueueReference queueReference = ref;
+        if (queueReference != null) {
+            for (SedaEndpoint endpoint : queueReference.getEndpoints()) {
+                if (endpoint != this && endpoint.isMultipleConsumers()) {
+                    answer.addAll(endpoint.getConsumers());
+                }
+            }
+        }
+        return answer;
+    }
+
+    /**
+     * Updates the multicast processor of this endpoint, and of the other multiple consumers endpoints with active
+     * consumers that share the same queue, so they all multicast to the current set of consumers of the queue.
+     */
+    private void updateMulticastProcessors() throws Exception {
+        updateMulticastProcessor();
+        QueueReference queueReference = ref;
+        if (queueReference != null) {
+            for (SedaEndpoint endpoint : queueReference.getEndpoints()) {
+                if (endpoint != this && endpoint.isMultipleConsumers() && endpoint.hasConsumers()) {
+                    // do not hold the lock of this endpoint while updating the other endpoint
+                    endpoint.updateMulticastProcessor();
+                }
+            }
         }
     }
 
@@ -581,12 +621,20 @@ public class SedaEndpoint extends DefaultEndpoint implements AsyncEndpoint, Brow
     }
 
     /**
-     * Purges the queue
+     * Purges the queue.
+     * <p/>
+     * The discarded exchanges are failed with a {@link RejectedExecutionException} and their on completions are
+     * executed, so a producer waiting for the reply of a discarded exchange is released.
      */
     @ManagedOperation(description = "Purges the seda queue")
     public void purgeQueue() {
         LOG.debug("Purging queue with {} exchanges", queue.size());
-        queue.clear();
+        List<Exchange> discarded = new ArrayList<>();
+        queue.drainTo(discarded);
+        for (Exchange exchange : discarded) {
+            exchange.setException(new RejectedExecutionException("Exchange discarded as the SEDA queue was purged"));
+            UnitOfWorkHelper.doneSynchronizations(exchange, exchange.getExchangeExtension().handoverCompletions());
+        }
     }
 
     /**
@@ -605,23 +653,40 @@ public class SedaEndpoint extends DefaultEndpoint implements AsyncEndpoint, Brow
 
     void onStarted(SedaProducer producer) {
         producers.add(producer);
+        registerQueueIfStale();
     }
 
     void onStopped(SedaProducer producer) {
         producers.remove(producer);
+        if (getConsumers().isEmpty() && getProducers().isEmpty() && getComponent() != null) {
+            // may also be invoked from shutdown(); onShutdownEndpoint is idempotent
+            getComponent().onShutdownEndpoint(this);
+        }
     }
 
     void onStarted(SedaConsumer consumer) throws Exception {
         consumers.add(consumer);
+        registerQueueIfStale();
         if (isMultipleConsumers()) {
-            updateMulticastProcessor();
+            updateMulticastProcessors();
         }
     }
 
     void onStopped(SedaConsumer consumer) throws Exception {
         consumers.remove(consumer);
         if (isMultipleConsumers()) {
-            updateMulticastProcessor();
+            updateMulticastProcessors();
+        }
+    }
+
+    private void registerQueueIfStale() {
+        if (getComponent() != null && (ref == null || queue == null || !ref.isReferenced(this))) {
+            // re-register when a producer or consumer restarts after the queue was released on stop, or
+            // when this endpoint was dropped from a reference still shared with other endpoints; the
+            // stale ref/queue fields may be non-null while no longer registered with the component
+            Integer size = (getSize() == Integer.MAX_VALUE || getSize() == SedaConstants.QUEUE_SIZE) ? null : getSize();
+            ref = getComponent().getOrCreateQueue(this, size, isMultipleConsumers(), queueFactory);
+            queue = ref.getQueue();
         }
     }
 
@@ -660,13 +725,12 @@ public class SedaEndpoint extends DefaultEndpoint implements AsyncEndpoint, Brow
 
     @Override
     public void stop() {
-        if (getConsumers().isEmpty()) {
+        if (getConsumers().isEmpty() && getProducers().isEmpty()) {
             super.stop();
+            ref = null;
         } else {
-            LOG.debug("There is still active consumers.");
+            LOG.debug("There are still active consumers or producers.");
         }
-
-        ref = null;
     }
 
     @Override
@@ -676,15 +740,15 @@ public class SedaEndpoint extends DefaultEndpoint implements AsyncEndpoint, Brow
             return;
         }
 
-        // notify component we are shutting down this endpoint
+        // notify component we are shutting down this endpoint (onStopped may invoke this too; safe to call twice)
         if (getComponent() != null) {
             getComponent().onShutdownEndpoint(this);
         }
 
-        if (getConsumers().isEmpty()) {
+        if (getConsumers().isEmpty() && getProducers().isEmpty()) {
             super.shutdown();
         } else {
-            LOG.debug("There is still active consumers.");
+            LOG.debug("There are still active consumers or producers.");
         }
     }
 
@@ -700,5 +764,4 @@ public class SedaEndpoint extends DefaultEndpoint implements AsyncEndpoint, Brow
         queue = null;
         ref = null;
     }
-
 }

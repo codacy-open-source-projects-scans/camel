@@ -60,6 +60,40 @@ public interface CoAPEndpointBuilderFactory {
             return this;
         }
         /**
+         * If enabled and an Exchange failed processing on the consumer side,
+         * the 5.00 (Internal Server Error) response sent to the client won't
+         * contain the exception's message.
+         * 
+         * The option is a: <code>boolean</code> type.
+         * 
+         * Default: true
+         * Group: consumer
+         * 
+         * @param muteException the value to set
+         * @return the dsl builder
+         */
+        default CoAPEndpointConsumerBuilder muteException(boolean muteException) {
+            doSetProperty("muteException", muteException);
+            return this;
+        }
+        /**
+         * If enabled and an Exchange failed processing on the consumer side,
+         * the 5.00 (Internal Server Error) response sent to the client won't
+         * contain the exception's message.
+         * 
+         * The option will be converted to a <code>boolean</code> type.
+         * 
+         * Default: true
+         * Group: consumer
+         * 
+         * @param muteException the value to set
+         * @return the dsl builder
+         */
+        default CoAPEndpointConsumerBuilder muteException(String muteException) {
+            doSetProperty("muteException", muteException);
+            return this;
+        }
+        /**
          * Make CoAP resource observable for source endpoint, based on RFC 7641.
          * 
          * The option is a: <code>boolean</code> type.
@@ -1419,7 +1453,7 @@ public interface CoAPEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final CoAPHeaderNameBuilder INSTANCE = new CoAPHeaderNameBuilder();
+        public static final CoAPHeaderNameBuilder INSTANCE = new CoAPHeaderNameBuilder();
 
         /**
          * The CoAP ETag for the response.

@@ -36,6 +36,7 @@ import javax.crypto.CipherOutputStream;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePropertyKey;
+import org.apache.camel.Ordered;
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.StreamCache;
 import org.apache.camel.spi.StreamCachingStrategy;
@@ -258,6 +259,13 @@ public final class FileInputStreamCache extends InputStream implements StreamCac
                 // add on completion so we can cleanup after the exchange is done such as deleting temporary files
                 Synchronization onCompletion = new SynchronizationAdapter() {
                     @Override
+                    public int getOrder() {
+                        // delete the file after the other on completions (such as the onCompletion EIP), which may
+                        // still read the body
+                        return Ordered.LOWEST;
+                    }
+
+                    @Override
                     public void onDone(Exchange exchange) {
                         int actualExchanges = exchangeCounter.decrementAndGet();
                         if (actualExchanges == 0) {
@@ -303,7 +311,7 @@ public final class FileInputStreamCache extends InputStream implements StreamCac
             }
         }
 
-        OutputStream createOutputStream(StreamCachingStrategy strategy) throws IOException {
+        OutputStream createOutputStream(StreamCachingStrategy strategy, Exchange exchange) throws IOException {
             // should only be called once
             if (tempFile != null) {
                 throw new IllegalStateException("The method 'createOutputStream' can only be called once!");
@@ -320,7 +328,8 @@ public final class FileInputStreamCache extends InputStream implements StreamCac
                 LOG.error(error);
                 throw new IOException(error);
             }
-            tempFile = FileUtil.createTempFile("cos", ".tmp", strategy.getSpoolDirectory());
+            File spoolDir = strategy.resolveSpoolDirectory(exchange);
+            tempFile = FileUtil.createTempFile("cos", ".tmp", spoolDir);
 
             LOG.trace("Creating temporary stream cache file: {}", tempFile);
             OutputStream out = new BufferedOutputStream(

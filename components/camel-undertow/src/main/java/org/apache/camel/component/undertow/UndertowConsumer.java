@@ -21,7 +21,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.StringJoiner;
@@ -33,12 +32,15 @@ import io.undertow.server.handlers.accesslog.AccessLogHandler;
 import io.undertow.server.handlers.accesslog.AccessLogReceiver;
 import io.undertow.server.handlers.accesslog.JBossLoggingAccessLogReceiver;
 import io.undertow.server.handlers.form.EagerFormParsingHandler;
+import io.undertow.util.AttachmentKey;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
 import io.undertow.util.Methods;
 import io.undertow.util.MimeMappings;
 import io.undertow.util.StatusCodes;
+import io.undertow.websockets.core.CloseMessage;
 import io.undertow.websockets.core.WebSocketChannel;
+import io.undertow.websockets.core.WebSockets;
 import io.undertow.websockets.spi.WebSocketHttpExchange;
 import org.apache.camel.AsyncCallback;
 import org.apache.camel.Exchange;
@@ -51,6 +53,8 @@ import org.apache.camel.Suspendable;
 import org.apache.camel.TypeConverter;
 import org.apache.camel.component.undertow.UndertowConstants.EventType;
 import org.apache.camel.component.undertow.handlers.CamelWebSocketHandler;
+import org.apache.camel.http.base.OAuthHttpSecuritySupport;
+import org.apache.camel.spi.OAuthTokenValidationResult;
 import org.apache.camel.support.CamelContextHelper;
 import org.apache.camel.support.DefaultConsumer;
 import org.apache.camel.support.EndpointHelper;
@@ -65,6 +69,8 @@ import org.slf4j.LoggerFactory;
 public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Suspendable {
 
     private static final Logger LOG = LoggerFactory.getLogger(UndertowConsumer.class);
+    static final AttachmentKey<OAuthTokenValidationResult> OAUTH_TOKEN_VALIDATION_RESULT_ATTACHMENT
+            = AttachmentKey.create(OAuthTokenValidationResult.class);
     private CamelWebSocketHandler webSocketHandler;
     private boolean rest;
     private volatile boolean suspended;
@@ -92,11 +98,7 @@ public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Su
     }
 
     public List<String> computeAllowedRoles() {
-        String allowedRolesString = getEndpoint().getAllowedRoles();
-        if (allowedRolesString == null) {
-            allowedRolesString = getEndpoint().getComponent().getAllowedRoles();
-        }
-        return allowedRolesString == null ? null : Arrays.asList(allowedRolesString.split("\\s*,\\s*"));
+        return getEndpoint().computeAllowedRoles();
     }
 
     @Override
@@ -111,31 +113,44 @@ public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Su
              */
             this.webSocketHandler = (CamelWebSocketHandler) endpoint.getComponent().registerEndpoint(this,
                     endpoint.getHttpHandlerRegistrationInfo(), endpoint.getSslContext(), new CamelWebSocketHandler());
-            this.webSocketHandler.setConsumer(this);
+            // the access log and the custom handlers run before the upgrade, as they run before an HTTP request
+            this.webSocketHandler.setConsumer(this,
+                    wrapWithAccessLogAndHandlers(this.webSocketHandler.getUpgradeHandler(), endpoint));
         } else {
             // allow for HTTP 1.1 continue
             HttpHandler httpHandler = new EagerFormParsingHandler().setNext(UndertowConsumer.this);
-            if (endpoint.getAccessLog()) {
-                AccessLogReceiver accessLogReceiver;
-                if (endpoint.getAccessLogReceiver() != null) {
-                    accessLogReceiver = endpoint.getAccessLogReceiver();
-                } else {
-                    accessLogReceiver = new JBossLoggingAccessLogReceiver();
-                }
-                httpHandler = new AccessLogHandler(
-                        httpHandler,
-                        accessLogReceiver,
-                        "common",
-                        AccessLogHandler.class.getClassLoader());
+            if (endpoint.getOauthHttpSecurity() != null) {
+                httpHandler = new OAuthUndertowHttpHandler(
+                        endpoint.getCamelContext(), endpoint.getOauthHttpSecurity(), httpHandler, endpoint.isOptionsEnabled(),
+                        this::isSuspended);
             }
-            if (endpoint.getHandlers() != null) {
-                httpHandler = this.wrapHandler(httpHandler, endpoint);
-            }
+            httpHandler = wrapWithAccessLogAndHandlers(httpHandler, endpoint);
             endpoint.getComponent().registerEndpoint(this, endpoint.getHttpHandlerRegistrationInfo(), endpoint.getSslContext(),
                     Handlers.httpContinueRead(
                             // wrap with EagerFormParsingHandler to enable undertow form parsers
                             httpHandler));
         }
+    }
+
+    private HttpHandler wrapWithAccessLogAndHandlers(HttpHandler handler, UndertowEndpoint endpoint) {
+        HttpHandler httpHandler = handler;
+        if (endpoint.getAccessLog()) {
+            AccessLogReceiver accessLogReceiver;
+            if (endpoint.getAccessLogReceiver() != null) {
+                accessLogReceiver = endpoint.getAccessLogReceiver();
+            } else {
+                accessLogReceiver = new JBossLoggingAccessLogReceiver();
+            }
+            httpHandler = new AccessLogHandler(
+                    httpHandler,
+                    accessLogReceiver,
+                    "common",
+                    AccessLogHandler.class.getClassLoader());
+        }
+        if (endpoint.getHandlers() != null) {
+            httpHandler = this.wrapHandler(httpHandler, endpoint);
+        }
+        return httpHandler;
     }
 
     @Override
@@ -193,19 +208,9 @@ public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Su
             return;
         }
 
-        if (getEndpoint().getSecurityProvider() != null) {
-            //security provider decides, whether endpoint is accessible
-            int statusCode = getEndpoint().getSecurityProvider().authenticate(httpExchange, computeAllowedRoles());
-            if (statusCode != StatusCodes.OK) {
-                httpExchange.setStatusCode(statusCode);
-                httpExchange.endExchange();
-                return;
-            }
-        } else if (computeAllowedRoles() != null && !computeAllowedRoles().isEmpty()) {
-            //this case could happen due to bad configuration
-            //if allowedRoles are present but securityProvider is not, access has to be denied in this case
-            LOG.warn("Illegal state caused by missing securitProvider but existing allowed roles!");
-            httpExchange.setStatusCode(StatusCodes.FORBIDDEN);
+        int statusCode = getEndpoint().authenticate(httpExchange);
+        if (statusCode != StatusCodes.OK) {
+            httpExchange.setStatusCode(statusCode);
             httpExchange.endExchange();
             return;
         }
@@ -276,8 +281,16 @@ public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Su
                 IOHelper.copy(input, output, IOHelper.DEFAULT_BUFFER_SIZE, true);
             }
         } else {
-            TypeConverter tc = getEndpoint().getCamelContext().getTypeConverter();
-            ByteBuffer bodyAsByteBuffer = tc.mandatoryConvertTo(ByteBuffer.class, body);
+            ByteBuffer bodyAsByteBuffer = null;
+            if (body instanceof String text) {
+                // write the text in the charset that the response Content-Type declares, if any
+                bodyAsByteBuffer = UndertowHelper.toByteBuffer(text,
+                        httpExchange.getResponseHeaders().getFirst(Headers.CONTENT_TYPE));
+            }
+            if (bodyAsByteBuffer == null) {
+                TypeConverter tc = getEndpoint().getCamelContext().getTypeConverter();
+                bodyAsByteBuffer = tc.mandatoryConvertTo(ByteBuffer.class, body);
+            }
             httpExchange.getResponseSender().send(bodyAsByteBuffer);
         }
     }
@@ -292,14 +305,19 @@ public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Su
      * @param message       the message received via the {@link WebSocketChannel}
      */
     public void sendMessage(final String connectionKey, WebSocketChannel channel, final Object message) {
+        if (rejectUnauthenticatedWebSocketChannel(connectionKey, channel)) {
+            return;
+        }
 
         final Exchange exchange = createExchange(true);
 
         // set header and body
+        setSecurityProviderHeaders(exchange.getIn(), channel);
         exchange.getIn().setHeader(UndertowConstants.CONNECTION_KEY, connectionKey);
         if (channel != null) {
             exchange.getIn().setHeader(UndertowConstants.CHANNEL, channel);
         }
+        setOAuthTokenValidationResult(exchange, channel);
         exchange.getIn().setBody(message);
 
         // use default consumer callback
@@ -317,15 +335,20 @@ public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Su
      */
     public void sendEventNotification(
             String connectionKey, WebSocketHttpExchange transportExchange, WebSocketChannel channel, EventType eventType) {
+        if (rejectUnauthenticatedWebSocketChannel(connectionKey, channel)) {
+            return;
+        }
         final Exchange exchange = createExchange(true);
 
         final Message in = exchange.getIn();
+        setSecurityProviderHeaders(in, channel);
         in.setHeader(UndertowConstants.CONNECTION_KEY, connectionKey);
         in.setHeader(UndertowConstants.EVENT_TYPE, eventType.getCode());
         in.setHeader(UndertowConstants.EVENT_TYPE_ENUM, eventType);
         if (channel != null) {
             in.setHeader(UndertowConstants.CHANNEL, channel);
         }
+        setOAuthTokenValidationResult(exchange, channel);
         if (transportExchange != null) {
             in.setHeader(UndertowConstants.EXCHANGE, transportExchange);
         }
@@ -358,10 +381,19 @@ public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Su
         exchange.setPattern(ExchangePattern.InOut);
 
         Message in = getEndpoint().getUndertowHttpBinding().toCamelMessage(httpExchange, exchange);
+        OAuthTokenValidationResult oauthTokenValidationResult
+                = httpExchange.getAttachment(OAUTH_TOKEN_VALIDATION_RESULT_ATTACHMENT);
+        if (oauthTokenValidationResult != null) {
+            exchange.setProperty(OAuthHttpSecuritySupport.OAUTH_TOKEN_VALIDATION_RESULT, oauthTokenValidationResult);
+        }
 
         //securityProvider could add its own header into result exchange
         if (getEndpoint().getSecurityProvider() != null) {
             getEndpoint().getSecurityProvider().addHeader((key, value) -> in.setHeader(key, value), httpExchange);
+        }
+
+        if (oauthTokenValidationResult != null) {
+            OAuthHttpSecuritySupport.removeAuthorizationHeader(in);
         }
 
         // Only set charset if explicitly specified in the Content-Type header.
@@ -370,9 +402,7 @@ public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Su
         // By not setting the property when charset is absent, Camel's type conversion
         // system will use its own default (UTF-8), matching the behavior of DefaultHttpBinding.
         String contentType = httpExchange.getRequestHeaders().getFirst(Headers.CONTENT_TYPE);
-        String charset = contentType != null
-                ? Headers.extractQuotedValueFromHeader(contentType, "charset")
-                : null;
+        String charset = UndertowHelper.getCharsetFromContentType(contentType);
         if (charset != null) {
             exchange.setProperty(ExchangePropertyKey.CHARSET_NAME, charset);
             in.setHeader(UndertowConstants.HTTP_CHARACTER_ENCODING, charset);
@@ -380,6 +410,41 @@ public class UndertowConsumer extends DefaultConsumer implements HttpHandler, Su
 
         exchange.setIn(in);
         return exchange;
+    }
+
+    /**
+     * Fails closed for WebSocket channels whose handshake did not pass the security checks of this consumer's endpoint
+     * (OAuth validation, security provider, allowed roles and custom handlers). Such channels can exist when the shared
+     * {@link CamelWebSocketHandler} accepted a handshake before these checks applied to its path, for example while the
+     * path was only used by producers. Returns {@code true} when the event must not be delivered to the route; the
+     * channel is closed if still open.
+     */
+    private boolean rejectUnauthenticatedWebSocketChannel(String connectionKey, WebSocketChannel channel) {
+        if (CamelWebSocketHandler.isAuthenticated(channel, getEndpoint())) {
+            return false;
+        }
+        LOG.warn("Rejecting WebSocket event from connection {} whose handshake did not pass the security checks",
+                connectionKey);
+        if (channel != null && channel.isOpen()) {
+            WebSockets.sendClose(CloseMessage.MSG_VIOLATES_POLICY, "Authentication required", channel, null);
+        }
+        return true;
+    }
+
+    private static void setSecurityProviderHeaders(Message in, WebSocketChannel channel) {
+        if (channel != null) {
+            CamelWebSocketHandler.getSecurityProviderHeaders(channel).forEach(in::setHeader);
+        }
+    }
+
+    private static void setOAuthTokenValidationResult(Exchange exchange, WebSocketChannel channel) {
+        if (channel == null) {
+            return;
+        }
+        Object oauthTokenValidationResult = channel.getAttribute(OAuthHttpSecuritySupport.OAUTH_TOKEN_VALIDATION_RESULT);
+        if (oauthTokenValidationResult instanceof OAuthTokenValidationResult) {
+            exchange.setProperty(OAuthHttpSecuritySupport.OAUTH_TOKEN_VALIDATION_RESULT, oauthTokenValidationResult);
+        }
     }
 
 }

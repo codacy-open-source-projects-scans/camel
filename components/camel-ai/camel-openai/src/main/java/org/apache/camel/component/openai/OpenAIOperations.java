@@ -19,8 +19,22 @@ package org.apache.camel.component.openai;
 public enum OpenAIOperations {
 
     chatCompletion("chat-completion"),
+    responses("responses"),
+    responsesRetrieve("responses-retrieve"),
+    responsesCancel("responses-cancel"),
+    batch("batch"),
+    batchRetrieve("batch-retrieve"),
+    batchCancel("batch-cancel"),
+    batchResults("batch-results"),
     embeddings("embeddings"),
-    toolExecution("tool-execution");
+    toolExecution("tool-execution"),
+    audioTranscription("audio-transcription"),
+    audioTranslation("audio-translation"),
+    audioSpeech("audio-speech"),
+    moderation("moderation"),
+    imageGeneration("image-generation"),
+    imageEdit("image-edit"),
+    webhook("webhook");
 
     private final String value;
 
@@ -35,7 +49,12 @@ public enum OpenAIOperations {
             }
         }
         throw new IllegalArgumentException(
-                "Unknown operation: " + value + ". Supported: chat-completion, embeddings, tool-execution");
+                "Unknown operation: " + value
+                                           + ". Supported: chat-completion, responses, responses-retrieve, "
+                                           + "responses-cancel, batch, batch-retrieve, batch-cancel, batch-results, "
+                                           + "embeddings, tool-execution, "
+                                           + "audio-transcription, audio-translation, audio-speech, moderation, "
+                                           + "image-generation, image-edit, webhook");
     }
 
     public String getValue() {

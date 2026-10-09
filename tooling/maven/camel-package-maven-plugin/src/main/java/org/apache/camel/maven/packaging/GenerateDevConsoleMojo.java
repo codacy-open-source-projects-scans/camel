@@ -17,16 +17,28 @@
 package org.apache.camel.maven.packaging;
 
 import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.RecordComponent;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.StringJoiner;
 
 import javax.inject.Inject;
 
 import org.apache.camel.maven.packaging.generics.PackagePluginUtils;
+import org.apache.camel.spi.Metadata;
+import org.apache.camel.tooling.model.BaseOptionModel;
+import org.apache.camel.tooling.model.DevConsoleModel.DevConsoleOptionModel;
+import org.apache.camel.tooling.model.JsonMapper;
 import org.apache.camel.tooling.util.PackageHelper;
 import org.apache.camel.tooling.util.Strings;
+import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
 import org.apache.camel.util.json.Jsoner;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -77,6 +89,9 @@ public class GenerateDevConsoleMojo extends AbstractGeneratorMojo {
         private String displayName;
         private String description;
         private boolean deprecated;
+        private boolean readOnly = true;
+        private JsonObject responseSchema;
+        private final List<DevConsoleOptionModel> options = new ArrayList<>();
 
         public String getClassName() {
             return className;
@@ -125,6 +140,26 @@ public class GenerateDevConsoleMojo extends AbstractGeneratorMojo {
         public void setDeprecated(boolean deprecated) {
             this.deprecated = deprecated;
         }
+
+        public boolean isReadOnly() {
+            return readOnly;
+        }
+
+        public void setReadOnly(boolean readOnly) {
+            this.readOnly = readOnly;
+        }
+
+        public JsonObject getResponseSchema() {
+            return responseSchema;
+        }
+
+        public void setResponseSchema(JsonObject responseSchema) {
+            this.responseSchema = responseSchema;
+        }
+
+        public List<DevConsoleOptionModel> getOptions() {
+            return options;
+        }
     }
 
     @Override
@@ -139,7 +174,7 @@ public class GenerateDevConsoleMojo extends AbstractGeneratorMojo {
             resourcesOutputDir = new File(project.getBasedir(), "src/generated/resources");
         }
 
-        Index index = PackagePluginUtils.readJandexIndexIgnoreMissing(project, getLog());
+        Index index = PackagePluginUtils.readJandexIndexIgnoreMissing(project);
         if (index == null) {
             return;
         }
@@ -158,9 +193,12 @@ public class GenerateDevConsoleMojo extends AbstractGeneratorMojo {
             model.setName(annotationValue(a, "name"));
             model.setDisplayName(annotationValue(a, "displayName"));
             model.setDescription(annotationValue(a, "description"));
+            model.setReadOnly(!"false".equals(annotationValue(a, "readOnly")));
             // skip default registry
             boolean skip = "default-registry".equals(model.getName());
             if (!skip) {
+                extractQueryOptions(model);
+                extractResponseSchema(model);
                 models.add(model);
             }
         });
@@ -216,13 +254,216 @@ public class GenerateDevConsoleMojo extends AbstractGeneratorMojo {
         }
         jo.put("description", model.getDescription());
         jo.put("deprecated", model.isDeprecated());
+        jo.put("readOnly", model.isReadOnly());
         jo.put("javaType", model.getClassName());
         jo.put("groupId", project.getGroupId());
         jo.put("artifactId", project.getArtifactId());
         jo.put("version", project.getVersion());
         JsonObject root = new JsonObject();
         root.put("console", jo);
+        if (!model.getOptions().isEmpty()) {
+            root.put("options", JsonMapper.asJsonObject(model.getOptions()));
+        }
+        if (model.getResponseSchema() != null) {
+            root.put("response", model.getResponseSchema());
+        }
         return root;
+    }
+
+    private void extractQueryOptions(DevConsoleModel model) {
+        Class<?> clazz;
+        try {
+            clazz = loadClass(model.getClassName());
+        } catch (NoClassDefFoundError e) {
+            getLog().debug("Cannot load class: " + model.getClassName());
+            return;
+        }
+        for (Field field : clazz.getDeclaredFields()) {
+            if (!Modifier.isStatic(field.getModifiers()) || !Modifier.isFinal(field.getModifiers())
+                    || field.getType() != String.class) {
+                continue;
+            }
+            if (!field.isAnnotationPresent(Metadata.class)) {
+                continue;
+            }
+            Metadata metadata = field.getAnnotation(Metadata.class);
+            String labels = metadata.label();
+            if (labels == null || !labels.contains("query")) {
+                continue;
+            }
+            String optionName;
+            try {
+                field.setAccessible(true);
+                optionName = (String) field.get(null);
+            } catch (IllegalAccessException e) {
+                getLog().debug("Cannot read field value: " + field.getName());
+                continue;
+            }
+            DevConsoleOptionModel o = new DevConsoleOptionModel();
+            o.setName(optionName);
+            o.setKind("option");
+            o.setGroup("query");
+            o.setLabel(labels);
+            o.setRequired(metadata.required());
+            o.setDescription(metadata.description());
+            o.setDeprecated(field.isAnnotationPresent(Deprecated.class));
+            if (!metadata.deprecationNote().isEmpty()) {
+                o.setDeprecationNote(metadata.deprecationNote());
+            }
+            if (!metadata.displayName().isEmpty()) {
+                o.setDisplayName(metadata.displayName());
+            } else {
+                o.setDisplayName(Strings.asTitle(optionName));
+            }
+            String javaType = metadata.javaType();
+            if (!javaType.isEmpty()) {
+                o.setJavaType(javaType);
+                o.setType(javaTypeToType(javaType));
+            } else {
+                o.setJavaType("java.lang.String");
+                o.setType("string");
+            }
+            if (!metadata.defaultValue().isEmpty()) {
+                o.setDefaultValue(resolveDefaultValue(metadata.defaultValue(), o.getType()));
+            }
+            if (!metadata.enums().isEmpty()) {
+                o.setEnums(List.of(metadata.enums().split(",")));
+            }
+            model.getOptions().add(o);
+        }
+        model.getOptions().sort(Comparator.comparing(BaseOptionModel::getName));
+    }
+
+    private void extractResponseSchema(DevConsoleModel model) {
+        Class<?> clazz;
+        try {
+            clazz = loadClass(model.getClassName());
+        } catch (NoClassDefFoundError e) {
+            getLog().debug("Cannot load class: " + model.getClassName());
+            return;
+        }
+        model.setResponseSchema(buildResponseSchema(clazz));
+    }
+
+    /**
+     * Builds a JSON Schema for the console's response, from its nested {@code Response} record (if any). Returns
+     * {@code null} when the console has no such record, so consoles that have not declared a typed response keep
+     * generating no {@code "response"} key, same as before this schema generation existed.
+     */
+    static JsonObject buildResponseSchema(Class<?> consoleClass) {
+        for (Class<?> nested : consoleClass.getDeclaredClasses()) {
+            if ("Response".equals(nested.getSimpleName()) && nested.isRecord()) {
+                return buildRecordSchema(nested);
+            }
+        }
+        return null;
+    }
+
+    private static JsonObject buildRecordSchema(Class<?> recordClass) {
+        JsonObject schema = new JsonObject();
+        schema.put("type", "object");
+
+        JsonObject properties = new JsonObject();
+        JsonArray required = new JsonArray();
+        for (RecordComponent component : recordClass.getRecordComponents()) {
+            JsonObject propertySchema = buildTypeSchema(component.getGenericType());
+            String description = componentDescription(recordClass, component);
+            if (description != null) {
+                propertySchema.put("description", description);
+            }
+            properties.put(component.getName(), propertySchema);
+            if (component.getType().isPrimitive()) {
+                required.add(component.getName());
+            }
+        }
+        schema.put("properties", properties);
+        if (!required.isEmpty()) {
+            schema.put("required", required);
+        }
+        return schema;
+    }
+
+    private static String componentDescription(Class<?> recordClass, RecordComponent component) {
+        try {
+            Field field = recordClass.getDeclaredField(component.getName());
+            Metadata metadata = field.getAnnotation(Metadata.class);
+            if (metadata != null && !metadata.description().isEmpty()) {
+                return metadata.description();
+            }
+        } catch (NoSuchFieldException e) {
+            // ignore - no annotation available
+        }
+        return null;
+    }
+
+    private static JsonObject buildTypeSchema(Type type) {
+        if (type instanceof ParameterizedType pt) {
+            Class<?> rawType = (Class<?>) pt.getRawType();
+            if (Collection.class.isAssignableFrom(rawType)) {
+                JsonObject schema = new JsonObject();
+                schema.put("type", "array");
+                schema.put("items", buildTypeSchema(pt.getActualTypeArguments()[0]));
+                return schema;
+            }
+            if (Map.class.isAssignableFrom(rawType)) {
+                JsonObject schema = new JsonObject();
+                schema.put("type", "object");
+                Type valueType = pt.getActualTypeArguments()[1];
+                // Object means "any shape", so a plain true is more honest than a misleading {"type":"object"}
+                schema.put("additionalProperties", valueType == Object.class ? true : buildTypeSchema(valueType));
+                return schema;
+            }
+        }
+
+        if (!(type instanceof Class<?> clazz)) {
+            // a TypeVariable, WildcardType or GenericArrayType has no fixed JSON shape to describe
+            return new JsonObject();
+        }
+        if (clazz.isRecord()) {
+            return buildRecordSchema(clazz);
+        }
+        if (clazz == Object.class) {
+            // no type constraint means "any JSON value", which is more honest than a misleading "type":"object"
+            return new JsonObject();
+        }
+        JsonObject schema = new JsonObject();
+        schema.put("type", javaTypeToType(clazz.getName()));
+        return schema;
+    }
+
+    private static String javaTypeToType(String javaType) {
+        return switch (javaType) {
+            case "java.lang.String" -> "string";
+            case "java.lang.Integer", "int" -> "integer";
+            case "java.lang.Long", "long" -> "integer";
+            case "java.lang.Boolean", "boolean" -> "boolean";
+            case "java.lang.Double", "double", "java.lang.Float", "float" -> "number";
+            default -> "object";
+        };
+    }
+
+    private static Object resolveDefaultValue(String defaultValue, String type) {
+        if (defaultValue == null || defaultValue.isEmpty()) {
+            return null;
+        }
+        return switch (type) {
+            case "boolean" -> Boolean.parseBoolean(defaultValue);
+            case "integer" -> {
+                try {
+                    yield Long.parseLong(defaultValue);
+                } catch (NumberFormatException e) {
+                    yield defaultValue;
+                }
+            }
+            case "number" -> {
+                try {
+                    yield Double.parseDouble(defaultValue);
+                } catch (NumberFormatException e) {
+                    yield defaultValue;
+                }
+            }
+            default -> defaultValue;
+        };
     }
 
     private String sanitizeFileName(String fileName) {

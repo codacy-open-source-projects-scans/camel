@@ -22,6 +22,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.InvalidPayloadException;
 import org.apache.camel.Message;
+import org.apache.camel.component.aws.common.AwsExceptionUtil;
 import org.apache.camel.support.DefaultProducer;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.URISupport;
@@ -97,11 +98,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.listDatabases(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Databases command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Databases command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listDatabases operation requires ListDatabasesRequest in POJO mode");
             }
         } else {
             ListDatabasesRequest.Builder builder = ListDatabasesRequest.builder();
@@ -135,7 +139,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.listDatabases(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Databases command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Databases command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -151,11 +155,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.listSchemas(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Schemas command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Schemas command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listSchemas operation requires ListSchemasRequest in POJO mode");
             }
         } else {
             ListSchemasRequest.Builder builder = ListSchemasRequest.builder();
@@ -196,7 +203,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.listSchemas(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Schemas command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Schemas command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -212,11 +219,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.listStatements(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Statements command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Statements command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listStatements operation requires ListStatementsRequest in POJO mode");
             }
         } else {
             ListStatementsRequest.Builder builder = ListStatementsRequest.builder();
@@ -242,7 +252,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.listStatements(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Statements command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Statements command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -258,11 +268,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.listTables(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("List Tables command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("List Tables command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "listTables operation requires ListTablesRequest in POJO mode");
             }
         } else {
             ListTablesRequest.Builder builder = ListTablesRequest.builder();
@@ -307,7 +320,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.listTables(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("List Tables command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("List Tables command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -323,11 +336,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.describeTable(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeTable operation requires DescribeTableRequest in POJO mode");
             }
         } else {
             DescribeTableRequest.Builder builder = DescribeTableRequest.builder();
@@ -373,7 +389,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.describeTable(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Table command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Table command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -389,11 +405,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.executeStatement(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Execute Statement command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Execute Statement command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "executeStatement operation requires ExecuteStatementRequest in POJO mode");
             }
         } else {
             ExecuteStatementRequest.Builder builder = ExecuteStatementRequest.builder();
@@ -443,7 +462,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.executeStatement(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Execute Statement command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Execute Statement command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -460,11 +479,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.batchExecuteStatement(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Batch Execute Statement command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Batch Execute Statement command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "batchExecuteStatement operation requires BatchExecuteStatementRequest in POJO mode");
             }
         } else {
             BatchExecuteStatementRequest.Builder builder = BatchExecuteStatementRequest.builder();
@@ -509,7 +531,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.batchExecuteStatement(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Batch Execute Statement command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Batch Execute Statement command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -525,11 +547,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.cancelStatement(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Cancel Statement command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Cancel Statement command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "cancelStatement operation requires CancelStatementRequest in POJO mode");
             }
         } else {
             CancelStatementRequest.Builder builder = CancelStatementRequest.builder();
@@ -542,7 +567,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.cancelStatement(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Cancel Statement command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Cancel Statement command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -558,11 +583,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.describeStatement(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Describe Statement command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Describe Statement command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "describeStatement operation requires DescribeStatementRequest in POJO mode");
             }
         } else {
             DescribeStatementRequest.Builder builder = DescribeStatementRequest.builder();
@@ -575,7 +603,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.describeStatement(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Describe Statement command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Describe Statement command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);
@@ -591,11 +619,14 @@ public class RedshiftData2Producer extends DefaultProducer {
                 try {
                     result = redshiftDataClient.getStatementResult(request);
                 } catch (AwsServiceException ase) {
-                    LOG.trace("Get Statement Result command returned the error code {}", ase.awsErrorDetails().errorCode());
+                    LOG.trace("Get Statement Result command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                     throw ase;
                 }
                 Message message = getMessageForResponse(exchange);
                 message.setBody(result);
+            } else {
+                throw new IllegalArgumentException(
+                        "getStatementResult operation requires GetStatementResultRequest in POJO mode");
             }
         } else {
             GetStatementResultRequest.Builder builder = GetStatementResultRequest.builder();
@@ -608,7 +639,7 @@ public class RedshiftData2Producer extends DefaultProducer {
             try {
                 result = redshiftDataClient.getStatementResult(builder.build());
             } catch (AwsServiceException ase) {
-                LOG.trace("Get Statement Result command returned the error code {}", ase.awsErrorDetails().errorCode());
+                LOG.trace("Get Statement Result command returned the error code {}", AwsExceptionUtil.errorCode(ase));
                 throw ase;
             }
             Message message = getMessageForResponse(exchange);

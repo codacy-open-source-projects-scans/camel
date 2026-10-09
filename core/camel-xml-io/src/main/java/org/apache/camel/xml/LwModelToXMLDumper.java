@@ -31,6 +31,8 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.CamelContextAware;
 import org.apache.camel.Expression;
 import org.apache.camel.NamedNode;
+import org.apache.camel.builder.EndpointConsumerBuilder;
+import org.apache.camel.builder.EndpointProducerBuilder;
 import org.apache.camel.model.BasicExpressionNode;
 import org.apache.camel.model.BeanFactoryDefinition;
 import org.apache.camel.model.DataFormatDefinition;
@@ -42,6 +44,8 @@ import org.apache.camel.model.RouteTemplateDefinition;
 import org.apache.camel.model.RouteTemplatesDefinition;
 import org.apache.camel.model.RoutesDefinition;
 import org.apache.camel.model.SendDefinition;
+import org.apache.camel.model.SwitchDefinition;
+import org.apache.camel.model.ThrowExceptionDefinition;
 import org.apache.camel.model.ToDynamicDefinition;
 import org.apache.camel.model.dataformat.DataFormatsDefinition;
 import org.apache.camel.model.language.ExpressionDefinition;
@@ -49,6 +53,7 @@ import org.apache.camel.spi.ModelToXMLDumper;
 import org.apache.camel.spi.NamespaceAware;
 import org.apache.camel.spi.annotations.JdkService;
 import org.apache.camel.util.KeyValueHolder;
+import org.apache.camel.util.StringHelper;
 import org.apache.camel.xml.out.BaseWriter;
 import org.apache.camel.xml.out.ModelWriter;
 
@@ -74,12 +79,13 @@ public class LwModelToXMLDumper implements ModelToXMLDumper {
         Properties properties = new Properties();
         Map<String, String> namespaces = new LinkedHashMap<>();
         Map<String, KeyValueHolder<Integer, String>> locations = new HashMap<>();
+        List<Runnable> restorers = new ArrayList<>();
         Consumer<RouteDefinition> extractor = route -> {
             extractNamespaces(route, namespaces);
             if (sourceLocation || context.isDebugging()) {
                 extractSourceLocations(route, locations);
             }
-            resolveEndpointDslUris(route);
+            restorers.add(resolveEndpointDslUris(route));
             if (Boolean.TRUE.equals(route.isTemplate())) {
                 Map<String, Object> parameters = route.getTemplateParameters();
                 if (parameters != null) {
@@ -101,6 +107,10 @@ public class LwModelToXMLDumper implements ModelToXMLDumper {
                 // write description
                 if (def.getDescriptionText() != null) {
                     doWriteAttribute("description", def.getDescriptionText());
+                }
+                // write note
+                if (def.getNote() != null) {
+                    doWriteAttribute("note", def.getNote());
                 }
                 // write location information
                 if (sourceLocation || context.isDebugging()) {
@@ -127,6 +137,25 @@ public class LwModelToXMLDumper implements ModelToXMLDumper {
                         writer.addAttribute(prefix, entry.getValue());
                     }
                 }
+            }
+
+            @Override
+            protected void doWriteThrowExceptionDefinition(String name, ThrowExceptionDefinition def) throws IOException {
+                Exception e = def.getException();
+                String type = def.getExceptionClass() != null
+                        ? def.getExceptionClass().getName() : e != null ? e.getClass().getName() : null;
+                if (type == null || def.getExceptionType() != null || def.getRef() != null) {
+                    super.doWriteThrowExceptionDefinition(name, def);
+                    return;
+                }
+                // an exception given as a class or an instance, as in throwException(new Exception("...")), is
+                // written as its type and message, as the class or instance itself cannot be serialized
+                startElement(name);
+                doWriteProcessorDefinitionAttributes(def);
+                String message = def.getMessage() != null ? def.getMessage() : e != null ? e.getMessage() : null;
+                doWriteAttribute("message", message, null);
+                doWriteAttribute("exceptionType", type, null);
+                endElement(name);
             }
 
             @Override
@@ -178,7 +207,11 @@ public class LwModelToXMLDumper implements ModelToXMLDumper {
         } else if (definition instanceof RouteDefinition route) {
             extractor.accept(route);
         }
-        writer.writeOptionalIdentifiedDefinitionRef((OptionalIdentifiedDefinition) definition);
+        try {
+            writer.writeOptionalIdentifiedDefinitionRef((OptionalIdentifiedDefinition) definition);
+        } finally {
+            restorers.forEach(Runnable::run);
+        }
 
         return buffer.toString();
     }
@@ -235,6 +268,13 @@ public class LwModelToXMLDumper implements ModelToXMLDumper {
      * @param namespaces the map of namespaces to add discovered XML namespaces into
      */
     private static void extractNamespaces(RouteDefinition route, Map<String, String> namespaces) {
+        for (SwitchDefinition sw : filterTypeInOutputs(route.getOutputs(), SwitchDefinition.class)) {
+            sw.preCreateProcessor();
+            NamespaceAware aware = getNamespaceAwareFromExpression(sw);
+            if (aware != null && aware.getNamespaces() != null) {
+                namespaces.putAll(aware.getNamespaces());
+            }
+        }
         for (ExpressionNode en : filterTypeInOutputs(route.getOutputs(), ExpressionNode.class)) {
             NamespaceAware na = getNamespaceAwareFromExpression(en);
             if (na != null) {
@@ -282,29 +322,48 @@ public class LwModelToXMLDumper implements ModelToXMLDumper {
 
     /**
      * If the route has been built with endpoint-dsl, then the model will not have uri set which then cannot be included
-     * in the JAXB model dump
+     * in the JAXB model dump. Returns a {@link Runnable} that restores the original endpoint DSL builders after the XML
+     * has been written, so that the live {@link RouteDefinition} is not permanently mutated by the dump.
      */
     @SuppressWarnings("rawtypes")
-    private static void resolveEndpointDslUris(RouteDefinition route) {
+    private static Runnable resolveEndpointDslUris(RouteDefinition route) {
+        List<Runnable> restorers = new ArrayList<>();
         FromDefinition from = route.getInput();
         if (from != null && from.getEndpointConsumerBuilder() != null) {
-            String uri = from.getEndpointConsumerBuilder().getRawUri();
-            from.setUri(uri);
+            EndpointConsumerBuilder builder = from.getEndpointConsumerBuilder();
+            from.setUri(builder.getRawUri());
+            restorers.add(() -> from.setEndpointConsumerBuilder(builder));
         }
         Collection<SendDefinition> col = filterTypeInOutputs(route.getOutputs(), SendDefinition.class);
         for (SendDefinition<?> to : col) {
             if (to.getEndpointProducerBuilder() != null) {
-                String uri = to.getEndpointProducerBuilder().getRawUri();
-                to.setUri(uri);
+                EndpointProducerBuilder builder = to.getEndpointProducerBuilder();
+                to.setUri(builder.getRawUri());
+                restorers.add(() -> to.setEndpointProducerBuilder(builder));
             }
         }
         Collection<ToDynamicDefinition> col2 = filterTypeInOutputs(route.getOutputs(), ToDynamicDefinition.class);
         for (ToDynamicDefinition to : col2) {
             if (to.getEndpointProducerBuilder() != null) {
-                String uri = to.getEndpointProducerBuilder().getRawUri();
-                to.setUri(uri);
+                EndpointProducerBuilder builder = to.getEndpointProducerBuilder();
+                to.setUri(builder.getRawUri());
+                // ToDynamicDefinition.setUri does not call clear(), so the builder is preserved;
+                // only the uri field needs to be reset.
+                restorers.add(() -> to.setUri(null));
             }
         }
+        return () -> restorers.forEach(Runnable::run);
+    }
+
+    private static NamespaceAware getNamespaceAwareFromExpression(SwitchDefinition definition) {
+        if (definition.getSelector() == null || definition.getSelector().getExpressionType() == null) {
+            return null;
+        }
+        ExpressionDefinition expression = definition.getSelector().getExpressionType();
+        if (expression.getExpressionValue() instanceof NamespaceAware aware) {
+            return aware;
+        }
+        return expression instanceof NamespaceAware aware ? aware : null;
     }
 
     private static NamespaceAware getNamespaceAwareFromExpression(ExpressionNode expressionNode) {
@@ -372,46 +431,38 @@ public class LwModelToXMLDumper implements ModelToXMLDumper {
         }
 
         private void doWriteBeanFactoryDefinition(BeanFactoryDefinition<?> b) {
+            // the values are escaped as they can have characters such as & and quotes (such as urls)
+            buffer.write("    <bean");
+            writeAttribute("name", b.getName());
             String type = b.getType();
-            if (type.startsWith("#class:")) {
+            if (type != null && type.startsWith("#class:")) {
                 type = type.substring(7);
             }
-            buffer.write(String.format("    <bean name=\"%s\" type=\"%s\"", b.getName(), type));
-            if (b.getFactoryBean() != null) {
-                buffer.write(String.format(" factoryBean=\"%s\"", b.getFactoryBean()));
-            }
-            if (b.getFactoryMethod() != null) {
-                buffer.write(String.format(" factoryMethod=\"%s\"", b.getFactoryMethod()));
-            }
-            if (b.getBuilderClass() != null) {
-                buffer.write(String.format(" builderClass=\"%s\"", b.getBuilderClass()));
-            }
-            if (b.getBuilderMethod() != null) {
-                buffer.write(String.format(" builderMethod=\"%s\"", b.getBuilderMethod()));
-            }
-            if (b.getInitMethod() != null) {
-                buffer.write(String.format(" initMethod=\"%s\"", b.getInitMethod()));
-            }
-            if (b.getDestroyMethod() != null) {
-                buffer.write(String.format(" destroyMethod=\"%s\"", b.getDestroyMethod()));
-            }
-            if (b.getScriptLanguage() != null) {
-                buffer.write(String.format(" scriptLanguage=\"%s\"", b.getScriptLanguage()));
-            }
+            writeAttribute("type", type);
+            writeAttribute("factoryBean", b.getFactoryBean());
+            writeAttribute("factoryMethod", b.getFactoryMethod());
+            writeAttribute("builderClass", b.getBuilderClass());
+            writeAttribute("builderMethod", b.getBuilderMethod());
+            writeAttribute("initMethod", b.getInitMethod());
+            writeAttribute("destroyMethod", b.getDestroyMethod());
+            writeAttribute("scriptLanguage", b.getScriptLanguage());
+            buffer.write(">\n");
             if (b.getScript() != null) {
+                // the script is an element (and not an attribute)
                 buffer.write(String.format("        <script>%n"));
-                buffer.write(b.getScript());
+                buffer.write(StringHelper.xmlEncode(b.getScript()));
                 buffer.write("\n");
                 buffer.write(String.format("        </script>%n"));
             }
-            buffer.write(">\n");
             if (b.getConstructors() != null && !b.getConstructors().isEmpty()) {
                 buffer.write(String.format("        <constructors>%n"));
                 b.getConstructors().forEach((idx, value) -> {
                     if (idx != null) {
-                        buffer.write(String.format("            <constructor index=\"%d\" value=\"%s\"/>%n", idx, value));
+                        buffer.write(String.format("            <constructor index=\"%d\" value=\"%s\"/>%n", idx,
+                                StringHelper.xmlEncode(String.valueOf(value))));
                     } else {
-                        buffer.write(String.format("            <constructor value=\"%s\"/>%n", value));
+                        buffer.write(String.format("            <constructor value=\"%s\"/>%n",
+                                StringHelper.xmlEncode(String.valueOf(value))));
                     }
                 });
                 buffer.write(String.format("        </constructors>%n"));
@@ -419,11 +470,18 @@ public class LwModelToXMLDumper implements ModelToXMLDumper {
             if (b.getProperties() != null && !b.getProperties().isEmpty()) {
                 buffer.write(String.format("        <properties>%n"));
                 b.getProperties().forEach((key, value) -> {
-                    buffer.write(String.format("            <property key=\"%s\" value=\"%s\"/>%n", key, value));
+                    buffer.write(String.format("            <property key=\"%s\" value=\"%s\"/>%n",
+                            StringHelper.xmlEncode(key), StringHelper.xmlEncode(String.valueOf(value))));
                 });
                 buffer.write(String.format("        </properties>%n"));
             }
             buffer.write(String.format("    </bean>%n"));
+        }
+
+        private void writeAttribute(String name, String value) {
+            if (value != null) {
+                buffer.write(String.format(" %s=\"%s\"", name, StringHelper.xmlEncode(value)));
+            }
         }
     }
 

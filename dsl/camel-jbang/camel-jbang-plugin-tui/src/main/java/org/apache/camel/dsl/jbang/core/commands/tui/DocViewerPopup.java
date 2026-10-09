@@ -1,0 +1,707 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.camel.dsl.jbang.core.commands.tui;
+
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+import dev.tamboui.layout.Constraint;
+import dev.tamboui.layout.Layout;
+import dev.tamboui.layout.Rect;
+import dev.tamboui.markdown.MarkdownView;
+import dev.tamboui.style.Overflow;
+import dev.tamboui.terminal.Frame;
+import dev.tamboui.text.Line;
+import dev.tamboui.text.Span;
+import dev.tamboui.text.Text;
+import dev.tamboui.tui.event.KeyCode;
+import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.MouseEvent;
+import dev.tamboui.tui.event.MouseEventKind;
+import dev.tamboui.widgets.Clear;
+import dev.tamboui.widgets.block.Block;
+import dev.tamboui.widgets.block.BorderType;
+import dev.tamboui.widgets.block.Borders;
+import dev.tamboui.widgets.block.Title;
+import dev.tamboui.widgets.list.ListItem;
+import dev.tamboui.widgets.list.ListState;
+import dev.tamboui.widgets.list.ListWidget;
+import dev.tamboui.widgets.list.ScrollMode;
+import dev.tamboui.widgets.paragraph.Paragraph;
+import dev.tamboui.widgets.scrollbar.Scrollbar;
+import dev.tamboui.widgets.scrollbar.ScrollbarState;
+import org.apache.camel.dsl.jbang.core.common.OllamaDoctorSupport;
+
+import static org.apache.camel.dsl.jbang.core.commands.tui.TuiHelper.hint;
+import static org.apache.camel.dsl.jbang.core.commands.tui.TuiHelper.hintLast;
+
+class DocViewerPopup {
+
+    private boolean showViewer;
+    private boolean showPicker;
+    private String docContent;
+    private List<Line> docLines;
+    private String docTitle;
+    private int docScroll;
+    private Runnable onCloseCallback;
+    private String catalogEntryName;
+    private String catalogEntryKind;
+    private org.apache.camel.catalog.CamelCatalog catalogEntryRef;
+    private boolean wantsOptions;
+    private final TocPopup tocPopup = new TocPopup();
+    private int lastContentWidth;
+    /** A heading to scroll to once the viewer knows its width, after the first render. */
+    private String pendingHeading;
+    private int lastTotalHeight;
+
+    private final ScrollbarState scrollbarState = new ScrollbarState();
+    private final ListState pickerState = new ListState();
+    private List<IntegrationInfo> pickerIntegrations;
+    private Rect pickerRect;
+
+    private MonitorContext ctx;
+    private Supplier<List<IntegrationInfo>> integrations;
+    private int mcpPort;
+    private Supplier<String> mcpConnectedClient;
+
+    void setContext(MonitorContext ctx) {
+        this.ctx = ctx;
+    }
+
+    void setIntegrations(Supplier<List<IntegrationInfo>> integrations) {
+        this.integrations = integrations;
+    }
+
+    void setMcpState(int port, Supplier<String> connectedClient) {
+        this.mcpPort = port;
+        this.mcpConnectedClient = connectedClient;
+    }
+
+    boolean isViewerVisible() {
+        return showViewer;
+    }
+
+    boolean isPickerVisible() {
+        return showPicker;
+    }
+
+    boolean isVisible() {
+        return showViewer || showPicker;
+    }
+
+    Rect getPickerRect() {
+        return pickerRect;
+    }
+
+    ListState getPickerState() {
+        return pickerState;
+    }
+
+    List<IntegrationInfo> getPickerIntegrations() {
+        return pickerIntegrations;
+    }
+
+    boolean consumeWantsOptions() {
+        boolean v = wantsOptions;
+        wantsOptions = false;
+        return v;
+    }
+
+    String getCatalogEntryName() {
+        return catalogEntryName;
+    }
+
+    String getCatalogEntryKind() {
+        return catalogEntryKind;
+    }
+
+    org.apache.camel.catalog.CamelCatalog getCatalogEntryRef() {
+        return catalogEntryRef;
+    }
+
+    void close() {
+        showViewer = false;
+        showPicker = false;
+        onCloseCallback = null;
+        catalogEntryName = null;
+        catalogEntryKind = null;
+        catalogEntryRef = null;
+    }
+
+    void openMarkdown(String title, String markdown) {
+        pendingHeading = null;
+        docLines = null;
+        docContent = markdown;
+        docTitle = title;
+        docScroll = 0;
+        lastTotalHeight = 0;
+        showViewer = true;
+        onCloseCallback = null;
+    }
+
+    /** Opens markdown scrolled to the first heading with the given text, when there is one. */
+    void openMarkdownAt(String title, String markdown, String heading) {
+        openMarkdown(title, markdown);
+        pendingHeading = heading;
+    }
+
+    void openMarkdown(String title, String markdown, Runnable onClose) {
+        openMarkdown(title, markdown);
+        this.onCloseCallback = onClose;
+    }
+
+    void openCatalogDoc(
+            String title, String markdown, String entryName, String entryKind,
+            org.apache.camel.catalog.CamelCatalog catalog) {
+        openMarkdown(title, markdown);
+        this.catalogEntryName = entryName;
+        this.catalogEntryKind = entryKind;
+        this.catalogEntryRef = catalog;
+    }
+
+    void openLines(String title, List<Line> lines) {
+        docContent = null;
+        docLines = lines;
+        docTitle = title;
+        docScroll = 0;
+        showViewer = true;
+        onCloseCallback = null;
+    }
+
+    boolean handleKeyEvent(KeyEvent ke) {
+        if (showViewer) {
+            if (tocPopup.isVisible()) {
+                tocPopup.handleKeyEvent(ke);
+                TocPopup.TocEntry entry = tocPopup.consumePendingEntry();
+                if (entry != null) {
+                    jumpToHeading(entry);
+                }
+                return true;
+            }
+            if (ke.isCancel()) {
+                showViewer = false;
+                Runnable cb = onCloseCallback;
+                onCloseCallback = null;
+                if (cb != null) {
+                    cb.run();
+                }
+            } else if (ke.isCharIgnoreCase('t') && docContent != null) {
+                List<TocPopup.TocEntry> headings = TocPopup.extractHeadings(docContent);
+                if (!headings.isEmpty()) {
+                    tocPopup.open(headings);
+                }
+            } else if (ke.isCharIgnoreCase('o') && catalogEntryName != null) {
+                wantsOptions = true;
+                showViewer = false;
+            } else if (ke.isUp() || ke.isChar('k')) {
+                docScroll = Math.max(0, docScroll - 1);
+            } else if (ke.isDown() || ke.isChar('j')) {
+                docScroll++;
+            } else if (ke.isPageUp() || ke.isKey(KeyCode.PAGE_UP)) {
+                docScroll = Math.max(0, docScroll - 10);
+            } else if (ke.isPageDown() || ke.isKey(KeyCode.PAGE_DOWN)) {
+                docScroll += 10;
+            } else if (ke.isHome() || ke.isKey(KeyCode.HOME)) {
+                docScroll = 0;
+            } else if (ke.isEnd() || ke.isKey(KeyCode.END)) {
+                docScroll = Integer.MAX_VALUE;
+            }
+            return true;
+        }
+        if (showPicker) {
+            if (ke.isCancel()) {
+                showPicker = false;
+                return true;
+            }
+            if (ke.isUp()) {
+                pickerState.selectPrevious();
+            } else if (ke.isDown()) {
+                pickerState.selectNext(pickerIntegrations != null ? pickerIntegrations.size() : 0);
+            } else if (ke.isConfirm()) {
+                loadDocFromSelectedIntegration();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    boolean handleMouseEvent(MouseEvent me) {
+        if (showViewer) {
+            if (tocPopup.isVisible()) {
+                tocPopup.handleMouseEvent(me);
+                TocPopup.TocEntry entry = tocPopup.consumePendingEntry();
+                if (entry != null) {
+                    jumpToHeading(entry);
+                }
+                return true;
+            }
+            if (me.kind() == MouseEventKind.SCROLL_UP) {
+                docScroll = Math.max(0, docScroll - 3);
+                return true;
+            }
+            if (me.kind() == MouseEventKind.SCROLL_DOWN) {
+                docScroll += 3;
+                return true;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void jumpToHeading(TocPopup.TocEntry entry) {
+        if (docContent == null || lastContentWidth <= 0) {
+            return;
+        }
+        String prefix = docContent.substring(0, Math.min(entry.charOffset(), docContent.length()));
+        int offset = MarkdownView.builder()
+                .source(prefix)
+                .styles(Theme.markdownStyles())
+                .syntaxTheme(Theme.syntaxTheme())
+                .build()
+                .computeHeight(lastContentWidth);
+        docScroll = offset;
+    }
+
+    void render(Frame frame, Rect area) {
+        if (showPicker) {
+            renderPicker(frame, area);
+        }
+        if (showViewer) {
+            renderViewer(frame, area);
+        }
+    }
+
+    void renderFooter(List<Span> spans) {
+        if (showViewer) {
+            hint(spans, "Esc", "back");
+            if (docContent != null) {
+                hint(spans, "t", "toc");
+            }
+            if (catalogEntryName != null) {
+                hint(spans, "o", "options");
+            }
+        } else if (showPicker) {
+            hint(spans, "Enter", "view");
+            hintLast(spans, "Esc", "close");
+        }
+    }
+
+    // --- Picker ---
+
+    String openDocPicker() {
+        List<IntegrationInfo> withDocs = integrations.get().stream()
+                .filter(i -> !i.vanishing && i.readmeFiles != null && !i.readmeFiles.isEmpty())
+                .collect(Collectors.toList());
+        if (withDocs.isEmpty()) {
+            return "No integrations with documentation found";
+        }
+        if (withDocs.size() == 1) {
+            return loadDocFromIntegration(withDocs.get(0));
+        }
+        pickerIntegrations = withDocs;
+        showPicker = true;
+        pickerState.select(0);
+        return null;
+    }
+
+    String openDoc(IntegrationInfo info) {
+        return loadDocFromIntegration(info);
+    }
+
+    private void loadDocFromSelectedIntegration() {
+        Integer sel = pickerState.selected();
+        if (sel == null || pickerIntegrations == null || sel >= pickerIntegrations.size()) {
+            return;
+        }
+        IntegrationInfo info = pickerIntegrations.get(sel);
+        loadDocFromIntegration(info);
+    }
+
+    private String loadDocFromIntegration(IntegrationInfo info) {
+        if (ctx == null) {
+            return null;
+        }
+        docLines = null;
+        showPicker = false;
+        try {
+            org.apache.camel.util.json.JsonObject action = new org.apache.camel.util.json.JsonObject();
+            action.put("action", "readme");
+            org.apache.camel.util.json.JsonObject response = ctx.executeAction(info.pid, action, 5000);
+            if (response != null && response.getString("content") != null) {
+                String raw = response.getString("content");
+                String file = response.getStringOrDefault("file", "README");
+                docContent = file.endsWith(".adoc") ? DocHelper.asciidocToMarkdown(raw) : raw;
+                docTitle = (info.name != null ? info.name : info.pid) + " - " + Path.of(file).getFileName();
+                docScroll = 0;
+                showViewer = true;
+                onCloseCallback = null;
+            } else {
+                return "Could not load documentation";
+            }
+        } catch (Exception e) {
+            return "Error loading documentation: " + e.getMessage();
+        }
+        return null;
+    }
+
+    // --- Content generators ---
+
+    void openTapeInstructions() {
+        openMarkdown("Tape Recording Guide",
+                "# Tape Recording Guide\n\n"
+                                             + "Record your live TUI session as a `.tape` file that captures keystrokes\n"
+                                             + "with timing. The tape can be replayed inside the TUI to produce\n"
+                                             + "an Asciinema `.cast` recording.\n\n"
+                                             + "## Starting and Stopping\n\n"
+                                             + "- Use the **F2** actions menu → Start/Stop Tape Recording\n\n"
+                                             + "When recording stops, the tape is saved to the current directory as\n"
+                                             + "`camel-tui-tape-<timestamp>.tape`.\n\n"
+                                             + "## Replaying a Tape\n\n"
+                                             + "Replay the tape inside the TUI with the `--record` option:\n\n"
+                                             + "    camel tui monitor --record=camel-tui-tape-20260525-153000.tape\n\n"
+                                             + "This replays the keystrokes inside the live TUI and produces\n"
+                                             + "an Asciinema `.cast` file.\n\n"
+                                             + "## Converting to Animated GIF\n\n"
+                                             + "Use `agg` to convert the `.cast` file to an animated GIF:\n\n"
+                                             + "    brew install asciinema/tap/agg\n"
+                                             + "    agg recording.cast demo.gif\n\n"
+                                             + "Or upload to [asciinema.org](https://asciinema.org) for a shareable link.\n\n"
+                                             + "## Tips\n\n"
+                                             + "- Tape recording toggle is not captured in the tape, keeping the script clean\n"
+                                             + "- Natural pauses between keystrokes are preserved as `Sleep` commands\n"
+                                             + "- Keep recordings focused — one workflow at a time works best\n");
+    }
+
+    void openSetupAI() {
+        // current detection, mirroring the Doctor popup so both screens agree
+        String cloud = DoctorPopup.resolveCloudAiProvider();
+        OllamaDoctorSupport.Status ollama = OllamaDoctorSupport.detect();
+        String status;
+        if (cloud != null) {
+            status = "**Detected:** " + cloud + " (from environment)";
+        } else if (ollama.running() && ollama.models() != null && !ollama.models().isEmpty()) {
+            status = "**Detected:** Ollama at " + OllamaDoctorSupport.formatDisplayHost(ollama.baseUrl())
+                     + " with " + OllamaDoctorSupport.modelCountLabel(ollama.models());
+        } else if (ollama.running()) {
+            status = "**Detected:** Ollama is running but has no models. Run `ollama pull qwen3.6:35b-a3b`.";
+        } else {
+            status = "**Status:** No AI provider detected. Set an API key, start Ollama, or pick a coding agent "
+                     + "with Ctrl+P in the panel (section 5), then press F8.";
+        }
+        String url = "http://localhost:" + mcpPort + "/mcp";
+        openMarkdown("Setup AI",
+                "# Setup AI\n\n"
+                                 + status + "\n\n"
+                                 + "Press **F8** to open the AI prompt panel. The panel answers questions about your running\n"
+                                 + "integrations by calling built-in tools (routes, logs, errors, traces, health).\n\n"
+                                 + "## 1. Choose a provider\n\n"
+                                 + "The panel auto-detects a provider from environment variables, in this order:\n\n"
+                                 + "| Environment | Provider |\n"
+                                 + "|-------------|----------|\n"
+                                 + "| `ANTHROPIC_API_KEY` | Anthropic Claude |\n"
+                                 + "| `CLOUD_ML_REGION` + `ANTHROPIC_VERTEX_PROJECT_ID` | Vertex AI |\n"
+                                 + "| `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` | Azure OpenAI |\n"
+                                 + "| `GEMINI_API_KEY` | Google Gemini |\n"
+                                 + "| `OPENAI_API_KEY` | OpenAI |\n"
+                                 + "| `WATSONX_APIKEY` | IBM watsonx.ai |\n"
+                                 + "| `LLM_API_KEY` + `LLM_BASE_URL` | Any OpenAI-compatible server |\n"
+                                 + "| Ollama at `localhost:11434` | Local Ollama (no key needed) |\n\n"
+                                 + "Export the variable before starting the TUI, for example:\n\n"
+                                 + "    export ANTHROPIC_API_KEY=sk-ant-...\n"
+                                 + "    camel tui\n\n"
+                                 + "To pin a provider, model or URL regardless of the environment, open\n"
+                                 + "**F2 → Settings** and set *AI Provider*, *AI Model* and *AI Base URL*\n"
+                                 + "(stored as `camel.tui.ai.provider`, `camel.tui.ai.model`, `camel.tui.ai.url`).\n\n"
+                                 + "## 2. Local AI with Ollama (no API key)\n\n"
+                                 + "Install Ollama natively for GPU acceleration, pull a model, then press F8:\n\n"
+                                 + "    brew install ollama                          # macOS\n"
+                                 + "    curl -fsSL https://ollama.com/install.sh | sh  # Linux\n"
+                                 + "    ollama pull qwen3.6:35b-a3b\n\n"
+                                 + "The AI panel relies on tool calling. Models smaller than ~14B do not call tools\n"
+                                 + "reliably and answer from training data instead. Use at least 14B. Prefer a\n"
+                                 + "mixture-of-experts model such as `qwen3.6:35b-a3b`: with only 3B parameters active\n"
+                                 + "per token it processes the tool-heavy prompt many times faster than a dense 27B/32B\n"
+                                 + "model, so answers start in seconds instead of a minute.\n\n"
+                                 + "| Model | RAM | Notes |\n"
+                                 + "|-------|-----|-------|\n"
+                                 + "| `qwen3.6:35b-a3b` | ~23 GB | Recommended: fastest prompt processing, needs 32 GB+ |\n"
+                                 + "| `qwen2.5:14b` | ~9 GB | Minimum for 16 GB machines |\n"
+                                 + "| `qwen3.6:27b` | ~18 GB | Strong dense model, several times slower prompt processing |\n"
+                                 + "| `qwen2.5:32b` | ~20 GB | Good quality, slow prompt processing |\n"
+                                 + "| `hermes3:70b` | ~43 GB | Excellent tool calling, needs 64 GB+ |\n"
+                                 + "| `llama3.3:70b` | ~43 GB | Best open model, needs 64 GB+ |\n\n"
+                                 + "`camel infra run ollama` runs Ollama in Docker without GPU acceleration, which is\n"
+                                 + "much slower. Prefer the native install for development.\n\n"
+                                 + "On Apple Silicon, use the default (GGUF) tags rather than the `-mlx` tags: the Ollama\n"
+                                 + "MLX engine cannot yet reuse the cached prompt for Qwen 3.x models, so every question\n"
+                                 + "re-processes the whole prompt.\n\n"
+                                 + "## 3. OpenAI-compatible local servers\n\n"
+                                 + "LM Studio, vLLM, llama.cpp, GPT4All and similar servers work through `LLM_BASE_URL`:\n\n"
+                                 + "    export LLM_API_KEY=any-value\n"
+                                 + "    export LLM_BASE_URL=http://localhost:1234\n"
+                                 + "    camel tui\n\n"
+                                 + "`OPENAI_BASE_URL` is accepted as an alternative to `LLM_BASE_URL`. The model is the first one\n"
+                                 + "the server lists on `/v1/models`; pick another with `/model <name>` in the panel or\n"
+                                 + "*AI Model* in **F2 -> Settings**. The model must support tool calling.\n\n"
+                                 + "## 4. Using the AI panel\n\n"
+                                 + "- **F8** opens and closes the panel; **Enter** sends the prompt\n"
+                                 + "- **Ctrl+P** (or `/provider`) switches provider or model for the session\n"
+                                 + "- `/model <name>` switches the model, `/clear` resets the conversation\n"
+                                 + "- `/run`, `/infra` and `/send` run Camel CLI commands from the prompt\n"
+                                 + "- **Ctrl+U** toggles the usage view with token consumption\n"
+                                 + "- `/help` lists all slash commands; **↑/↓** recalls earlier prompts\n\n"
+                                 + "Check **F2 → Run Doctor** to verify the detected provider and Ollama models.\n\n"
+                                 + "## 5. Use your coding agent inside the panel (ACP)\n\n"
+                                 + "If you already use Claude Code, Codex, OpenCode, IBM Bob, Qwen Code or DeepSeek Harness,\n"
+                                 + "the panel can hand your questions to it over the Agent Client Protocol. No API key is\n"
+                                 + "needed in the TUI: the agent keeps its own login, model, memory and skills.\n\n"
+                                 + "Press **Ctrl+P** in the panel and pick a preset:\n\n"
+                                 + "| Provider | Runs | Before the first question |\n"
+                                 + "|----------|------|---------------------------|\n"
+                                 + "| `acp:claude` | `npx -y @agentclientprotocol/claude-agent-acp` | log in with the `claude` CLI |\n"
+                                 + "| `acp:codex` | `npx -y @agentclientprotocol/codex-acp` | `codex login` |\n"
+                                 + "| `acp:opencode` | `opencode acp` | `opencode auth login` |\n"
+                                 + "| `acp:bob` | `bob acp` | set `BOBSHELL_API_KEY` or run `bob` once |\n"
+                                 + "| `acp:qwen` | `qwen --acp` | set `OPENAI_API_KEY` and `OPENAI_BASE_URL` |\n"
+                                 + "| `acp:dsh` | `npx -y @deepseek-ai/dsh --profile acp` | configure the model key in DeepSeek Harness |\n"
+                                 + "| `acp:custom` | *ACP Command* in **F2 → Settings** | depends on the agent |\n\n"
+                                 + "The `npx` presets need Node.js 22 or newer. The agent starts with your first question and\n"
+                                 + "gets the TUI's tools through an MCP server that is started on demand, so `--mcp` is not\n"
+                                 + "required. Read-only tools are approved automatically; a tool that changes something, or\n"
+                                 + "a file edit or command of the agent's own, opens a permission popup first (**Enter**\n"
+                                 + "allows, **Esc** rejects, **Ctrl+C** cancels the turn). File edits go through the same\n"
+                                 + "`/write confirm|auto|live` modes as the built-in providers. The agent's skills and\n"
+                                 + "commands appear as `/agent:<name>`. Set *AI Provider* to the preset in **F2 → Settings**\n"
+                                 + "to make it the default.\n\n"
+                                 + "## 6. Connect an agent from outside over MCP (optional)\n\n"
+                                 + "Start the TUI with `--mcp` to expose an MCP server, then connect an agent such as\n"
+                                 + "Claude Code from its own terminal:\n\n"
+                                 + "    claude mcp add --transport http camel-tui " + url + "\n\n"
+                                 + "The footer turns green when the agent connects. See **F2 → AI & MCP → MCP Info**\n"
+                                 + "for the available tools and a `.mcp.json` example.\n");
+    }
+
+    void openMcpInfo() {
+        String url = "http://localhost:" + mcpPort + "/mcp";
+        String client = mcpConnectedClient != null ? mcpConnectedClient.get() : null;
+        String status = client != null
+                ? "**Connected:** " + client
+                : "**Status:** Waiting for connection";
+        openMarkdown("MCP Info",
+                "# MCP Server\n\n"
+                                 + status + "\n\n"
+                                 + "The TUI has an embedded MCP (Model Context Protocol) server running at:\n\n"
+                                 + "    " + url + "\n\n"
+                                 + "This allows AI coding agents to observe your TUI session — see the screen,\n"
+                                 + "follow your key presses, and understand what you're doing.\n\n"
+                                 + "## Available Tools\n\n"
+                                 + "| Tool | Description |\n"
+                                 + "|------|-------------|\n"
+                                 + "| `tui_get_screen` | Returns the current screen content as text |\n"
+                                 + "| `tui_get_events` | Returns recent key presses and navigation events |\n"
+                                 + "| `tui_get_state` | Returns active tab, selected integration, etc. |\n"
+                                 + "| `tui_get_options` | Returns available tabs and integrations |\n"
+                                 + "| `tui_show_caption` | Shows a message on the TUI screen |\n"
+                                 + "| `tui_navigate` | Switch tabs and select integrations |\n"
+                                 + "| `tui_send_keys` | Send key presses to control the TUI |\n"
+                                 + "| `tui_wait_for_idle` | Waits for the screen to settle after an action |\n"
+                                 + "| `camel_control` | Stop/start routes, restart, stop, or kill integration |\n"
+                                 + "| `camel_get_files` / `camel_write_file` | Read and edit the source files |\n"
+                                 + "| `camel_catalog_doc` / `camel_validate_source` | Catalog docs and validation |\n"
+                                 + "| `tui_tape_start` | Start recording interactions as a VHS .tape file |\n"
+                                 + "| `tui_tape_stop` | Stop recording and return the tape content |\n\n"
+                                 + "## Setup for Claude Code\n\n"
+                                 + "Run this command to connect Claude Code to the TUI:\n\n"
+                                 + "    claude mcp add --transport http camel-tui " + url + "\n\n"
+                                 + "Or add to your project's `.mcp.json`:\n\n"
+                                 + "    {\n"
+                                 + "      \"mcpServers\": {\n"
+                                 + "        \"camel-tui\": {\n"
+                                 + "          \"type\": \"http\",\n"
+                                 + "          \"url\": \"" + url + "\"\n"
+                                 + "        }\n"
+                                 + "      }\n"
+                                 + "    }\n\n"
+                                 + "A `.mcp.json` file is auto-generated in the current directory while the TUI\n"
+                                 + "is running with `--mcp` enabled. It is removed when the TUI exits.\n\n"
+                                 + "## Usage Examples\n\n"
+                                 + "Once connected, ask your AI agent:\n\n"
+                                 + "- \"What's on my Camel TUI screen right now?\"\n"
+                                 + "- \"What tab am I on and what integration is selected?\"\n"
+                                 + "- \"What keys did I press in the last minute?\"\n"
+                                 + "- \"What color is the throughput chart?\"\n"
+                                 + "- \"Show me a message on the TUI screen\"\n"
+                                 + "- \"Switch to the Health tab\"\n"
+                                 + "- \"Select the myApp integration\"\n");
+    }
+
+    void showFailureLog(String name, Path logFile) {
+        List<String> logLines = TuiHelper.readAllLines(logFile);
+        if (logLines.isEmpty()) {
+            return;
+        }
+        List<Line> lines = logLines.stream()
+                .map(line -> TuiHelper.ansiToLine(line.replace("\t", "        "), 0))
+                .collect(Collectors.toList());
+        openLines("Failed: " + name, lines);
+        // open at why it failed, which comes after a long startup log
+        docScroll = failureLine(logLines);
+    }
+
+    /** The line to open a failure log at: a little above the last line that says why, else the top. */
+    static int failureLine(List<String> logLines) {
+        for (int i = logLines.size() - 1; i >= 0; i--) {
+            String line = logLines.get(i);
+            for (String marker : LaunchManager.START_FAILURES) {
+                if (line.contains(marker)) {
+                    return Math.max(0, i - 2);
+                }
+            }
+        }
+        return 0;
+    }
+
+    /** Closes the viewer when it shows the failure log of a run. */
+    void closeFailureLog() {
+        if (isVisible() && docTitle != null && docTitle.startsWith("Failed:")) {
+            close();
+        }
+    }
+
+    boolean hasFailureContent(Path logFile) {
+        return !TuiHelper.readAllLines(logFile).isEmpty();
+    }
+
+    // --- Rendering ---
+
+    private void renderViewer(Frame frame, Rect area) {
+        frame.renderWidget(Clear.INSTANCE, area);
+        Title title;
+        if (docTitle != null && docTitle.startsWith("Failed:")) {
+            String rest = docTitle.substring("Failed:".length());
+            title = Title.from(Line.from(
+                    Span.styled(" Failed:", Theme.error().bold()),
+                    Span.raw(rest + " ")));
+        } else {
+            title = Title.from(" " + docTitle + " ");
+        }
+        Block block = Block.builder()
+                .borderType(BorderType.ROUNDED).borders(Borders.ALL)
+                .title(title)
+                .build();
+        if (docLines != null) {
+            frame.renderWidget(block, area);
+            Rect inner = block.inner(area);
+            List<Rect> hChunks = Layout.horizontal()
+                    .constraints(Constraint.fill(), Constraint.length(1))
+                    .split(inner);
+            int visibleLines = hChunks.get(0).height();
+            int totalLines = docLines.size();
+            int clampedScroll = Math.min(docScroll, Math.max(0, totalLines - visibleLines));
+            docScroll = clampedScroll;
+            int end = Math.min(clampedScroll + visibleLines, totalLines);
+            List<Line> visible = new ArrayList<>(docLines.subList(clampedScroll, end));
+            while (visible.size() < visibleLines) {
+                visible.add(Line.from(""));
+            }
+            frame.renderWidget(
+                    Paragraph.builder().text(Text.from(visible.toArray(Line[]::new)))
+                            .overflow(Overflow.CLIP).build(),
+                    hChunks.get(0));
+            if (totalLines > visibleLines) {
+                scrollbarState
+                        .contentLength(totalLines)
+                        .viewportContentLength(visibleLines)
+                        .position(clampedScroll);
+                frame.renderStatefulWidget(Scrollbar.builder().build(), hChunks.get(1), scrollbarState);
+            }
+        } else {
+            frame.renderWidget(block, area);
+            Rect inner = block.inner(area);
+            List<Rect> hChunks = Layout.horizontal()
+                    .constraints(Constraint.fill(), Constraint.length(1))
+                    .split(inner);
+            lastContentWidth = hChunks.get(0).width();
+            int viewportHeight = hChunks.get(0).height();
+            if (lastTotalHeight > 0) {
+                int maxScroll = Math.max(0, lastTotalHeight - viewportHeight);
+                if (docScroll > maxScroll) {
+                    docScroll = maxScroll;
+                }
+            }
+            MarkdownView view = MarkdownView.builder()
+                    .source(docContent)
+                    .scroll(docScroll)
+                    .styles(Theme.markdownStyles())
+                    .syntaxTheme(Theme.syntaxTheme())
+                    .build();
+            frame.renderWidget(view, hChunks.get(0));
+            if (pendingHeading != null) {
+                String wanted = pendingHeading;
+                pendingHeading = null;
+                TocPopup.extractHeadings(docContent).stream()
+                        .filter(h -> h.title().strip().startsWith(wanted)).findFirst()
+                        .ifPresent(this::jumpToHeading);
+            }
+            int totalHeight = view.computeHeight(lastContentWidth);
+            lastTotalHeight = totalHeight;
+            if (totalHeight > viewportHeight) {
+                scrollbarState
+                        .contentLength(totalHeight)
+                        .viewportContentLength(viewportHeight)
+                        .position(docScroll);
+                frame.renderStatefulWidget(Scrollbar.builder().build(), hChunks.get(1), scrollbarState);
+            }
+        }
+        if (tocPopup.isVisible()) {
+            tocPopup.render(frame, area);
+        }
+    }
+
+    private void renderPicker(Frame frame, Rect area) {
+        if (pickerIntegrations == null || pickerIntegrations.isEmpty()) {
+            return;
+        }
+        int popupW = Math.min(60, area.width() - 4);
+        int popupH = Math.min(pickerIntegrations.size() + 2, Math.min(15, area.height() - 4));
+        int x = area.left() + Math.max(0, (area.width() - popupW) / 2);
+        int y = area.top() + 2;
+        Rect popup = new Rect(x, y, Math.min(popupW, area.width()), Math.min(popupH, area.height() - 2));
+        this.pickerRect = popup;
+
+        frame.renderWidget(Clear.INSTANCE, popup);
+        List<ListItem> items = new ArrayList<>();
+        for (IntegrationInfo info : pickerIntegrations) {
+            String label = "  " + (info.name != null ? info.name : info.pid);
+            items.add(ListItem.from(label));
+        }
+        ListWidget list = ListWidget.builder()
+                .items(items.toArray(ListItem[]::new))
+                .highlightStyle(Theme.selectionBg())
+                .highlightSymbol("")
+                .scrollMode(ScrollMode.AUTO_SCROLL)
+                .block(Block.builder()
+                        .borderType(BorderType.ROUNDED).borders(Borders.ALL)
+                        .title(" Show Integration Doc ")
+                        .build())
+                .build();
+        frame.renderStatefulWidget(list, popup, pickerState);
+    }
+}

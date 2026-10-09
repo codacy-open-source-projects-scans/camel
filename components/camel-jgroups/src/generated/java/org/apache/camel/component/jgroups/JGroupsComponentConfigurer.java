@@ -23,6 +23,8 @@ public class JGroupsComponentConfigurer extends PropertyConfigurerSupport implem
     public boolean configure(CamelContext camelContext, Object obj, String name, Object value, boolean ignoreCase) {
         JGroupsComponent target = (JGroupsComponent) obj;
         switch (ignoreCase ? name.toLowerCase() : name) {
+        case "acceptallobjects":
+        case "acceptAllObjects": target.setAcceptAllObjects(property(camelContext, boolean.class, value)); return true;
         case "autowiredenabled":
         case "autowiredEnabled": target.setAutowiredEnabled(property(camelContext, boolean.class, value)); return true;
         case "bridgeerrorhandler":
@@ -30,6 +32,8 @@ public class JGroupsComponentConfigurer extends PropertyConfigurerSupport implem
         case "channel": target.setChannel(property(camelContext, org.jgroups.JChannel.class, value)); return true;
         case "channelproperties":
         case "channelProperties": target.setChannelProperties(property(camelContext, java.lang.String.class, value)); return true;
+        case "deserializationfilter":
+        case "deserializationFilter": target.setDeserializationFilter(property(camelContext, java.lang.String.class, value)); return true;
         case "enableviewmessages":
         case "enableViewMessages": target.setEnableViewMessages(property(camelContext, boolean.class, value)); return true;
         case "lazystartproducer":
@@ -41,6 +45,8 @@ public class JGroupsComponentConfigurer extends PropertyConfigurerSupport implem
     @Override
     public Class<?> getOptionType(String name, boolean ignoreCase) {
         switch (ignoreCase ? name.toLowerCase() : name) {
+        case "acceptallobjects":
+        case "acceptAllObjects": return boolean.class;
         case "autowiredenabled":
         case "autowiredEnabled": return boolean.class;
         case "bridgeerrorhandler":
@@ -48,6 +54,8 @@ public class JGroupsComponentConfigurer extends PropertyConfigurerSupport implem
         case "channel": return org.jgroups.JChannel.class;
         case "channelproperties":
         case "channelProperties": return java.lang.String.class;
+        case "deserializationfilter":
+        case "deserializationFilter": return java.lang.String.class;
         case "enableviewmessages":
         case "enableViewMessages": return boolean.class;
         case "lazystartproducer":
@@ -60,6 +68,8 @@ public class JGroupsComponentConfigurer extends PropertyConfigurerSupport implem
     public Object getOptionValue(Object obj, String name, boolean ignoreCase) {
         JGroupsComponent target = (JGroupsComponent) obj;
         switch (ignoreCase ? name.toLowerCase() : name) {
+        case "acceptallobjects":
+        case "acceptAllObjects": return target.isAcceptAllObjects();
         case "autowiredenabled":
         case "autowiredEnabled": return target.isAutowiredEnabled();
         case "bridgeerrorhandler":
@@ -67,6 +77,8 @@ public class JGroupsComponentConfigurer extends PropertyConfigurerSupport implem
         case "channel": return target.getChannel();
         case "channelproperties":
         case "channelProperties": return target.getChannelProperties();
+        case "deserializationfilter":
+        case "deserializationFilter": return target.getDeserializationFilter();
         case "enableviewmessages":
         case "enableViewMessages": return target.isEnableViewMessages();
         case "lazystartproducer":

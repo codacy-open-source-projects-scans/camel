@@ -18,6 +18,7 @@ package org.apache.camel.throttling;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -28,6 +29,7 @@ import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.NonManagedService;
 import org.apache.camel.Route;
+import org.apache.camel.StatefulService;
 import org.apache.camel.spi.CamelEvent;
 import org.apache.camel.spi.CamelEvent.ExchangeCompletedEvent;
 import org.apache.camel.spi.CamelLogger;
@@ -66,19 +68,28 @@ public class ThrottlingInflightRoutePolicy extends RoutePolicySupport implements
     }
 
     private final Set<Route> routes = new LinkedHashSet<>();
+    // the consumers this policy has suspended (or stopped), as only those can be resumed (or started) by this policy
+    private final Set<Consumer> suspendedConsumers = ConcurrentHashMap.newKeySet();
     private ContextScopedEventNotifier eventNotifier;
     private CamelContext camelContext;
     private final Lock lock = new ReentrantLock();
     @Metadata(description = "Sets which scope the throttling should be based upon, either route or total scoped.",
               enums = "Context,Route", defaultValue = "Route")
-    private ThrottlingScope scope = ThrottlingScope.Route;
+    private volatile ThrottlingScope scope = ThrottlingScope.Route;
     @Metadata(description = "Sets the upper limit of number of concurrent inflight exchanges at which point reached the throttler should suspend the route.",
               defaultValue = "1000")
-    private int maxInflightExchanges = 1000;
+    private volatile int maxInflightExchanges = 1000;
     @Metadata(description = "Sets at which percentage of the max the throttler should start resuming the route.",
               defaultValue = "70")
-    private int resumePercentOfMax = 70;
-    private int resumeInflightExchanges = 700;
+    private volatile int resumePercentOfMax = 70;
+
+    // immutable holder for throttling limits that must be visible atomically on routing threads
+    private record ThrottlingLimits(int maxInflightExchanges, int resumeInflightExchanges) {
+    }
+
+    private volatile ThrottlingLimits throttlingLimits
+            = new ThrottlingLimits(maxInflightExchanges, Math.max(resumePercentOfMax * maxInflightExchanges / 100, 1));
+
     @Metadata(description = "Sets the logging level to report the throttling activity.",
               javaType = "org.apache.camel.LoggingLevel", defaultValue = "INFO", enums = "TRACE,DEBUG,INFO,WARN,ERROR,OFF")
     private LoggingLevel loggingLevel = LoggingLevel.INFO;
@@ -110,6 +121,35 @@ public class ThrottlingInflightRoutePolicy extends RoutePolicySupport implements
     }
 
     @Override
+    public void onStart(Route route) {
+        routeControllerTookOver(route);
+    }
+
+    @Override
+    public void onStop(Route route) {
+        routeControllerTookOver(route);
+    }
+
+    @Override
+    public void onSuspend(Route route) {
+        routeControllerTookOver(route);
+    }
+
+    @Override
+    public void onResume(Route route) {
+        routeControllerTookOver(route);
+    }
+
+    private void routeControllerTookOver(Route route) {
+        // the route controller has started, stopped, suspended or resumed the consumer, so it is no longer suspended by
+        // this policy
+        Consumer consumer = route.getConsumer();
+        if (consumer != null) {
+            suspendedConsumers.remove(consumer);
+        }
+    }
+
+    @Override
     public void onExchangeDone(Route route, Exchange exchange) {
         // if route scoped then throttle directly
         // as context scoped is handled using an EventNotifier instead
@@ -128,15 +168,20 @@ public class ThrottlingInflightRoutePolicy extends RoutePolicySupport implements
         // this works the best when this logic is executed when the exchange is done
         Consumer consumer = route.getConsumer();
 
+        // snapshot the volatile holder once for consistent reads
+        ThrottlingLimits limits = this.throttlingLimits;
+        int maxInflight = limits.maxInflightExchanges();
+        int resumeInflight = limits.resumeInflightExchanges();
+
         int size = getSize(route, exchange);
-        boolean stop = maxInflightExchanges > 0 && size > maxInflightExchanges;
+        boolean stop = maxInflight > 0 && size > maxInflight;
         if (LOG.isTraceEnabled()) {
-            LOG.trace("{} > 0 && {} > {} evaluated as {}", maxInflightExchanges, size, maxInflightExchanges, stop);
+            LOG.trace("{} > 0 && {} > {} evaluated as {}", maxInflight, size, maxInflight, stop);
         }
         if (stop) {
             try {
                 lock.lock();
-                stopConsumer(size, consumer);
+                stopConsumer(size, consumer, maxInflight);
             } catch (Exception e) {
                 handleException(e);
             } finally {
@@ -144,17 +189,23 @@ public class ThrottlingInflightRoutePolicy extends RoutePolicySupport implements
             }
         }
 
+        // fast path: nothing to resume unless this policy has suspended a consumer (a consumer that this thread has just
+        // suspended above is already in the set, and every later completion checks again)
+        if (suspendedConsumers.isEmpty()) {
+            return;
+        }
+
         // reload size in case a race condition with too many at once being invoked
         // so we need to ensure that we read the most current size and start the consumer if we are already to low
         size = getSize(route, exchange);
-        boolean start = size <= resumeInflightExchanges;
+        boolean start = size <= resumeInflight;
         if (LOG.isTraceEnabled()) {
-            LOG.trace("{} <= {} evaluated as {}", size, resumeInflightExchanges, start);
+            LOG.trace("{} <= {} evaluated as {}", size, resumeInflight, start);
         }
         if (start) {
             try {
                 lock.lock();
-                startConsumer(size, consumer);
+                startConsumer(route, size, consumer, resumeInflight);
             } catch (Exception e) {
                 handleException(e);
             } finally {
@@ -175,10 +226,12 @@ public class ThrottlingInflightRoutePolicy extends RoutePolicySupport implements
      *
      * @param maxInflightExchanges the upper limit of concurrent inflight exchanges
      */
-    public void setMaxInflightExchanges(int maxInflightExchanges) {
+    public synchronized void setMaxInflightExchanges(int maxInflightExchanges) {
         this.maxInflightExchanges = maxInflightExchanges;
         // recalculate, must be at least at 1
-        this.resumeInflightExchanges = Math.max(resumePercentOfMax * maxInflightExchanges / 100, 1);
+        int resume = Math.max(resumePercentOfMax * maxInflightExchanges / 100, 1);
+        // atomically publish both values for routing threads
+        this.throttlingLimits = new ThrottlingLimits(maxInflightExchanges, resume);
     }
 
     public int getResumePercentOfMax() {
@@ -192,14 +245,16 @@ public class ThrottlingInflightRoutePolicy extends RoutePolicySupport implements
      *
      * @param resumePercentOfMax the percentage must be between 0 and 100
      */
-    public void setResumePercentOfMax(int resumePercentOfMax) {
+    public synchronized void setResumePercentOfMax(int resumePercentOfMax) {
         if (resumePercentOfMax < 0 || resumePercentOfMax > 100) {
             throw new IllegalArgumentException("Must be a percentage between 0 and 100, was: " + resumePercentOfMax);
         }
 
         this.resumePercentOfMax = resumePercentOfMax;
         // recalculate, must be at least at 1
-        this.resumeInflightExchanges = Math.max(resumePercentOfMax * maxInflightExchanges / 100, 1);
+        int resume = Math.max(resumePercentOfMax * maxInflightExchanges / 100, 1);
+        // atomically publish both values for routing threads
+        this.throttlingLimits = new ThrottlingLimits(maxInflightExchanges, resume);
     }
 
     public ThrottlingScope getScope() {
@@ -258,18 +313,31 @@ public class ThrottlingInflightRoutePolicy extends RoutePolicySupport implements
         }
     }
 
-    private void startConsumer(int size, Consumer consumer) throws Exception {
+    private void startConsumer(Route route, int size, Consumer consumer, int resumeInflight) throws Exception {
+        // only resume a consumer this policy has suspended, and not one the route controller has suspended or stopped
+        // (such as when it is stopping or suspending the route and waits for the inflight exchanges to complete)
+        if (!suspendedConsumers.contains(consumer) || !isResumeOrStartConsumerAllowed(route)) {
+            return;
+        }
         boolean started = resumeOrStartConsumer(consumer);
+        suspendedConsumers.remove(consumer);
         if (started) {
-            getLogger().log("Throttling consumer: " + size + " <= " + resumeInflightExchanges
+            getLogger().log("Throttling consumer: " + size + " <= " + resumeInflight
                             + " inflight exchange by resuming consumer: " + consumer);
         }
     }
 
-    private void stopConsumer(int size, Consumer consumer) throws Exception {
+    private void stopConsumer(int size, Consumer consumer, int maxInflight) throws Exception {
+        // only suspend (and so later resume) a consumer that is started: suspendOrStopConsumer also returns true for a
+        // consumer that is already stopped, such as one the shutdown strategy has stopped, which must stay stopped.
+        // A consumer that is not a StatefulService has no state to check, so it is always throttled
+        if (consumer instanceof StatefulService ss && !ServiceHelper.isStarted(ss)) {
+            return;
+        }
         boolean stopped = suspendOrStopConsumer(consumer);
         if (stopped) {
-            getLogger().log("Throttling consumer: " + size + " > " + maxInflightExchanges
+            suspendedConsumers.add(consumer);
+            getLogger().log("Throttling consumer: " + size + " > " + maxInflight
                             + " inflight exchange by suspending consumer: " + consumer);
         }
     }

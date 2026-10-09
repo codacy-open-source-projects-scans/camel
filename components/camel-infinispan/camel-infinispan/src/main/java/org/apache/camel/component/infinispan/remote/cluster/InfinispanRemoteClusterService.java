@@ -23,10 +23,12 @@ import org.apache.camel.component.infinispan.cluster.InfinispanClusterService;
 import org.apache.camel.component.infinispan.cluster.InfinispanClusterView;
 import org.apache.camel.spi.Configurer;
 import org.apache.camel.spi.Metadata;
+import org.apache.camel.spi.annotations.JdkService;
 import org.apache.camel.util.ObjectHelper;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.configuration.Configuration;
 
+@JdkService("cluster-service-infinispan")
 @Metadata(label = "bean",
           description = "Infinispan based remote cluster locking",
           annotations = { "interfaceName=org.apache.camel.cluster.CamelClusterService" })
@@ -47,7 +49,8 @@ public class InfinispanRemoteClusterService extends InfinispanClusterService {
     @Metadata(description = "The lifespan of the cache entry for the local cluster member registered to the inventory",
               defaultValue = "30")
     private long lifespan;
-    @Metadata(description = "The TimeUnit of the lifespan", defaultValue = "SECONDS")
+    @Metadata(description = "The TimeUnit of the lifespan", defaultValue = "SECONDS",
+              enums = "NANOSECONDS,MICROSECONDS,MILLISECONDS,SECONDS,MINUTES,HOURS,DAYS")
     private TimeUnit lifespanTimeUnit;
     @Metadata(description = "Specifies the host of the cache on Infinispan instance. Multiple hosts can be separated by semicolon.")
     private String hosts;

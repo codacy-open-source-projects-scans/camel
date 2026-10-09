@@ -34,6 +34,7 @@ import java.util.stream.Stream;
 
 import org.apache.camel.catalog.impl.AbstractCachingCamelCatalog;
 import org.apache.camel.catalog.impl.CatalogHelper;
+import org.apache.camel.tooling.model.ApiReferenceModel;
 import org.apache.camel.tooling.model.ArtifactModel;
 import org.apache.camel.tooling.model.BaseModel;
 import org.apache.camel.tooling.model.ComponentModel;
@@ -47,6 +48,7 @@ import org.apache.camel.tooling.model.MainModel;
 import org.apache.camel.tooling.model.OtherModel;
 import org.apache.camel.tooling.model.PojoBeanModel;
 import org.apache.camel.tooling.model.ReleaseModel;
+import org.apache.camel.tooling.model.SecurityAdvisoryModel;
 import org.apache.camel.tooling.model.TransformerModel;
 import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
@@ -58,6 +60,8 @@ import org.apache.camel.util.json.Jsoner;
 public class DefaultCamelCatalog extends AbstractCachingCamelCatalog implements CamelCatalog {
 
     private static final String MODELS_CATALOG = "org/apache/camel/catalog/models.properties";
+    private static final String DOCS_CATALOG = "org/apache/camel/catalog/docs.properties";
+    private static final String DOCS_DIR = "org/apache/camel/catalog/docs";
     private static final String SCHEMAS_XML = "org/apache/camel/catalog/schemas";
     private static final String MAIN_DIR = "org/apache/camel/catalog/main";
     private static final String JBANG_DIR = "org/apache/camel/catalog/jbang";
@@ -90,7 +94,10 @@ public class DefaultCamelCatalog extends AbstractCachingCamelCatalog implements 
     public static final String LIST_OTHERS_AS_JSON = "listOthersAsJson";
 
     public static final String FIND_BEAN_NAMES = "findBeanNames";
+    public static final String FIND_API_REFERENCE_NAMES = "findApiReferenceNames";
     public static final String LIST_BEANS_AS_JSON = "listBeansAsJson";
+
+    public static final String FIND_DOC_NAMES = "findDocNames";
 
     public static final String SUMMARY_AS_JSON = "summaryAsJson";
 
@@ -280,6 +287,11 @@ public class DefaultCamelCatalog extends AbstractCachingCamelCatalog implements 
     }
 
     @Override
+    public List<String> findApiReferenceNames() {
+        return cache(FIND_API_REFERENCE_NAMES, runtimeProvider::findApiReferenceNames);
+    }
+
+    @Override
     public List<String> findModelNames(String filter) {
         // should not cache when filter parameter can by any kind of value
         return findNames(filter, this::findModelNames, this::eipModel);
@@ -316,21 +328,35 @@ public class DefaultCamelCatalog extends AbstractCachingCamelCatalog implements 
         for (String name : names) {
             BaseModel<?> model = modelLoader.apply(name);
             if (model != null) {
-                String label = model.getLabel();
-                String[] parts = label.split(",");
-                for (String part : parts) {
-                    try {
-                        if (part.equalsIgnoreCase(filter) || CatalogHelper.matchWildcard(part, filter)
-                                || part.matches(filter)) {
-                            answer.add(name);
-                        }
-                    } catch (PatternSyntaxException e) {
-                        // ignore as filter is maybe not a pattern
-                    }
+                if (matchesFilter(model, filter)) {
+                    answer.add(name);
                 }
             }
         }
         return answer;
+    }
+
+    private static boolean matchesFilter(BaseModel<?> model, String filter) {
+        String label = model.getLabel();
+        String[] parts = label.split(",");
+        for (String part : parts) {
+            try {
+                if (part.equalsIgnoreCase(filter) || CatalogHelper.matchWildcard(part, filter)
+                        || part.matches(filter)) {
+                    return true;
+                }
+            } catch (PatternSyntaxException e) {
+                // ignore as filter is maybe not a pattern
+            }
+        }
+        String normalized = filter.toLowerCase().replace("-", "").replace("_", "");
+        for (String alias : model.getAliases()) {
+            if (alias.equalsIgnoreCase(filter)
+                    || alias.toLowerCase().replace("-", "").replace("_", "").equals(normalized)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -346,6 +372,11 @@ public class DefaultCamelCatalog extends AbstractCachingCamelCatalog implements 
     @Override
     public PojoBeanModel pojoBeanModel(String name) {
         return cache("pojo-bean-model-" + name, name, super::pojoBeanModel);
+    }
+
+    @Override
+    public ApiReferenceModel apiReferenceModel(String name) {
+        return cache("api-reference-model-" + name, name, super::apiReferenceModel);
     }
 
     @Override
@@ -528,6 +559,11 @@ public class DefaultCamelCatalog extends AbstractCachingCamelCatalog implements 
     }
 
     @Override
+    public String devConsolesOpenApiSpec() {
+        return cache(BASE_RESOURCE_DIR + "/dev-consoles-openapi.json", this::loadResource);
+    }
+
+    @Override
     public String listModelsAsJson() {
         return cache(LIST_MODELS_AS_JSON, () -> JsonMapper.serialize(findModelNames().stream()
                 .map(this::modelJSonSchema)
@@ -565,6 +601,7 @@ public class DefaultCamelCatalog extends AbstractCachingCamelCatalog implements 
             obj.put("languages", findLanguageNames().size());
             obj.put("others", findOtherNames().size());
             obj.put("beans", findBeansNames().size());
+            obj.put("apis", findApiReferenceNames().size());
             obj.put("dev-consoles", findDevConsoleNames().size());
             obj.put("transformers", findTransformerNames().size());
             return JsonMapper.serialize(obj);
@@ -652,6 +689,47 @@ public class DefaultCamelCatalog extends AbstractCachingCamelCatalog implements 
     }
 
     @Override
+    public List<String> findDocNames() {
+        return cache(FIND_DOC_NAMES, () -> {
+            try (InputStream is = versionManager.getResourceAsStream(DOCS_CATALOG)) {
+                return CatalogHelper.loadLines(is);
+            } catch (IOException e) {
+                return Collections.emptyList();
+            }
+        });
+    }
+
+    @Override
+    public String asciiDoc(String name) {
+        return cache("doc-" + name, name, n -> loadResource(DOCS_DIR + "/" + n + ".adoc"));
+    }
+
+    @Override
+    public String componentAsciiDoc(String name) {
+        return asciiDoc(name + "-component");
+    }
+
+    @Override
+    public String dataFormatAsciiDoc(String name) {
+        return asciiDoc(name + "-dataformat");
+    }
+
+    @Override
+    public String languageAsciiDoc(String name) {
+        return asciiDoc(name + "-language");
+    }
+
+    @Override
+    public String modelAsciiDoc(String name) {
+        return asciiDoc(name);
+    }
+
+    @Override
+    public String otherAsciiDoc(String name) {
+        return asciiDoc(name);
+    }
+
+    @Override
     public List<ReleaseModel> camelReleases() {
         return camelReleases("camel-releases.json");
     }
@@ -671,6 +749,25 @@ public class DefaultCamelCatalog extends AbstractCachingCamelCatalog implements 
                 for (Object o : arr) {
                     JsonObject jo = (JsonObject) o;
                     answer.add(JsonMapper.generateReleaseModel(jo));
+                }
+                return answer;
+            } catch (Exception e) {
+                return Collections.emptyList();
+            }
+        });
+    }
+
+    @Override
+    public List<SecurityAdvisoryModel> camelSecurityAdvisories() {
+        return cache("camel-security-advisories.json", () -> {
+            try {
+                List<SecurityAdvisoryModel> answer = new ArrayList<>();
+                InputStream is = loadResource("advisories", "camel-security-advisories.json");
+                String json = CatalogHelper.loadText(is);
+                JsonArray arr = (JsonArray) Jsoner.deserialize(json);
+                for (Object o : arr) {
+                    JsonObject jo = (JsonObject) o;
+                    answer.add(JsonMapper.generateSecurityAdvisoryModel(jo));
                 }
                 return answer;
             } catch (Exception e) {

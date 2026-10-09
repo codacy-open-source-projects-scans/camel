@@ -29,14 +29,22 @@ import org.apache.camel.spi.Metadata;
 /**
  * Transform and bind XML as well as non-XML data, including EDI, CSV, JSON, and YAML using Smooks.
  */
-@Metadata(firstVersion = "4.9.0", label = "dataformat,transformation", title = "Smooks")
+@Metadata(firstVersion = "4.9.0", label = "dataformat,transformation", title = "Smooks",
+          description = "Transform and bind XML as well as non-XML data, including EDI, CSV, JSON, and YAML using Smooks")
 @XmlRootElement(name = "smooks")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class SmooksDataFormat extends DataFormatDefinition {
 
     @XmlAttribute
-    @Metadata(required = true)
+    @Metadata(required = true, description = "Path to the Smooks configuration file.")
     private String smooksConfig;
+    @XmlAttribute
+    @Metadata(javaType = "java.lang.Boolean", defaultValue = "false", label = "security",
+              description = "Whether to allow the XML reader used by Smooks to resolve external XML entities (external"
+                            + " general and parameter entities) when parsing XML input. This is disabled by default so"
+                            + " that external entities in the message body are not resolved; enable it only for trusted"
+                            + " legacy configurations that rely on external entity resolution.")
+    private String allowExternalEntities;
 
     public SmooksDataFormat() {
         super("smooks");
@@ -45,11 +53,13 @@ public class SmooksDataFormat extends DataFormatDefinition {
     protected SmooksDataFormat(SmooksDataFormat source) {
         super(source);
         this.smooksConfig = source.smooksConfig;
+        this.allowExternalEntities = source.allowExternalEntities;
     }
 
     private SmooksDataFormat(Builder builder) {
         this();
         this.smooksConfig = builder.smooksConfig;
+        this.allowExternalEntities = builder.allowExternalEntities;
     }
 
     @Override
@@ -57,15 +67,20 @@ public class SmooksDataFormat extends DataFormatDefinition {
         return new SmooksDataFormat(this);
     }
 
-    /**
-     * Path to the Smooks configuration file.
-     */
     public void setSmooksConfig(String smooksConfig) {
         this.smooksConfig = smooksConfig;
     }
 
     public String getSmooksConfig() {
         return smooksConfig;
+    }
+
+    public void setAllowExternalEntities(String allowExternalEntities) {
+        this.allowExternalEntities = allowExternalEntities;
+    }
+
+    public String getAllowExternalEntities() {
+        return allowExternalEntities;
     }
 
     /**
@@ -75,12 +90,35 @@ public class SmooksDataFormat extends DataFormatDefinition {
     public static class Builder implements DataFormatBuilder<SmooksDataFormat> {
 
         private String smooksConfig;
+        private String allowExternalEntities;
 
         /**
          * Path to the Smooks configuration file.
          */
         public Builder smooksConfig(String smooksConfig) {
             this.smooksConfig = smooksConfig;
+            return this;
+        }
+
+        /**
+         * Whether to allow the XML reader used by Smooks to resolve external XML entities (external general and
+         * parameter entities) when parsing XML input. This is disabled by default so that external entities in the
+         * message body are not resolved; enable it only for trusted legacy configurations that rely on external entity
+         * resolution.
+         */
+        public Builder allowExternalEntities(String allowExternalEntities) {
+            this.allowExternalEntities = allowExternalEntities;
+            return this;
+        }
+
+        /**
+         * Whether to allow the XML reader used by Smooks to resolve external XML entities (external general and
+         * parameter entities) when parsing XML input. This is disabled by default so that external entities in the
+         * message body are not resolved; enable it only for trusted legacy configurations that rely on external entity
+         * resolution.
+         */
+        public Builder allowExternalEntities(boolean allowExternalEntities) {
+            this.allowExternalEntities = Boolean.toString(allowExternalEntities);
             return this;
         }
 

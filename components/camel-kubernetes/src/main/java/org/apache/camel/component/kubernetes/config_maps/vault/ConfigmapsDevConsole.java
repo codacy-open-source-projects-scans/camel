@@ -22,21 +22,32 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import io.fabric8.kubernetes.client.KubernetesClient;
 import org.apache.camel.component.kubernetes.properties.ConfigMapPropertiesFunction;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.PeriodTaskScheduler;
 import org.apache.camel.spi.PropertiesFunction;
 import org.apache.camel.spi.annotations.DevConsole;
 import org.apache.camel.support.PluginHelper;
 import org.apache.camel.support.console.AbstractDevConsole;
 import org.apache.camel.util.TimeUtils;
-import org.apache.camel.util.json.JsonArray;
-import org.apache.camel.util.json.JsonObject;
+import org.apache.camel.util.json.JsonRecordSupport;
 import org.apache.camel.vault.KubernetesConfigMapVaultConfiguration;
-import org.apache.camel.vault.KubernetesVaultConfiguration;
 
 @DevConsole(name = "kubernetes-configmaps", displayName = "Kubernetes Config Maps",
             description = "Kubernetes Cluster Config Maps")
 public class ConfigmapsDevConsole extends AbstractDevConsole {
+
+    public record ConfigMapEntry(@Metadata(description = "The config map (secret) name") String name) {
+    }
+
+    public record Response(
+            @Metadata(description = "The Kubernetes master URL (only present when known)") String masterUrl,
+            @Metadata(description = "The login method (only present when known)") String login,
+            @Metadata(description = "Whether refreshing is enabled (only present when known)") Boolean refreshEnabled,
+            @Metadata(description = "Epoch time in milliseconds the refresh check started (only present when known)") Long startCheckTimestamp,
+            @Metadata(description = "The config maps in use") List<ConfigMapEntry> configmaps) {
+    }
 
     private ConfigMapPropertiesFunction propertiesFunction;
     private ConfigmapsReloadTriggerTask cmRefreshTask;
@@ -69,10 +80,13 @@ public class ConfigmapsDevConsole extends AbstractDevConsole {
 
         if (propertiesFunction != null) {
             sb.append("Kubernetes Config maps Cluster:");
-            sb.append(String.format("%n    Master Url: %s", propertiesFunction.getClient().getMasterUrl()));
-            sb.append("\n    Login: OAuth Token");
-            KubernetesVaultConfiguration kubernetes
-                    = getCamelContext().getVaultConfiguration().getKubernetesVaultConfiguration();
+            KubernetesClient client = propertiesFunction.getClient();
+            if (client != null && client.getMasterUrl() != null) {
+                sb.append(String.format("%n    Master Url: %s", client.getMasterUrl().toString()));
+                sb.append("\n    Login: OAuth Token");
+            }
+            KubernetesConfigMapVaultConfiguration kubernetes
+                    = getCamelContext().getVaultConfiguration().getKubernetesConfigMapVaultConfiguration();
             if (kubernetes != null) {
                 sb.append(String.format("%n    Refresh Enabled: %s", kubernetes.isRefreshEnabled()));
             }
@@ -83,10 +97,12 @@ public class ConfigmapsDevConsole extends AbstractDevConsole {
             }
             List<String> sorted = new ArrayList<>();
             if (kubernetes != null) {
-                sb.append("\n\nSecrets in use:");
+                sb.append("\n\nConfig maps in use:");
 
-                sorted = new ArrayList<>(List.of(kubernetes.getSecrets().split(",")));
-                Collections.sort(sorted);
+                if (kubernetes.getConfigmaps() != null && !kubernetes.getConfigmaps().isEmpty()) {
+                    sorted = new ArrayList<>(List.of(kubernetes.getConfigmaps().split(",")));
+                    Collections.sort(sorted);
+                }
             }
 
             for (String sec : sorted) {
@@ -98,34 +114,41 @@ public class ConfigmapsDevConsole extends AbstractDevConsole {
     }
 
     @Override
-    protected JsonObject doCallJson(Map<String, Object> options) {
-        JsonObject root = new JsonObject();
+    protected Map<String, Object> doCallJson(Map<String, Object> options) {
+        String masterUrl = null;
+        String login = null;
         if (propertiesFunction != null) {
-            root.put("masterUrl", propertiesFunction.getClient().getMasterUrl().toString());
-            root.put("login", "OAuth Token");
+            KubernetesClient client = propertiesFunction.getClient();
+            if (client != null && client.getMasterUrl() != null) {
+                masterUrl = client.getMasterUrl().toString();
+                login = "OAuth Token";
+            }
         }
-        KubernetesVaultConfiguration kubernetes = getCamelContext().getVaultConfiguration().getKubernetesVaultConfiguration();
-        if (kubernetes != null) {
-            root.put("refreshEnabled", kubernetes.isRefreshEnabled());
-        }
+
+        KubernetesConfigMapVaultConfiguration kubernetes
+                = getCamelContext().getVaultConfiguration().getKubernetesConfigMapVaultConfiguration();
+        Boolean refreshEnabled = kubernetes != null ? kubernetes.isRefreshEnabled() : null;
+
+        Long startCheckTimestamp = null;
         if (cmRefreshTask != null) {
             Instant start = cmRefreshTask.getStartingTime();
             if (start != null) {
-                long timestamp = start.toEpochMilli();
-                root.put("startCheckTimestamp", timestamp);
+                startCheckTimestamp = start.toEpochMilli();
             }
         }
-        JsonArray arr = new JsonArray();
-        root.put("configmaps", arr);
 
-        List<String> sorted = new ArrayList<>(List.of(kubernetes.getSecrets().split(",")));
-        Collections.sort(sorted);
-
-        for (String sec : sorted) {
-            JsonObject jo = new JsonObject();
-            jo.put("name", sec);
-            arr.add(jo);
+        List<String> sorted = new ArrayList<>();
+        if (kubernetes != null && kubernetes.getConfigmaps() != null && !kubernetes.getConfigmaps().isEmpty()) {
+            sorted.addAll(List.of(kubernetes.getConfigmaps().split(",")));
+            Collections.sort(sorted);
         }
-        return root;
+
+        List<ConfigMapEntry> configmaps = new ArrayList<>();
+        for (String sec : sorted) {
+            configmaps.add(new ConfigMapEntry(sec));
+        }
+
+        Response response = new Response(masterUrl, login, refreshEnabled, startCheckTimestamp, configmaps);
+        return JsonRecordSupport.toJsonObject(response);
     }
 }

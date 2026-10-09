@@ -22,10 +22,8 @@ import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.component.nats.NatsConstants;
 import org.apache.camel.component.nats.integration.NatsITSupport;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.junit.jupiter.api.parallel.Isolated;
 
-@DisabledIfSystemProperty(named = "ci.env.name", matches = ".*", disabledReason = "Flaky on GitHub Actions")
 @Isolated
 public class NatsJetstreamConsumerIT extends NatsITSupport {
 
@@ -37,8 +35,11 @@ public class NatsJetstreamConsumerIT extends NatsITSupport {
         mockResultEndpoint.expectedBodiesReceived("Hello World");
         mockResultEndpoint.expectedHeaderReceived(NatsConstants.NATS_SUBJECT, "mytopic");
 
+        waitForNatsConsumers(1);
+
         template.sendBody("direct:send", "Hello World");
 
+        mockResultEndpoint.setAssertPeriod(5000);
         MockEndpoint.assertIsSatisfied(context);
     }
 

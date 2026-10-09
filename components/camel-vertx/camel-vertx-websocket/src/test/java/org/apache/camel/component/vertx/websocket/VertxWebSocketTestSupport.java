@@ -26,8 +26,9 @@ import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxException;
 import io.vertx.core.VertxOptions;
-import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.ServerWebSocket;
 import io.vertx.core.http.WebSocket;
+import io.vertx.core.http.WebSocketClient;
 import io.vertx.core.impl.VertxInternal;
 import io.vertx.core.impl.btc.BlockedThreadEvent;
 import io.vertx.ext.web.Route;
@@ -36,6 +37,9 @@ import io.vertx.ext.web.RoutingContext;
 import org.apache.camel.test.AvailablePortFinder;
 import org.apache.camel.test.junit6.CamelTestSupport;
 import org.junit.jupiter.api.extension.RegisterExtension;
+
+import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class VertxWebSocketTestSupport extends CamelTestSupport {
 
@@ -60,13 +64,26 @@ public class VertxWebSocketTestSupport extends CamelTestSupport {
     }
 
     public WebSocket openWebSocketConnection(String host, int port, String path, Consumer<String> handler) throws Exception {
-        HttpClient client = Vertx.vertx().createHttpClient();
-        CompletableFuture<WebSocket> future = client.webSocket(port, host, path)
+        WebSocketClient client = Vertx.vertx().createWebSocketClient();
+        CompletableFuture<WebSocket> future = client.connect(port, host, path)
                 .toCompletionStage()
                 .toCompletableFuture();
         WebSocket webSocket = future.get(5, TimeUnit.SECONDS);
         webSocket.textMessageHandler(handler::accept);
         return webSocket;
+    }
+
+    /**
+     * Waits for the given endpoint to have registered the expected number of connected peers.
+     * <p>
+     * {@link #openWebSocketConnection(String, int, String, Consumer)} returns as soon as the client side of the
+     * handshake completes, which can happen before the server side consumer has registered the peer. Asserting the peer
+     * count immediately after opening the connections is therefore racy.
+     */
+    public Map<String, ServerWebSocket> awaitConnectedPeers(VertxWebsocketEndpoint endpoint, int expectedPeerCount) {
+        await().atMost(10, TimeUnit.SECONDS)
+                .untilAsserted(() -> assertEquals(expectedPeerCount, endpoint.findPeersForHostPort().size()));
+        return endpoint.findPeersForHostPort();
     }
 
     public Router createRouter(String path, CountDownLatch latch) {

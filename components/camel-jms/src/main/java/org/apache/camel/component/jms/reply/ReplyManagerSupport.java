@@ -19,6 +19,7 @@ package org.apache.camel.component.jms.reply;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 
 import jakarta.jms.Destination;
@@ -135,6 +136,18 @@ public abstract class ReplyManagerSupport extends ServiceSupport implements Repl
         return correlationId;
     }
 
+    @Override
+    public boolean cancelCorrelationId(String correlationId) {
+        if (correlationId != null && correlation != null) {
+            ReplyHandler handler = correlation.remove(correlationId);
+            if (handler != null) {
+                log.debug("Cancelled reply correlation [{}]", correlationId);
+                return true;
+            }
+        }
+        return false;
+    }
+
     protected abstract ReplyHandler createReplyHandler(
             ReplyManager replyManager, Exchange exchange, AsyncCallback callback,
             String originalCorrelationId, String correlationId, long requestTimeout);
@@ -166,13 +179,18 @@ public abstract class ReplyManagerSupport extends ServiceSupport implements Repl
 
     @Override
     public void processReply(ReplyHolder holder) {
-        if (holder == null || !isRunAllowed()) {
+        if (holder == null) {
             return;
         }
         try {
             Exchange exchange = holder.getExchange();
             if (holder.isTimeout()) {
-                handleTimeout(holder, exchange);
+                if (isStopping() || isStopped()) {
+                    exchange.setException(new RejectedExecutionException(
+                            "Cannot process JMS reply as the reply manager is shutting down"));
+                } else {
+                    handleTimeout(holder, exchange);
+                }
             } else {
                 handleSuccessfulReply(holder, exchange);
             }

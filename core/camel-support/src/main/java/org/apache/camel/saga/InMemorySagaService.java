@@ -23,13 +23,18 @@ import java.util.concurrent.ScheduledExecutorService;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
+import org.apache.camel.ProducerTemplate;
 import org.apache.camel.support.service.ServiceSupport;
 import org.apache.camel.util.ObjectHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An in-memory implementation of a saga service.
  */
 public class InMemorySagaService extends ServiceSupport implements CamelSagaService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(InMemorySagaService.class);
 
     public static final int DEFAULT_MAX_RETRY_ATTEMPTS = 5;
 
@@ -40,6 +45,8 @@ public class InMemorySagaService extends ServiceSupport implements CamelSagaServ
     private final Map<String, CamelSagaCoordinator> coordinators = new ConcurrentHashMap<>();
 
     private ScheduledExecutorService executorService;
+
+    private ProducerTemplate producerTemplate;
 
     private int maxRetryAttempts = DEFAULT_MAX_RETRY_ATTEMPTS;
 
@@ -61,6 +68,10 @@ public class InMemorySagaService extends ServiceSupport implements CamelSagaServ
         return CompletableFuture.completedFuture(coordinators.get(id));
     }
 
+    void removeSaga(String sagaId) {
+        coordinators.remove(sagaId);
+    }
+
     @Override
     public void registerStep(CamelSagaStep step) {
         // do nothing
@@ -72,10 +83,23 @@ public class InMemorySagaService extends ServiceSupport implements CamelSagaServ
             this.executorService = camelContext.getExecutorServiceManager()
                     .newDefaultScheduledThreadPool(this, "saga");
         }
+        if (this.producerTemplate == null) {
+            this.producerTemplate = camelContext.createProducerTemplate();
+        }
     }
 
     @Override
     protected void doStop() throws Exception {
+        if (!coordinators.isEmpty()) {
+            // the saga status is not persisted: these sagas will not be compensated or completed
+            LOG.warn("Stopping the in-memory saga service with {} saga(s) not finalized, which will not be compensated"
+                     + " or completed: {}",
+                    coordinators.size(), coordinators.keySet());
+        }
+        if (this.producerTemplate != null) {
+            this.producerTemplate.stop();
+            this.producerTemplate = null;
+        }
         if (this.executorService != null) {
             camelContext.getExecutorServiceManager().shutdownGraceful(this.executorService);
             this.executorService = null;
@@ -84,6 +108,10 @@ public class InMemorySagaService extends ServiceSupport implements CamelSagaServ
 
     public ScheduledExecutorService getExecutorService() {
         return executorService;
+    }
+
+    public ProducerTemplate getProducerTemplate() {
+        return producerTemplate;
     }
 
     @Override

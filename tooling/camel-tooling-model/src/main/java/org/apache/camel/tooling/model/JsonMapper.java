@@ -23,6 +23,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.camel.tooling.model.ComponentModel.ComponentOptionModel;
@@ -80,6 +81,8 @@ public final class JsonMapper {
             return generateEipModel(obj);
         } else if (obj.containsKey("bean")) {
             return generatePojoBeanModel(obj);
+        } else if (obj.containsKey("api")) {
+            return generateApiReferenceModel(obj);
         } else {
             return null;
         }
@@ -336,6 +339,7 @@ public final class JsonMapper {
         PojoBeanModel model = new PojoBeanModel();
         parseModel(mobj, model);
         parseArtifact(mobj, model);
+        model.setInterfaceType(mobj.getString("interfaceType"));
         JsonObject mprp = (JsonObject) mobj.get("properties");
         if (mprp != null) {
             for (Map.Entry<String, Object> entry : mprp.entrySet()) {
@@ -346,6 +350,78 @@ public final class JsonMapper {
             }
         }
         return model;
+    }
+
+    public static ApiReferenceModel generateApiReferenceModel(String json) {
+        JsonObject obj = deserialize(json);
+        return generateApiReferenceModel(obj);
+    }
+
+    public static ApiReferenceModel generateApiReferenceModel(JsonObject obj) {
+        JsonObject mobj = (JsonObject) obj.get("api");
+        ApiReferenceModel model = new ApiReferenceModel();
+        parseModel(mobj, model);
+        parseArtifact(mobj, model);
+        JsonObject methods = (JsonObject) mobj.get("methods");
+        if (methods != null) {
+            for (Map.Entry<String, Object> entry : methods.entrySet()) {
+                JsonObject mp = (JsonObject) entry.getValue();
+                ApiReferenceModel.ApiMethodOptionModel method = new ApiReferenceModel.ApiMethodOptionModel();
+                method.setName(entry.getKey());
+                Integer idx = mp.getInteger("index");
+                if (idx != null) {
+                    method.setIndex(idx);
+                }
+                method.setJavaType(mp.getString("javaType"));
+                method.setDescription(mp.getString("description"));
+                method.setDeprecated(mp.getBooleanOrDefault("deprecated", false));
+                method.setImportant(mp.getBooleanOrDefault("important", false));
+                mp.getCollectionOrDefault("signatures", List.of()).forEach(o -> method.addSignature(o.toString()));
+                mp.getCollectionOrDefault("examples", List.of()).forEach(o -> method.addExample(o.toString()));
+                model.addOption(method);
+            }
+        }
+        return model;
+    }
+
+    public static String createParameterJsonSchema(ApiReferenceModel model) {
+        JsonObject wrapper = asJsonObject(model);
+        return serialize(wrapper);
+    }
+
+    public static JsonObject asJsonObject(ApiReferenceModel model) {
+        JsonObject obj = new JsonObject();
+        baseToJson(model, obj);
+        artifactToJson(model, obj);
+        obj.entrySet().removeIf(e -> e.getValue() == null);
+        JsonObject methods = new JsonObject();
+        List<ApiReferenceModel.ApiMethodOptionModel> options = model.getOptions();
+        for (int i = 0; i < options.size(); i++) {
+            ApiReferenceModel.ApiMethodOptionModel m = options.get(i);
+            JsonObject jo = new JsonObject();
+            jo.put("index", i);
+            jo.put("signatures", new JsonArray(m.getSignatures()));
+            if (m.getJavaType() != null) {
+                jo.put("javaType", m.getJavaType());
+            }
+            if (m.isDeprecated()) {
+                jo.put("deprecated", true);
+            }
+            if (m.isImportant()) {
+                jo.put("important", true);
+            }
+            if (m.getDescription() != null) {
+                jo.put("description", m.getDescription());
+            }
+            if (!m.getExamples().isEmpty()) {
+                jo.put("examples", new JsonArray(m.getExamples()));
+            }
+            methods.put(m.getName(), jo);
+        }
+        obj.put("methods", methods);
+        JsonObject wrapper = new JsonObject();
+        wrapper.put("api", obj);
+        return wrapper;
     }
 
     public static String createParameterJsonSchema(EipModel model) {
@@ -377,6 +453,9 @@ public final class JsonMapper {
     public static JsonObject asJsonObject(PojoBeanModel model) {
         JsonObject obj = new JsonObject();
         baseToJson(model, obj);
+        if (model.getInterfaceType() != null) {
+            obj.put("interfaceType", model.getInterfaceType());
+        }
         artifactToJson(model, obj);
         obj.entrySet().removeIf(e -> e.getValue() == null);
         JsonObject wrapper = new JsonObject();
@@ -413,6 +492,15 @@ public final class JsonMapper {
                 model.addFunction(func);
             }
         }
+        JsonObject mpro = (JsonObject) obj.get("operators");
+        if (mpro != null) {
+            for (Map.Entry<String, Object> entry : mpro.entrySet()) {
+                JsonObject mp = (JsonObject) entry.getValue();
+                LanguageModel.LanguageOperatorModel op = new LanguageModel.LanguageOperatorModel();
+                parseOperator(mp, op, entry.getKey());
+                model.addOperator(op);
+            }
+        }
         return model;
     }
 
@@ -434,6 +522,10 @@ public final class JsonMapper {
         final List<LanguageModel.LanguageFunctionModel> functions = model.getFunctions();
         if (!functions.isEmpty()) {
             wrapper.put("functions", asJsonObjectFunctions(functions));
+        }
+        final List<LanguageModel.LanguageOperatorModel> operators = model.getOperators();
+        if (!operators.isEmpty()) {
+            wrapper.put("operators", asJsonObjectOperators(operators));
         }
         return wrapper;
     }
@@ -480,7 +572,18 @@ public final class JsonMapper {
         DevConsoleModel model = new DevConsoleModel();
         parseModel(mobj, model);
         model.setGroup(mobj.getString("group"));
+        model.setReadOnly(mobj.getBooleanOrDefault("readOnly", true));
         parseArtifact(mobj, model);
+        JsonObject options = (JsonObject) obj.get("options");
+        if (options != null) {
+            for (Map.Entry<String, Object> entry : options.entrySet()) {
+                JsonObject mp = (JsonObject) entry.getValue();
+                DevConsoleModel.DevConsoleOptionModel option = new DevConsoleModel.DevConsoleOptionModel();
+                parseOption(mp, option, entry.getKey());
+                model.addOption(option);
+            }
+        }
+        model.setResponseSchema((JsonObject) obj.get("response"));
         return model;
     }
 
@@ -494,9 +597,16 @@ public final class JsonMapper {
         baseToJson(model, obj);
         artifactToJson(model, obj);
         obj.put("group", model.getGroup());
+        obj.put("readOnly", model.isReadOnly());
         obj.entrySet().removeIf(e -> e.getValue() == null);
         JsonObject wrapper = new JsonObject();
         wrapper.put("console", obj);
+        if (!model.getOptions().isEmpty()) {
+            wrapper.put("options", asJsonObject(model.getOptions()));
+        }
+        if (model.getResponseSchema() != null) {
+            wrapper.put("response", model.getResponseSchema());
+        }
         return wrapper;
     }
 
@@ -545,6 +655,9 @@ public final class JsonMapper {
         if (model.isNativeSupported()) {
             obj.put("nativeSupported", model.isNativeSupported());
         }
+        if (!model.getAliases().isEmpty()) {
+            obj.put("aliases", model.getAliases());
+        }
         if (!model.getMetadata().isEmpty()) {
             obj.put("metadata", model.getMetadata());
         }
@@ -568,6 +681,10 @@ public final class JsonMapper {
         model.setJavaType(mobj.getString("javaType"));
         model.setSupportLevel(SupportLevel.safeValueOf(mobj.getString("supportLevel")));
         model.setNativeSupported(mobj.getBooleanOrDefault("nativeSupported", false));
+        Collection<String> aliases = mobj.getCollection("aliases");
+        if (aliases != null) {
+            model.setAliases(aliases.stream().collect(Collectors.toList()));
+        }
         model.setMetadata(mobj.getMapOrDefault("metadata", new JsonObject()));
     }
 
@@ -604,8 +721,10 @@ public final class JsonMapper {
         option.setSetterMethod(mp.getString("setterMethod"));
         option.setSupportFileReference(mp.getBooleanOrDefault("supportFileReference", false));
         option.setLargeInput(mp.getBooleanOrDefault("largeInput", false));
+        option.setSupportSimpleExpression(mp.getBooleanOrDefault("supportSimpleExpression", false));
         option.setInputLanguage(mp.getString("inputLanguage"));
         option.setImportant(mp.getBooleanOrDefault("important", false));
+        option.setEndpointIdentity(mp.getBooleanOrDefault("endpointIdentity", false));
     }
 
     private static void parseGroup(JsonObject mp, MainGroupModel option) {
@@ -639,6 +758,61 @@ public final class JsonMapper {
         func.setDescription(mp.getString("description"));
         func.setOgnl(mp.getBoolean("ognl"));
         func.setSuffix(mp.getString("suffix"));
+        // parse params array
+        Object paramsObj = mp.get("params");
+        if (paramsObj instanceof JsonArray paramsArr) {
+            for (Object p : paramsArr) {
+                if (p instanceof JsonObject po) {
+                    LanguageModel.FunctionParamModel param = new LanguageModel.FunctionParamModel();
+                    param.setName(po.getString("name"));
+                    param.setJavaType(po.getString("javaType"));
+                    param.setRequired(po.getBooleanOrDefault("required", false));
+                    param.setDefaultValue(po.getString("defaultValue"));
+                    param.setDescription(po.getString("description"));
+                    func.addParam(param);
+                }
+            }
+        }
+        // parse examples array
+        Object examplesObj = mp.get("examples");
+        if (examplesObj instanceof JsonArray examplesArr) {
+            for (Object e : examplesArr) {
+                if (e instanceof String s) {
+                    func.addExample(s);
+                }
+            }
+        }
+    }
+
+    private static void parseOperator(JsonObject mp, LanguageModel.LanguageOperatorModel op, String name) {
+        op.setName(name);
+        op.setConstantName(name);
+        Integer idx = mp.getInteger("index");
+        if (idx != null) {
+            op.setIndex(idx);
+        }
+        op.setKind(mp.getString("kind"));
+        op.setDisplayName(mp.getString("displayName"));
+        op.setGroup(mp.getString("group"));
+        op.setLabel(mp.getString("label"));
+        op.setJavaType(mp.getString("javaType"));
+        op.setDeprecated(mp.getBooleanOrDefault("deprecated", false));
+        op.setDeprecationNote(mp.getString("deprecationNote"));
+        op.setDescription(mp.getString("description"));
+        op.setOperatorKind(mp.getString("operatorKind"));
+        op.setOperatorSyntax(mp.getString("operatorSyntax"));
+        Integer prec = mp.getInteger("precedence");
+        if (prec != null) {
+            op.setPrecedence(prec);
+        }
+        Object examplesObj = mp.get("examples");
+        if (examplesObj instanceof JsonArray examplesArr) {
+            for (Object e : examplesArr) {
+                if (e instanceof String s) {
+                    op.addExample(s);
+                }
+            }
+        }
     }
 
     public static JsonObject asJsonObject(List<? extends BaseOptionModel> options) {
@@ -663,6 +837,49 @@ public final class JsonMapper {
             }
             if (o.getSuffix() != null) {
                 jo.put("suffix", o.getSuffix());
+            }
+            if (!o.getParams().isEmpty()) {
+                JsonArray paramsArr = new JsonArray();
+                for (LanguageModel.FunctionParamModel p : o.getParams()) {
+                    JsonObject po = new JsonObject();
+                    po.put("name", p.getName());
+                    if (p.getJavaType() != null) {
+                        po.put("javaType", p.getJavaType());
+                    }
+                    po.put("required", p.isRequired());
+                    if (p.getDefaultValue() != null) {
+                        po.put("defaultValue", p.getDefaultValue());
+                    }
+                    if (p.getDescription() != null) {
+                        po.put("description", p.getDescription());
+                    }
+                    paramsArr.add(po);
+                }
+                jo.put("params", paramsArr);
+            }
+            if (!o.getExamples().isEmpty()) {
+                jo.put("examples", new JsonArray(o.getExamples()));
+            }
+            json.put(o.getName(), jo);
+        }
+        return json;
+    }
+
+    public static JsonObject asJsonObjectOperators(List<LanguageModel.LanguageOperatorModel> options) {
+        JsonObject json = new JsonObject();
+        for (int i = 0; i < options.size(); i++) {
+            var o = options.get(i);
+            o.setIndex(i);
+            JsonObject jo = asJsonObject(o);
+            if (o.getOperatorKind() != null) {
+                jo.put("operatorKind", o.getOperatorKind());
+            }
+            if (o.getOperatorSyntax() != null) {
+                jo.put("operatorSyntax", o.getOperatorSyntax());
+            }
+            jo.put("precedence", o.getPrecedence());
+            if (!o.getExamples().isEmpty()) {
+                jo.put("examples", new JsonArray(o.getExamples()));
             }
             json.put(o.getName(), jo);
         }
@@ -743,6 +960,10 @@ public final class JsonMapper {
             // only include if supported to not regen all files
             prop.put("largeInput", option.isLargeInput());
         }
+        if (option.isSupportSimpleExpression()) {
+            // only include if supported to not regen all files
+            prop.put("supportSimpleExpression", option.isSupportSimpleExpression());
+        }
         if (!Strings.isNullOrEmpty(option.getInputLanguage())) {
             // only include if supported to not regen all files
             prop.put("inputLanguage", option.getInputLanguage());
@@ -750,6 +971,10 @@ public final class JsonMapper {
         if (option.isImportant()) {
             // only include if supported to not regen all files
             prop.put("important", option.isImportant());
+        }
+        if (option.isEndpointIdentity()) {
+            // only include if supported to not regen all files
+            prop.put("endpointIdentity", option.isEndpointIdentity());
         }
         prop.put("asPredicate", option.isAsPredicate());
         prop.put("configurationClass", option.getConfigurationClass());
@@ -835,11 +1060,11 @@ public final class JsonMapper {
 
     private static <G, O extends BaseOptionModel> JsonObject asGroupedOptionsJson(
             List<G> groups,
-            java.util.function.Function<G, String> groupName,
-            java.util.function.Function<G, String> groupDescription,
-            java.util.function.Function<G, String> groupSourceType,
+            Function<G, String> groupName,
+            Function<G, String> groupDescription,
+            Function<G, String> groupSourceType,
             List<O> options,
-            java.util.function.Function<O, String> optionSourceType) {
+            Function<O, String> optionSourceType) {
 
         JsonObject json = new JsonObject();
         JsonArray groupsArr = new JsonArray();
@@ -917,6 +1142,55 @@ public final class JsonMapper {
         return model;
     }
 
+    public static JsonObject asJsonObject(SecurityAdvisoryModel model) {
+        JsonObject json = new JsonObject();
+        json.put("cve", model.getCve());
+        if (model.getDate() != null) {
+            json.put("date", model.getDate());
+        }
+        if (model.getSeverity() != null) {
+            json.put("severity", model.getSeverity());
+        }
+        if (model.getSummary() != null) {
+            json.put("summary", model.getSummary());
+        }
+        if (model.getAffected() != null) {
+            json.put("affected", model.getAffected());
+        }
+        if (model.getFixed() != null) {
+            json.put("fixed", model.getFixed());
+        }
+        if (model.getMitigation() != null) {
+            json.put("mitigation", model.getMitigation());
+        }
+        if (model.getUrl() != null) {
+            json.put("url", model.getUrl());
+        }
+        if (model.getComponents() != null && !model.getComponents().isEmpty()) {
+            json.put("components", new JsonArray(model.getComponents()));
+        }
+        return json;
+    }
+
+    public static SecurityAdvisoryModel generateSecurityAdvisoryModel(JsonObject obj) {
+        SecurityAdvisoryModel model = new SecurityAdvisoryModel();
+        model.setCve(obj.getString("cve"));
+        model.setDate(obj.getString("date"));
+        model.setSeverity(obj.getString("severity"));
+        model.setSummary(obj.getString("summary"));
+        model.setAffected(obj.getString("affected"));
+        model.setFixed(obj.getString("fixed"));
+        model.setMitigation(obj.getString("mitigation"));
+        model.setUrl(obj.getString("url"));
+        JsonArray components = (JsonArray) obj.get("components");
+        if (components != null) {
+            for (Object component : components) {
+                model.getComponents().add(String.valueOf(component));
+            }
+        }
+        return model;
+    }
+
     public static String createJsonSchema(MainModel model) {
         JsonObject wrapper = asJsonObject(model);
         return serialize(wrapper);
@@ -956,6 +1230,7 @@ public final class JsonMapper {
         command.setDeprecationNote(obj.getString("deprecationNote"));
         command.setSourceClass(obj.getString("sourceClass"));
         command.setExamples(obj.getString("examples"));
+        command.setPlugin(obj.getString("plugin"));
 
         JsonArray options = (JsonArray) obj.get("options");
         if (options != null) {
@@ -1024,6 +1299,9 @@ public final class JsonMapper {
         }
         if (cmd.getExamples() != null) {
             json.put("examples", cmd.getExamples());
+        }
+        if (cmd.getPlugin() != null) {
+            json.put("plugin", cmd.getPlugin());
         }
 
         if (cmd.hasOptions()) {

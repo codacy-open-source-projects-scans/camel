@@ -54,6 +54,8 @@ public class FileConsumer extends GenericFileConsumer<File> implements ResumeAwa
     private ResumeStrategy resumeStrategy;
     private final String endpointPath;
     private Set<String> extendedAttributes;
+    // the starting directory with its symbolic links resolved, computed once per poll
+    private volatile Path resolvedStartingDirectory;
 
     public FileConsumer(FileEndpoint endpoint, Processor processor, GenericFileOperations<File> operations,
                         GenericFileProcessStrategy<File> processStrategy) {
@@ -75,6 +77,26 @@ public class FileConsumer extends GenericFileConsumer<File> implements ResumeAwa
         return exchange;
     }
 
+    @Override
+    protected boolean isWithinStartingDirectory(String absoluteFilePath) {
+        // a local listing entry is a single path segment, but it can be a symbolic link to a file or to a directory
+        // (entered with recursive) whose target lies outside the starting directory, so compare the resolved paths
+        // the starting directory is resolved once per poll, each listed file on every poll (one toRealPath per file)
+        try {
+            Path startingDirectory = resolvedStartingDirectory;
+            if (startingDirectory == null) {
+                startingDirectory = GenericFileHelper.resolveExistingPathSegments(getEndpoint().getFile().toPath());
+                resolvedStartingDirectory = startingDirectory;
+            }
+            return GenericFileHelper.resolveExistingPathSegments(Path.of(absoluteFilePath)).startsWith(startingDirectory);
+        } catch (IOException e) {
+            // such as a dangling symbolic link
+            LOG.debug("Cannot resolve file: {} against the starting directory due to: {}", absoluteFilePath,
+                    e.getMessage());
+            return false;
+        }
+    }
+
     private boolean pollDirectory(Exchange dynamic, File directory, List<GenericFile<File>> fileList, int depth) {
         depth++;
 
@@ -87,7 +109,7 @@ public class FileConsumer extends GenericFileConsumer<File> implements ResumeAwa
         }
 
         if (getEndpoint().isPreSort()) {
-            Arrays.sort(files, Comparator.comparing(File::getAbsoluteFile));
+            Arrays.sort(files, preSortComparator(getEndpoint().getPreSort()));
         }
 
         if (processPolledFiles(dynamic, fileList, depth, files)) {
@@ -201,6 +223,9 @@ public class FileConsumer extends GenericFileConsumer<File> implements ResumeAwa
     protected boolean pollDirectory(Exchange dynamic, String fileName, List<GenericFile<File>> fileList, int depth) {
         LOG.trace("pollDirectory from fileName: {}", fileName);
 
+        // resolved again on the first check of this poll, as the starting directory can be replaced between polls
+        resolvedStartingDirectory = null;
+
         File directory = new File(fileName);
         if (!directory.exists() || !directory.isDirectory()) {
             LOG.debug("Cannot poll as directory does not exist or its not a directory: {}", directory);
@@ -214,7 +239,7 @@ public class FileConsumer extends GenericFileConsumer<File> implements ResumeAwa
     }
 
     private File[] listFiles(File directory) {
-        if (!getEndpoint().isIncludeHiddenDirs() && directory.isHidden()) {
+        if (!getEndpoint().isIncludeHiddenDirs() && isHiddenDirectory(directory)) {
             return null;
         }
         final File[] dirFiles = directory.listFiles();
@@ -379,6 +404,19 @@ public class FileConsumer extends GenericFileConsumer<File> implements ResumeAwa
         return (FileEndpoint) super.getEndpoint();
     }
 
+    /**
+     * Whether the directory is hidden: java.io.File.isHidden only looks at whether the name starts with a dot, so the
+     * current directory (file:. or file:./) and the parent directory (..) would count as hidden and the consumer would
+     * never deliver a file from them (CAMEL-24835).
+     */
+    private static boolean isHiddenDirectory(File directory) {
+        String name = directory.getName();
+        if (name.isEmpty() || ".".equals(name) || "..".equals(name)) {
+            return false;
+        }
+        return directory.isHidden();
+    }
+
     @Override
     protected boolean isMatchedHiddenFile(Supplier<GenericFile<File>> file, String name, boolean isDirectory) {
         if (isDirectory) {
@@ -445,6 +483,9 @@ public class FileConsumer extends GenericFileConsumer<File> implements ResumeAwa
         boolean created = operations.buildDirectory(file.getPath(), absolute);
         if (!created) {
             LOG.warn("Cannot auto create starting directory: {}", file);
+        } else {
+            // CAMEL-24855: INFO so the log says why the consumer is waiting on an empty directory
+            LOG.info("Auto-created starting directory: {}; waiting for files", file);
         }
     }
 
@@ -472,5 +513,23 @@ public class FileConsumer extends GenericFileConsumer<File> implements ResumeAwa
     @Override
     public String adapterFactoryService() {
         return "file-adapter-factory";
+    }
+
+    private static Comparator<File> preSortComparator(String preSort) {
+        boolean reverse = preSort.startsWith("-");
+        String field = reverse ? preSort.substring(1) : preSort;
+        Comparator<File> cmp;
+        switch (field) {
+            case "modified":
+                cmp = Comparator.comparingLong(File::lastModified);
+                break;
+            case "size":
+                cmp = Comparator.comparingLong(File::length);
+                break;
+            default:
+                cmp = Comparator.comparing(File::getName);
+                break;
+        }
+        return reverse ? cmp.reversed() : cmp;
     }
 }

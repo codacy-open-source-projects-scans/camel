@@ -2,12 +2,10 @@
 :doctitle: XQuery
 :shortname: xquery
 :artifactid: camel-saxon
-:description: Evaluates an XQuery expressions against an XML payload.
+:description: Evaluates an XQuery expressions against an XML payload
 :since: 1.0
 :supportlevel: Stable
 :tabs-sync-option:
-//Manually maintained attributes
-:camel-spring-boot-name: saxon
 
 *Since Camel {since}*
 
@@ -48,42 +46,101 @@ key name *foo* then it is added as *foo*.
 
 == Example
 
+[tabs]
+====
+Java::
++
 [source,java]
----------------------------
+----
 from("queue:foo")
   .filter().xquery("//foo")
-  .to("queue:bar")
----------------------------
+  .to("queue:bar");
+----
+
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="queue:foo"/>
+  <filter>
+    <xquery>//foo</xquery>
+    <to uri="queue:bar"/>
+  </filter>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: queue:foo
+      steps:
+        - filter:
+            expression:
+              xquery:
+                expression: //foo
+            steps:
+              - to:
+                  uri: queue:bar
+----
+====
 
 You can also use functions inside your query, in which case you need an
 explicit type conversion, or you will get an `org.w3c.dom.DOMException:
 HIERARCHY_REQUEST_ERR`). You need to pass in the expected output type of the function.
 For example, the concat function returns a `String` which is done as shown:
 
+[tabs]
+====
+Java::
++
 [source,java]
------------------------------------------------------------------------------
+----
 from("direct:start")
   .recipientList().xquery("concat('mock:foo.', /person/@city)", String.class);
------------------------------------------------------------------------------
+----
 
-And in XML DSL:
-
+XML::
++
 [source,xml]
------------------------------------------------------------------------------
+----
 <route>
   <from uri="direct:start"/>
   <recipientList>
-    <xquery resultType="java.lang.String">concat('mock:foo.', /person/@city</xquery>
+    <xquery resultType="java.lang.String">concat('mock:foo.', /person/@city)</xquery>
   </recipientList>
 </route>
------------------------------------------------------------------------------
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:start
+      steps:
+        - recipientList:
+            expression:
+              xquery:
+                expression: "concat('mock:foo.', /person/@city)"
+                resultType: java.lang.String
+----
+====
 
 === Using namespaces
 
-If you have a standard set of namespaces you wish to work with and wish
-to share them across many XQuery expressions, you can use the
-`org.apache.camel.support.builder.Namespaces` when using Java DSL as shown:
+An XQuery expression that uses a namespace prefix needs the namespace declared. In Java DSL use
+`org.apache.camel.support.builder.Namespaces`, which is passed to `xquery` as the second parameter. In XML DSL
+declare the prefix on a root element (`routes` or `route`), and in YAML DSL list the namespaces on the expression:
 
+[tabs]
+====
+Java::
++
 [source,java]
 ----
 Namespaces ns = new Namespaces("c", "http://acme.com/cheese");
@@ -93,8 +150,41 @@ from("direct:start")
   .to("mock:result");
 ----
 
-Notice how the namespaces are provided to `xquery` with the `ns` variable
-that are passed in as the second parameter.
+XML::
++
+[source,xml]
+----
+<routes xmlns="http://camel.apache.org/schema/xml-io" xmlns:c="http://acme.com/cheese">
+  <route>
+    <from uri="direct:start"/>
+    <filter>
+      <xquery>/c:person[@name='James']</xquery>
+      <to uri="mock:result"/>
+    </filter>
+  </route>
+</routes>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:start
+      steps:
+        - filter:
+            expression:
+              xquery:
+                expression: "/c:person[@name='James']"
+                namespace:
+                  - key: c
+                    value: http://acme.com/cheese
+            steps:
+              - to:
+                  uri: mock:result
+----
+====
 
 Each namespace is a key=value pair, where the prefix is the key.
 In the XQuery expression then the namespace is used by its prefix, e.g.:
@@ -106,6 +196,7 @@ In the XQuery expression then the namespace is used by its prefix, e.g.:
 
 The namespace builder supports adding multiple namespaces as shown:
 
+._Java-only: adding multiple namespaces with the Namespaces builder_
 [source,java]
 ----
 Namespaces ns = new Namespaces("c", "http://acme.com/cheese")
@@ -119,8 +210,9 @@ in the XML root tag (or one of the `camelContext`, `routes`, `route` tags).
 In the XML example below we use Spring XML where the namespace is declared in the root tag `beans`,
 in the line with `xmlns:foo="http://example.com/person"`:
 
+._XML-only:_
 [source,xml]
----------------------------------------------------------------------------------------------------------------
+----
 <beans xmlns="http://www.springframework.org/schema/beans"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xmlns:foo="http://example.com/person"
@@ -128,7 +220,7 @@ in the line with `xmlns:foo="http://example.com/person"`:
        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
        http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
 
-  <camelContext id="camel" xmlns="http://activemq.apache.org/camel/schema/spring">
+  <camelContext id="camel" xmlns="http://camel.apache.org/schema/spring">
     <route>
       <from uri="activemq:MyQueue"/>
       <filter>
@@ -138,43 +230,219 @@ in the line with `xmlns:foo="http://example.com/person"`:
     </route>
   </camelContext>
 </beans>
----------------------------------------------------------------------------------------------------------------
+----
 
 This namespace uses `foo` as prefix, so the `<xquery>` expression uses `foo:` to use this namespace.
+
+=== Sharing namespaces via a registry bean
+
+Declaring the prefixes on the XML root tag only works when the route itself is written in XML.
+To share one set of prefix to URI mappings across several expressions, register a
+`org.apache.camel.support.builder.Namespaces` bean and refer to it with the `namespacesRef`
+option:
+
+[tabs]
+====
+Java::
++
+[source,java]
+----
+@BindToRegistry("myNamespaces")
+Namespaces myNamespaces = new Namespaces("c", "http://acme.com/cheese")
+        .add("w", "http://acme.com/wine");
+
+from("direct:start")
+    .filter(expression().xquery("/c:person[@name='James']").namespacesRef("myNamespaces").end())
+    .to("mock:result");
+----
+
+XML::
++
+[source,xml]
+----
+<camel xmlns="http://camel.apache.org/schema/xml-io">
+
+  <bean name="myNamespaces" type="org.apache.camel.support.builder.Namespaces">
+    <properties>
+      <property key="namespaces[c]" value="http://acme.com/cheese"/>
+      <property key="namespaces[w]" value="http://acme.com/wine"/>
+    </properties>
+  </bean>
+
+  <route>
+    <from uri="direct:start"/>
+    <filter>
+      <xquery namespacesRef="myNamespaces">/c:person[@name='James']</xquery>
+      <to uri="mock:result"/>
+    </filter>
+  </route>
+
+</camel>
+----
+
+YAML::
++
+[source,yaml]
+----
+- beans:
+    - name: myNamespaces
+      type: org.apache.camel.support.builder.Namespaces
+      properties:
+        namespaces[c]: "http://acme.com/cheese"
+        namespaces[w]: "http://acme.com/wine"
+- route:
+    from:
+      uri: "direct:start"
+      steps:
+        - filter:
+            expression:
+              xquery:
+                expression: "/c:person[@name='James']"
+                namespacesRef: "myNamespaces"
+            steps:
+              - to: "mock:result"
+----
+====
+
+Each prefix is configured as a `namespaces[prefix]` property on the bean, with the namespace
+URI as the value. In Java DSL there is no need for this, as the `Namespaces` builder is passed
+to the expression directly, as shown above.
+
+If an expression declares namespaces inline as well, then the inline namespaces win and
+`namespacesRef` is ignored.
 
 == Using XQuery as transformation
 
 We can do a message translation using transform or setBody in the route,
 as shown below:
 
+[tabs]
+====
+Java::
++
 [source,java]
-----------------------------------------
+----
 from("direct:start").
    transform().xquery("/people/person");
-----------------------------------------
+----
+
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="direct:start"/>
+  <transform>
+    <xquery>/people/person</xquery>
+  </transform>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:start
+      steps:
+        - transform:
+            expression:
+              xquery:
+                expression: /people/person
+----
+====
 
 Notice that xquery will use DOMResult by default, so if we want to grab
 the value of the person node, using `text()` we need to tell XQuery to use
 String as the result type, as shown:
 
+[tabs]
+====
+Java::
++
 [source,java]
--------------------------------------------------------------
-from("direct:start").
-   transform().xquery("/people/person/text()", String.class);
--------------------------------------------------------------
+----
+from("direct:start")
+    .transform().xquery("/people/person/text()", String.class);
+----
+
+XML::
++
+[source,xml]
+----
+<route>
+  <from uri="direct:start"/>
+  <transform>
+    <xquery resultType="java.lang.String">/people/person/text()</xquery>
+  </transform>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:start
+      steps:
+        - transform:
+            expression:
+              xquery:
+                expression: /people/person/text()
+                resultType: java.lang.String
+----
+====
 
 If you want to use Camel variables like headers, you have to explicitly
 declare them in the XQuery expression.
 
+[tabs]
+====
+Java::
++
+[source,java]
+----
+from("direct:start")
+    .transform().xquery("declare variable $in.headers.foo external; element item {$in.headers.foo}")
+    .to("mock:result");
+----
+
+XML::
++
 [source,xml]
--------------------------------------------------------------
-<transform>
+----
+<route>
+  <from uri="direct:start"/>
+  <transform>
     <xquery>
         declare variable $in.headers.foo external;
         element item {$in.headers.foo}
     </xquery>
-</transform>
--------------------------------------------------------------
+  </transform>
+  <to uri="mock:result"/>
+</route>
+----
+
+YAML::
++
+[source,yaml]
+----
+- route:
+    from:
+      uri: direct:start
+      steps:
+        - transform:
+            expression:
+              xquery:
+                expression: |
+                  declare variable $in.headers.foo external;
+                  element item {$in.headers.foo}
+        - to:
+            uri: mock:result
+----
+====
 
 == Loading script from external resource
 
@@ -183,10 +451,11 @@ such as `"classpath:"`, `"file:"`, or `"http:"`.
 This is done using the following syntax: `"resource:scheme:location"`,
 e.g., to refer to a file on the classpath you can do:
 
+._Java-only: loading XQuery script from classpath with class literal_
 [source,java]
-------------------------------------------------------------------------------
+----
 .setHeader("myHeader").xquery("resource:classpath:myxquery.txt", String.class)
-------------------------------------------------------------------------------
+----
 
 == Learning XQuery
 
@@ -205,13 +474,10 @@ If you use Maven you could add the following to your `pom.xml`,
 substituting the version number for the latest & greatest release.
 
 [source,xml]
---------------------------------------
+----
 <dependency>
   <groupId>org.apache.camel</groupId>
   <artifactId>camel-saxon</artifactId>
   <version>x.x.x</version>
 </dependency>
---------------------------------------
-
-
-include::spring-boot:partial$starter.adoc[]
+----

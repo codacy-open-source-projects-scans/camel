@@ -98,6 +98,28 @@ public class KeycloakSecurityPolicy implements AuthorizationPolicy {
      * {serverUrl}/realms/{realm}/protocol/openid-connect/certs. This ensures token signatures are properly verified.
      */
     private boolean autoFetchPublicKey = true;
+    /**
+     * Comma-separated list of expected audiences for token validation. When set, tokens whose "aud" claim does not
+     * contain every one of the configured audiences are rejected (matching Keycloak's own audience verification
+     * behavior). This prevents a token issued for one client from being accepted by routes intended for another client
+     * in multi-client Keycloak realms. Disabled by default for backward compatibility. Example: "my-client"
+     */
+    private String expectedAudience;
+
+    /**
+     * Comma-separated list of accepted token types ({@code typ} claim). When set, a token whose {@code typ} is not one
+     * of the configured values is rejected. This guards against token-type confusion, e.g. an ID token or refresh token
+     * being presented where an access token is expected. Disabled by default for backward compatibility. Example:
+     * "Bearer"
+     */
+    private String expectedTokenTypes;
+
+    /**
+     * Expected authorized party ({@code azp} claim). When set, a token whose {@code azp} does not equal the configured
+     * value is rejected, ensuring the token was issued for the expected client. Disabled by default for backward
+     * compatibility. Example: "my-client"
+     */
+    private String expectedAuthorizedParty;
 
     public KeycloakSecurityPolicy() {
         this.requiredRoles = "";
@@ -428,5 +450,92 @@ public class KeycloakSecurityPolicy implements AuthorizationPolicy {
      */
     public String getExpectedIssuer() {
         return serverUrl + "/realms/" + realm;
+    }
+
+    /**
+     * Gets the expected audience(s) as a comma-separated string.
+     *
+     * @return comma-separated audiences (e.g., "my-client,my-other-client"), or null if not configured
+     */
+    public String getExpectedAudience() {
+        return expectedAudience;
+    }
+
+    /**
+     * Sets the expected audience(s) as a comma-separated string. When set, tokens whose "aud" claim does not contain
+     * every one of the configured audiences are rejected.
+     *
+     * @param expectedAudience comma-separated audiences (e.g., "my-client,my-other-client")
+     */
+    public void setExpectedAudience(String expectedAudience) {
+        this.expectedAudience = expectedAudience;
+    }
+
+    /**
+     * Gets the expected audiences as a list.
+     *
+     * @return list of expected audiences, or an empty list if not configured
+     */
+    public List<String> getExpectedAudienceAsList() {
+        if (ObjectHelper.isEmpty(expectedAudience)) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(expectedAudience.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Gets the accepted token type(s) as a comma-separated string.
+     *
+     * @return comma-separated token types (e.g., "Bearer"), or null if not configured
+     */
+    public String getExpectedTokenTypes() {
+        return expectedTokenTypes;
+    }
+
+    /**
+     * Sets the accepted token type(s) as a comma-separated string. When set, a token whose "typ" claim is not one of
+     * the configured values is rejected.
+     *
+     * @param expectedTokenTypes comma-separated token types (e.g., "Bearer")
+     */
+    public void setExpectedTokenTypes(String expectedTokenTypes) {
+        this.expectedTokenTypes = expectedTokenTypes;
+    }
+
+    /**
+     * Gets the accepted token types as a list.
+     *
+     * @return list of accepted token types, or an empty list if not configured
+     */
+    public List<String> getExpectedTokenTypesAsList() {
+        if (ObjectHelper.isEmpty(expectedTokenTypes)) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(expectedTokenTypes.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Gets the expected authorized party ({@code azp}).
+     *
+     * @return the expected authorized party, or null if not configured
+     */
+    public String getExpectedAuthorizedParty() {
+        return expectedAuthorizedParty;
+    }
+
+    /**
+     * Sets the expected authorized party ({@code azp}). When set, a token whose "azp" claim does not equal the
+     * configured value is rejected.
+     *
+     * @param expectedAuthorizedParty the expected authorized party (e.g., "my-client")
+     */
+    public void setExpectedAuthorizedParty(String expectedAuthorizedParty) {
+        this.expectedAuthorizedParty = expectedAuthorizedParty;
     }
 }

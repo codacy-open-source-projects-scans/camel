@@ -23,11 +23,13 @@ import java.util.Map;
 
 import com.google.api.client.http.FileContent;
 import com.google.api.client.util.DateTime;
+import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.google.drive.internal.DriveFilesApiMethod;
 import org.apache.camel.component.google.drive.internal.GoogleDriveApiCollection;
+import org.apache.camel.test.junit6.TestSupport;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
@@ -78,7 +80,7 @@ public class DriveFilesIT extends AbstractGoogleDriveTestSupport {
         String fileId = testFile.getId();
 
         // using String message body for single parameter "fileId"
-        sendBody("direct://DELETE", fileId);
+        TestSupport.sendBody(template, "direct://DELETE", fileId);
 
         try {
             // the file should be gone now
@@ -260,7 +262,7 @@ public class DriveFilesIT extends AbstractGoogleDriveTestSupport {
         // parameter type is com.google.api.services.drive.model.Channel
         headers.put("CamelGoogleDrive.contentChannel", null);
 
-        final com.google.api.services.drive.Drive.Files.Watch result = requestBodyAndHeaders("direct://WATCH", null, headers);
+        final Drive.Files.Watch result = requestBodyAndHeaders("direct://WATCH", null, headers);
 
         assertNotNull(result, "watch result");
         LOG.debug("watch: {}", result);

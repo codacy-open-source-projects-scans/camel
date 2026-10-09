@@ -43,4 +43,36 @@ public class Headers {
     @Metadata(description = "Comma-separated list of MCP server names (keys) to exclude from this agent invocation.",
               javaType = "String")
     public static final String EXCLUDE_MCP_SERVERS = "CamelLangChain4jAgentExcludeMcpServers";
+
+    @Metadata(description = "The Finish Reason.", javaType = "dev.langchain4j.model.output.FinishReason")
+    public static final String FINISH_REASON = "CamelLangChain4jAgentFinishReason";
+
+    @Metadata(description = "The Input Token Count.", javaType = "int")
+    public static final String INPUT_TOKEN_COUNT = "CamelLangChain4jAgentInputTokenCount";
+
+    @Metadata(description = "The Output Token Count.", javaType = "int")
+    public static final String OUTPUT_TOKEN_COUNT = "CamelLangChain4jAgentOutputTokenCount";
+
+    @Metadata(description = "The Total Token Count.", javaType = "int")
+    public static final String TOTAL_TOKEN_COUNT = "CamelLangChain4jAgentTotalTokenCount";
+
+    @Metadata(description = "The request model name.", javaType = "String")
+    public static final String REQUEST_MODEL = "CamelLangChain4jAgentRequestModel";
+
+    @Metadata(description = "The response model name. Not set by the agent producer when langchain4j Result "
+                            + "does not expose it.",
+              javaType = "String")
+    public static final String RESPONSE_MODEL = "CamelLangChain4jAgentResponseModel";
+
+    @Metadata(description = "RAG sources retrieved during agent invocation.",
+              javaType = "java.util.List<dev.langchain4j.rag.content.Content>")
+    public static final String SOURCES = "CamelLangChain4jAgentSources";
+
+    @Metadata(description = "Tool executions performed during agent invocation.",
+              javaType = "java.util.List<dev.langchain4j.service.tool.ToolExecution>")
+    public static final String TOOL_EXECUTIONS = "CamelLangChain4jAgentToolExecutions";
+
+    @Metadata(description = "Set to true when user input is rejected by the configured moderation model; not set on success.",
+              javaType = "Boolean")
+    public static final String MODERATION_FLAGGED = "CamelLangChain4jAgentModerationFlagged";
 }

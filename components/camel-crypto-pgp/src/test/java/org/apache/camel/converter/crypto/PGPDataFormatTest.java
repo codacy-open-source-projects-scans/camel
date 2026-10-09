@@ -98,6 +98,9 @@ public class PGPDataFormatTest extends AbstractPGPDataFormatTest {
         decryptor.setSignatureKeyFileName(PUB_KEY_RING_SUBKEYS_FILE_NAME);
         decryptor.setPassword("Abcd1234");
         decryptor.setSignatureKeyUserid("keyflag");
+        // the encryptor above deliberately emits the legacy packet, which carries no modification detection code,
+        // so the decryptor has to accept messages that are not integrity protected
+        decryptor.setRequireIntegrityProtection(false);
     }
 
     protected String getKeyFileName() {
@@ -588,7 +591,7 @@ public class PGPDataFormatTest extends AbstractPGPDataFormatTest {
                 pgpDecryptByteArray.setPassphraseAccessor(passphraseAccessor);
                 pgpDecryptByteArray.setProvider(getProvider());
 
-                from("direct:key-ring-byte-array").streamCaching().marshal(pgpEncryptByteArray).to("mock:encrypted")
+                from("direct:key-ring-byte-array").streamCache(true).marshal(pgpEncryptByteArray).to("mock:encrypted")
                         .unmarshal(pgpDecryptByteArray).to("mock:unencrypted");
                 // END SNIPPET: pgp-format-key-ring-byte-array
 
@@ -612,7 +615,7 @@ public class PGPDataFormatTest extends AbstractPGPDataFormatTest {
                 pgpVerifyAndDecryptByteArray
                         .setSignatureVerificationOption(PGPKeyAccessDataFormat.SIGNATURE_VERIFICATION_OPTION_REQUIRED);
 
-                from("direct:sign-key-ring-byte-array").streamCaching()
+                from("direct:sign-key-ring-byte-array").streamCache(true)
                         // encryption key ring can also be set as header
                         .setHeader(PGPDataFormat.ENCRYPTION_KEY_RING).constant(getPublicKeyRing())
                         .marshal(pgpSignAndEncryptByteArray)
@@ -651,7 +654,7 @@ public class PGPDataFormatTest extends AbstractPGPDataFormatTest {
                 List<String> expectedSigUserIds = new ArrayList<>();
                 expectedSigUserIds.add("Second <email@second.com>");
                 pgpVerifyAndDecryptSeveralSignerKeys.setSignatureKeyUserids(expectedSigUserIds);
-                from("direct:several-signer-keys").streamCaching().marshal(pgpSignAndEncryptSeveralSignerKeys)
+                from("direct:several-signer-keys").streamCache(true).marshal(pgpSignAndEncryptSeveralSignerKeys)
                         .to("mock:encrypted")
                         .unmarshal(pgpVerifyAndDecryptSeveralSignerKeys).to("mock:unencrypted");
                 // END SNIPPET: pgp-format-several-signer-keys
@@ -759,7 +762,7 @@ public class PGPDataFormatTest extends AbstractPGPDataFormatTest {
                 pgpVerifyAndDecryptByteArray
                         .setSignatureVerificationOption(PGPKeyAccessDataFormat.SIGNATURE_VERIFICATION_OPTION_REQUIRED);
 
-                from("direct:encrypt-sign-without-compressed-data-packet").streamCaching()
+                from("direct:encrypt-sign-without-compressed-data-packet").streamCache(true)
                         // encryption key ring can also be set as header
                         .setHeader(PGPDataFormat.ENCRYPTION_KEY_RING).constant(getPublicKeyRing()).marshal(pgpEncryptSign)
                         // it is recommended to remove the header immediately when it is no longer needed

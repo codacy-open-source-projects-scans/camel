@@ -51,12 +51,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class XmlConverterTest extends ContextTestSupport {
+class XmlConverterTest extends ContextTestSupport {
 
     @Test
-    public void testToResultNoSource() throws Exception {
+    void testToResultNoSource() throws Exception {
         XmlConverter conv = new XmlConverter();
+        // Should handle null source gracefully (returns immediately without transforming)
         conv.toResult(null, null);
+        // Verify the converter itself is still functional after handling null
+        assertNotNull(conv.createDocument());
     }
 
     @Test
@@ -620,6 +623,24 @@ public class XmlConverterTest extends ContextTestSupport {
 
         node = context.getTypeConverter().convertTo(Node.class, nl);
         assertNotNull(node);
+    }
+
+    @Test
+    void testToDOMDocumentReturnsNullForNonXmlByteArrayViaRegistry() {
+        // Exercises the bulk loader path (CamelXmlJaxpBulkConverterLoader) rather than
+        // calling XmlConverter.toDOMDocument() directly. When @Converter(allowNull=true)
+        // returns null, the loader returns Void.class, which the registry translates to null.
+        byte[] json = "{\"status\":\"error\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Document doc = context.getTypeConverter().convertTo(Document.class, json);
+        assertNull(doc, "Registry must return null (not throw) for non-XML byte[] via bulk loader");
+    }
+
+    @Test
+    void testToDOMDocumentParsesValidXmlByteArrayViaRegistry() throws Exception {
+        byte[] xml = "<root><child/></root>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Document doc = context.getTypeConverter().convertTo(Document.class, xml);
+        assertNotNull(doc, "Registry must parse valid XML byte[]");
+        assertEquals("root", doc.getDocumentElement().getTagName());
     }
 
 }

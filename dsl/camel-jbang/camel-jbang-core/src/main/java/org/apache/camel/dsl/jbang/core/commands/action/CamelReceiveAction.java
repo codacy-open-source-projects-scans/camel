@@ -42,9 +42,9 @@ import com.github.freva.asciitable.AsciiTable;
 import com.github.freva.asciitable.Column;
 import com.github.freva.asciitable.HorizontalAlign;
 import com.github.freva.asciitable.OverflowBehaviour;
-import org.apache.camel.catalog.impl.TimePatternConverter;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.commands.CommandHelper;
+import org.apache.camel.dsl.jbang.core.commands.MavenResolverMixin;
 import org.apache.camel.dsl.jbang.core.commands.Run;
 import org.apache.camel.dsl.jbang.core.common.PathUtils;
 import org.apache.camel.dsl.jbang.core.common.PidNameAgeCompletionCandidates;
@@ -58,14 +58,18 @@ import org.apache.camel.util.URISupport;
 import org.apache.camel.util.json.JsonArray;
 import org.apache.camel.util.json.JsonObject;
 import org.apache.camel.util.json.Jsoner;
-import org.fusesource.jansi.Ansi;
+import org.jline.jansi.Ansi;
 import picocli.CommandLine;
 
 import static org.apache.camel.dsl.jbang.core.common.CamelCommandHelper.valueAsStringPretty;
 
 @CommandLine.Command(name = "receive",
                      description = "Receive and dump messages from remote endpoints", sortOptions = false,
-                     showDefaultValues = true)
+                     showDefaultValues = true,
+                     footer = {
+                             "%nExamples:",
+                             "  camel cmd receive --endpoint=seda:foo",
+                             "  camel cmd receive --endpoint=seda:foo --timeout=30000" })
 public class CamelReceiveAction extends ActionBaseCommand {
 
     private static final int NAME_MAX_WIDTH = 25;
@@ -117,8 +121,7 @@ public class CamelReceiveAction extends ActionBaseCommand {
     String propertiesFiles;
 
     @CommandLine.Option(names = { "--prop", "--property" },
-                        description = "Additional properties; override existing (only applicable when NOT using an existing running Camel)",
-                        arity = "0")
+                        description = "Additional properties; override existing (only applicable when NOT using an existing running Camel)")
     String[] property;
 
     @CommandLine.Option(names = { "--action" }, completionCandidates = ActionCompletionCandidates.class,
@@ -209,6 +212,9 @@ public class CamelReceiveAction extends ActionBaseCommand {
     @CommandLine.Option(names = { "--output" }, completionCandidates = OutputFormatCompletionCandidates.class,
                         description = "Output format (${COMPLETION-CANDIDATES})")
     private String output;
+
+    @CommandLine.Mixin
+    MavenResolverMixin mavenResolver;
 
     private volatile long pid;
 
@@ -306,6 +312,7 @@ public class CamelReceiveAction extends ActionBaseCommand {
         run.empty = true;
         run.propertiesFiles = propertiesFiles;
         run.property = property;
+        run.mavenResolver = mavenResolver;
 
         // spawn thread that waits for response file
         final CountDownLatch latch = new CountDownLatch(1);
@@ -411,10 +418,10 @@ public class CamelReceiveAction extends ActionBaseCommand {
         } else if (name != null) {
             pids = findPids(name);
         } else {
-            return 0;
+            pids = findPids("*");
         }
         ProcessHandle.allProcesses()
-                .filter(ph -> pid == 0 && pids.contains(ph.pid()))
+                .filter(ph -> pids.contains(ph.pid()))
                 .forEach(ph -> {
                     JsonObject root = loadStatus(ph.pid());
                     if (root != null) {
@@ -534,9 +541,9 @@ public class CamelReceiveAction extends ActionBaseCommand {
                 long millis;
                 if (StringHelper.isDigit(since)) {
                     // is in seconds by default
-                    millis = TimePatternConverter.toMilliSeconds(since) * 1000;
+                    millis = TimeUtils.toMilliSeconds(since) * 1000;
                 } else {
-                    millis = TimePatternConverter.toMilliSeconds(since);
+                    millis = TimeUtils.toMilliSeconds(since);
                 }
                 limit = new Date(System.currentTimeMillis() - millis);
             }
@@ -799,10 +806,10 @@ public class CamelReceiveAction extends ActionBaseCommand {
                 long t1 = r1.timestamp;
                 long t2 = r2.timestamp;
                 if (t1 == 0) {
-                    t1 = lastTimestamp.get(r1.name);
+                    t1 = lastTimestamp.getOrDefault(r1.name, 0L);
                 }
-                if (t1 == 0) {
-                    t1 = lastTimestamp.get(r2.name);
+                if (t2 == 0) {
+                    t2 = lastTimestamp.getOrDefault(r2.name, 0L);
                 }
                 if (t1 == 0 && t2 == 0) {
                     return 0;

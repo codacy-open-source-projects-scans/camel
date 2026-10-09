@@ -240,7 +240,8 @@ public interface BlobEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option is a:
-         * <code>org.apache.camel.component.azure.storage.blob.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: AZURE_IDENTITY
          * Group: common
@@ -248,7 +249,7 @@ public interface BlobEndpointBuilderFactory {
          * @param credentialType the value to set
          * @return the dsl builder
          */
-        default BlobEndpointConsumerBuilder credentialType(org.apache.camel.component.azure.storage.blob.CredentialType credentialType) {
+        default BlobEndpointConsumerBuilder credentialType(org.apache.camel.component.azure.common.CredentialType credentialType) {
             doSetProperty("credentialType", credentialType);
             return this;
         }
@@ -256,7 +257,8 @@ public interface BlobEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option will be converted to a
-         * <code>org.apache.camel.component.azure.storage.blob.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: AZURE_IDENTITY
          * Group: common
@@ -477,21 +479,6 @@ public interface BlobEndpointBuilderFactory {
          */
         default BlobEndpointConsumerBuilder regex(String regex) {
             doSetProperty("regex", regex);
-            return this;
-        }
-        /**
-         * In case of usage of Shared Access Signature we'll need to set a SAS
-         * Token.
-         * 
-         * The option is a: <code>java.lang.String</code> type.
-         * 
-         * Group: common
-         * 
-         * @param sasToken the value to set
-         * @return the dsl builder
-         */
-        default BlobEndpointConsumerBuilder sasToken(String sasToken) {
-            doSetProperty("sasToken", sasToken);
             return this;
         }
         /**
@@ -1322,6 +1309,21 @@ public interface BlobEndpointBuilderFactory {
             return this;
         }
         /**
+         * In case of usage of Shared Access Signature we'll need to set a SAS
+         * Token.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param sasToken the value to set
+         * @return the dsl builder
+         */
+        default BlobEndpointConsumerBuilder sasToken(String sasToken) {
+            doSetProperty("sasToken", sasToken);
+            return this;
+        }
+        /**
          * Source Blob Access Key: for copyblob operation, sadly, we need to
          * have an accessKey for the source blob we want to copy Passing an
          * accessKey as header, it's unsafe so we could set as key.
@@ -1710,7 +1712,8 @@ public interface BlobEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option is a:
-         * <code>org.apache.camel.component.azure.storage.blob.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: AZURE_IDENTITY
          * Group: common
@@ -1718,7 +1721,7 @@ public interface BlobEndpointBuilderFactory {
          * @param credentialType the value to set
          * @return the dsl builder
          */
-        default BlobEndpointProducerBuilder credentialType(org.apache.camel.component.azure.storage.blob.CredentialType credentialType) {
+        default BlobEndpointProducerBuilder credentialType(org.apache.camel.component.azure.common.CredentialType credentialType) {
             doSetProperty("credentialType", credentialType);
             return this;
         }
@@ -1726,7 +1729,8 @@ public interface BlobEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option will be converted to a
-         * <code>org.apache.camel.component.azure.storage.blob.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: AZURE_IDENTITY
          * Group: common
@@ -1947,21 +1951,6 @@ public interface BlobEndpointBuilderFactory {
          */
         default BlobEndpointProducerBuilder regex(String regex) {
             doSetProperty("regex", regex);
-            return this;
-        }
-        /**
-         * In case of usage of Shared Access Signature we'll need to set a SAS
-         * Token.
-         * 
-         * The option is a: <code>java.lang.String</code> type.
-         * 
-         * Group: common
-         * 
-         * @param sasToken the value to set
-         * @return the dsl builder
-         */
-        default BlobEndpointProducerBuilder sasToken(String sasToken) {
-            doSetProperty("sasToken", sasToken);
             return this;
         }
         /**
@@ -2628,6 +2617,21 @@ public interface BlobEndpointBuilderFactory {
             return this;
         }
         /**
+         * In case of usage of Shared Access Signature we'll need to set a SAS
+         * Token.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param sasToken the value to set
+         * @return the dsl builder
+         */
+        default BlobEndpointProducerBuilder sasToken(String sasToken) {
+            doSetProperty("sasToken", sasToken);
+            return this;
+        }
+        /**
          * Source Blob Access Key: for copyblob operation, sadly, we need to
          * have an accessKey for the source blob we want to copy Passing an
          * accessKey as header, it's unsafe so we could set as key.
@@ -2909,7 +2913,8 @@ public interface BlobEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option is a:
-         * <code>org.apache.camel.component.azure.storage.blob.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: AZURE_IDENTITY
          * Group: common
@@ -2917,7 +2922,7 @@ public interface BlobEndpointBuilderFactory {
          * @param credentialType the value to set
          * @return the dsl builder
          */
-        default BlobEndpointBuilder credentialType(org.apache.camel.component.azure.storage.blob.CredentialType credentialType) {
+        default BlobEndpointBuilder credentialType(org.apache.camel.component.azure.common.CredentialType credentialType) {
             doSetProperty("credentialType", credentialType);
             return this;
         }
@@ -2925,7 +2930,8 @@ public interface BlobEndpointBuilderFactory {
          * Determines the credential strategy to adopt.
          * 
          * The option will be converted to a
-         * <code>org.apache.camel.component.azure.storage.blob.CredentialType</code> type.
+         * <code>org.apache.camel.component.azure.common.CredentialType</code>
+         * type.
          * 
          * Default: AZURE_IDENTITY
          * Group: common
@@ -3149,21 +3155,6 @@ public interface BlobEndpointBuilderFactory {
             return this;
         }
         /**
-         * In case of usage of Shared Access Signature we'll need to set a SAS
-         * Token.
-         * 
-         * The option is a: <code>java.lang.String</code> type.
-         * 
-         * Group: common
-         * 
-         * @param sasToken the value to set
-         * @return the dsl builder
-         */
-        default BlobEndpointBuilder sasToken(String sasToken) {
-            doSetProperty("sasToken", sasToken);
-            return this;
-        }
-        /**
          * Client to a storage account. This client does not hold any state
          * about a particular storage account but is instead a convenient way of
          * sending off appropriate requests to the resource on the service. It
@@ -3335,6 +3326,21 @@ public interface BlobEndpointBuilderFactory {
             return this;
         }
         /**
+         * In case of usage of Shared Access Signature we'll need to set a SAS
+         * Token.
+         * 
+         * The option is a: <code>java.lang.String</code> type.
+         * 
+         * Group: security
+         * 
+         * @param sasToken the value to set
+         * @return the dsl builder
+         */
+        default BlobEndpointBuilder sasToken(String sasToken) {
+            doSetProperty("sasToken", sasToken);
+            return this;
+        }
+        /**
          * Source Blob Access Key: for copyblob operation, sadly, we need to
          * have an accessKey for the source blob we want to copy Passing an
          * accessKey as header, it's unsafe so we could set as key.
@@ -3437,7 +3443,7 @@ public interface BlobEndpointBuilderFactory {
          * The internal instance of the builder used to access to all the
          * methods representing the name of headers.
          */
-        private static final BlobHeaderNameBuilder INSTANCE = new BlobHeaderNameBuilder();
+        public static final BlobHeaderNameBuilder INSTANCE = new BlobHeaderNameBuilder();
 
         /**
          * (All) Specify the producer operation to execute, please see the doc
@@ -4451,6 +4457,85 @@ public interface BlobEndpointBuilderFactory {
          */
         public String azureStorageBlobTagFilter() {
             return "CamelAzureStorageBlobTagFilter";
+        }
+        /**
+         * (producer) (setBlobLegalHold) The legal hold status to set on the
+         * blob. When set to true the blob is protected from modification and
+         * deletion until the hold is cleared by setting the value to false.
+         * (consumer) The legal hold status returned by the setBlobLegalHold
+         * operation.
+         * 
+         * The option is a: {@code Boolean} type.
+         * 
+         * Group: common
+         * 
+         * @return the name of the header {@code AzureStorageBlobLegalHold}.
+         */
+        public String azureStorageBlobLegalHold() {
+            return "CamelAzureStorageBlobLegalHold";
+        }
+        /**
+         * (setBlobImmutabilityPolicy) A pre-built BlobImmutabilityPolicy object
+         * that overrides the policy expiry time and mode headers when present.
+         * 
+         * The option is a: {@code
+         * com.azure.storage.blob.models.BlobImmutabilityPolicy} type.
+         * 
+         * Group: producer
+         * 
+         * @return the name of the header {@code
+         * AzureStorageBlobImmutabilityPolicy}.
+         */
+        public String azureStorageBlobImmutabilityPolicy() {
+            return "CamelAzureStorageBlobImmutabilityPolicy";
+        }
+        /**
+         * (setBlobImmutabilityPolicy) The expiry time of the time-based
+         * retention policy. Required unless a pre-built BlobImmutabilityPolicy
+         * is provided via the body or the
+         * CamelAzureStorageBlobImmutabilityPolicy header.
+         * 
+         * The option is a: {@code java.time.OffsetDateTime} type.
+         * 
+         * Group: producer
+         * 
+         * @return the name of the header {@code
+         * AzureStorageBlobImmutabilityPolicyExpiryTime}.
+         */
+        public String azureStorageBlobImmutabilityPolicyExpiryTime() {
+            return "CamelAzureStorageBlobImmutabilityPolicyExpiryTime";
+        }
+        /**
+         * (setBlobImmutabilityPolicy) The mode of the immutability policy:
+         * UNLOCKED (default, can be modified or deleted), LOCKED (cannot be
+         * modified or shortened, only extended), or MUTABLE.
+         * 
+         * The option is a: {@code
+         * com.azure.storage.blob.models.BlobImmutabilityPolicyMode} type.
+         * 
+         * Group: producer
+         * 
+         * @return the name of the header {@code
+         * AzureStorageBlobImmutabilityPolicyMode}.
+         */
+        public String azureStorageBlobImmutabilityPolicyMode() {
+            return "CamelAzureStorageBlobImmutabilityPolicyMode";
+        }
+        /**
+         * (setBlobTier) The rehydrate priority used when rehydrating a blob
+         * from the archive tier: Standard or High. Ignored when changing tier
+         * between non-archive tiers.
+         * 
+         * The option is a: {@code
+         * com.azure.storage.blob.models.RehydratePriority} type.
+         * 
+         * Group: producer
+         * 
+         * @return the name of the header {@code
+         * AzureStorageBlobRehydratePriority}.
+         */
+        public String azureStorageBlobRehydratePriority() {
+            return "CamelAzureStorageBlobRehydratePriority";
         }
     }
     static BlobEndpointBuilder endpointBuilder(String componentName, String path) {

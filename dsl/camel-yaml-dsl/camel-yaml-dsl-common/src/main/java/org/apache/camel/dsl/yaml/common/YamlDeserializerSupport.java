@@ -20,8 +20,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -179,7 +179,7 @@ public class YamlDeserializerSupport {
         }
 
         final MappingNode mn = asMappingNode(node);
-        final Map<String, Object> answer = new HashMap<>();
+        final Map<String, Object> answer = new LinkedHashMap<>();
 
         for (NodeTuple tuple : mn.getValue()) {
             final String key = asText(tuple.getKeyNode());
@@ -206,7 +206,7 @@ public class YamlDeserializerSupport {
         }
 
         final MappingNode mn = asMappingNode(node);
-        final Map<String, Object> answer = new HashMap<>();
+        final Map<String, Object> answer = new LinkedHashMap<>();
 
         for (NodeTuple tuple : mn.getValue()) {
             final String key = asText(tuple.getKeyNode());
@@ -418,17 +418,24 @@ public class YamlDeserializerSupport {
 
         MappingNode mn = asMappingNode(root);
         for (String path : pointer.split("/")) {
+            if (path.isEmpty()) {
+                continue;
+            }
             for (NodeTuple child : mn.getValue()) {
                 if (child.getKeyNode() instanceof ScalarNode) {
                     ScalarNode scalar = (ScalarNode) child.getKeyNode();
                     if (scalar.getValue().equals(path)) {
-                        String next = pointer.substring(path.length() + 1);
+                        String next = pointer.substring(pointer.indexOf(path) + path.length());
+                        if (next.startsWith("/")) {
+                            next = next.substring(1);
+                        }
                         return ObjectHelper.isEmpty(next)
                                 ? child.getValueNode()
                                 : nodeAt(child.getValueNode(), next);
                     }
                 }
             }
+            return null;
         }
 
         return null;

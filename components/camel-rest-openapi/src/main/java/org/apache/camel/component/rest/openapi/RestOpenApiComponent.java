@@ -27,6 +27,7 @@ import org.apache.camel.spi.RestProducerFactory;
 import org.apache.camel.spi.annotations.Component;
 import org.apache.camel.support.DefaultComponent;
 import org.apache.camel.support.jsse.SSLContextParameters;
+import org.apache.camel.support.service.ServiceHelper;
 
 import static org.apache.camel.component.rest.openapi.RestOpenApiHelper.isHostParam;
 import static org.apache.camel.component.rest.openapi.RestOpenApiHelper.isMediaRange;
@@ -141,6 +142,11 @@ public final class RestOpenApiComponent extends DefaultComponent implements SSLC
     private String mockIncludePattern = "classpath:camel-mock/**";
     @Metadata(label = "consumer", description = "Sets the context-path to use for servicing the OpenAPI specification")
     private String apiContextPath;
+    @Metadata(label = "consumer,advanced", defaultValue = "platform", enums = "platform,camel",
+              description = "Who answers requests that match no operation in the OpenAPI specification: the HTTP layer"
+                            + " (platform) or Camel via the unmatched request handler (camel). Can be overridden in endpoint"
+                            + " configuration.")
+    private String unmatchedRequestHandling = "platform";
     @Metadata(description = "To use a custom strategy for how to process Rest DSL requests", label = "consumer,advanced")
     private RestOpenapiProcessorStrategy restOpenapiProcessorStrategy;
     @Metadata(description = "Enable usage of global SSL context parameters.", label = "security")
@@ -178,7 +184,14 @@ public final class RestOpenApiComponent extends DefaultComponent implements SSLC
         }
         endpoint.setMissingOperation(getMissingOperation());
         endpoint.setMockIncludePattern(getMockIncludePattern());
-        endpoint.setRestOpenapiProcessorStrategy(getRestOpenapiProcessorStrategy());
+        endpoint.setUnmatchedRequestHandling(getUnmatchedRequestHandling());
+        if (restOpenapiProcessorStrategy != null) {
+            endpoint.setRestOpenapiProcessorStrategy(restOpenapiProcessorStrategy);
+        } else {
+            DefaultRestOpenapiProcessorStrategy perEndpoint = new DefaultRestOpenapiProcessorStrategy();
+            CamelContextAware.trySetCamelContext(perEndpoint, getCamelContext());
+            endpoint.setRestOpenapiProcessorStrategy(perEndpoint);
+        }
         setProperties(endpoint, parameters);
         return endpoint;
     }
@@ -196,10 +209,12 @@ public final class RestOpenApiComponent extends DefaultComponent implements SSLC
             }
             bindingPackageScan = base;
         }
-        if (restOpenapiProcessorStrategy == null) {
-            restOpenapiProcessorStrategy = new DefaultRestOpenapiProcessorStrategy();
-            CamelContextAware.trySetCamelContext(restOpenapiProcessorStrategy, getCamelContext());
-        }
+    }
+
+    @Override
+    protected void doStop() throws Exception {
+        super.doStop();
+        ServiceHelper.stopService(restOpenapiProcessorStrategy);
     }
 
     public String getBasePath() {
@@ -269,6 +284,14 @@ public final class RestOpenApiComponent extends DefaultComponent implements SSLC
 
     public void setApiContextPath(String apiContextPath) {
         this.apiContextPath = apiContextPath;
+    }
+
+    public String getUnmatchedRequestHandling() {
+        return unmatchedRequestHandling;
+    }
+
+    public void setUnmatchedRequestHandling(String unmatchedRequestHandling) {
+        this.unmatchedRequestHandling = unmatchedRequestHandling;
     }
 
     public void setBasePath(final String basePath) {
