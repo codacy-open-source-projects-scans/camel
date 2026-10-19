@@ -40,7 +40,6 @@ import dev.tamboui.widgets.list.ListState;
 import dev.tamboui.widgets.list.ListWidget;
 import dev.tamboui.widgets.list.ScrollMode;
 import dev.tamboui.widgets.paragraph.Paragraph;
-import dev.tamboui.widgets.scrollbar.Scrollbar;
 import dev.tamboui.widgets.scrollbar.ScrollbarState;
 
 class AutocompletePopup {
@@ -96,6 +95,9 @@ class AutocompletePopup {
     private List<CompletionItem> filteredItems;
     private CompletionItem selectedItem;
     private Rect popupRect;
+    // the list part of the popup and the rows it was scrolled by in the last render, for a click
+    private Rect listRect;
+    private int listOffset;
     private String titlePrefix;
     private boolean fullKeys;
     // the row of the filtered list a divider is drawn above, -1 for none: the properties of a Kamelet above it, the
@@ -150,10 +152,12 @@ class AutocompletePopup {
             listState.selectNext(size);
             return Result.CONSUMED;
         }
+        // a character at a time, as the editor moves: all the code points of an emoji
         if (ke.isRight()) {
             if (cursorPos < lineKeyText.length()) {
-                filter.appendChar(lineKeyText.charAt(cursorPos));
-                cursorPos++;
+                int end = TuiHelper.characterEnd(lineKeyText, cursorPos);
+                filter.append(lineKeyText.substring(cursorPos, end));
+                cursorPos = end;
                 rebuildList();
                 return Result.CURSOR_RIGHT;
             }
@@ -162,7 +166,7 @@ class AutocompletePopup {
         if (ke.isLeft()) {
             if (cursorPos > minCursorPos && filter.hasFilter()) {
                 filter.deleteChar();
-                cursorPos--;
+                cursorPos = TuiHelper.characterStart(lineKeyText, cursorPos);
                 rebuildList();
                 return Result.CURSOR_LEFT;
             }
@@ -204,7 +208,7 @@ class AutocompletePopup {
             return Result.CLOSED;
         }
         if (ke.code() == KeyCode.CHAR && !ke.hasCtrl() && !ke.hasAlt()) {
-            filter.appendChar(ke.string().charAt(0));
+            filter.append(ke.string());
             List<CompletionItem> prev = filteredItems;
             rebuildList();
             if (filteredItems.isEmpty()) {
@@ -230,7 +234,7 @@ class AutocompletePopup {
         }
         if (me.isClick()) {
             if (popupRect != null && popupRect.contains(me.x(), me.y())) {
-                int idx = TuiHelper.listItemAt(popupRect, 0,
+                int idx = TuiHelper.listItemAt(listRect, listOffset,
                         (filteredItems != null ? listRows() : 0) + 2,
                         me.x(), me.y());
                 int row = idx - 2;
@@ -396,15 +400,9 @@ class AutocompletePopup {
                         .build())
                 .build();
         frame.renderStatefulWidget(list, listRect, renderState);
-
-        int visibleRows = Math.max(1, listRect.height() - 2);
-        if (listRows() + 2 > visibleRows) {
-            scrollbarState
-                    .contentLength(listRows())
-                    .viewportContentLength(visibleRows)
-                    .position(sel != null ? sel + (dividerAt >= 0 && sel >= dividerAt ? 1 : 0) : 0);
-            frame.renderStatefulWidget(Scrollbar.builder().build(), listRect, scrollbarState);
-        }
+        this.listRect = listRect;
+        listOffset = renderState.offset();
+        TuiHelper.renderListScrollbar(frame, listRect, listRows() + 2, listOffset, scrollbarState);
     }
 
     private void renderDetail(Frame frame, Rect detailRect) {

@@ -55,6 +55,12 @@ public class MiloClientEndpoint extends DefaultEndpoint {
     private String node;
 
     /**
+     * Comma-separated node definitions to monitor with one consumer, instead of node (see Node ID)
+     */
+    @UriParam(label = "consumer")
+    private String nodes;
+
+    /**
      * The method definition (see Method ID)
      */
     @UriParam
@@ -85,7 +91,8 @@ public class MiloClientEndpoint extends DefaultEndpoint {
     private boolean defaultAwaitWrites;
 
     /**
-     * Omit notifications in case of null values
+     * Omit a data change whose value is null and whose status is Good. A data change with a Bad or Uncertain status is
+     * always delivered.
      */
     @UriParam(defaultValue = "true")
     private boolean omitNullValues = true;
@@ -168,6 +175,14 @@ public class MiloClientEndpoint extends DefaultEndpoint {
         } else {
             return null;
         }
+    }
+
+    public void setNodes(final String nodes) {
+        this.nodes = nodes;
+    }
+
+    public String getNodes() {
+        return nodes;
     }
 
     ExpandedNodeId getMethodId() {

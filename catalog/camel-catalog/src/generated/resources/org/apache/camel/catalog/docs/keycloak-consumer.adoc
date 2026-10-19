@@ -563,21 +563,21 @@ YAML::
             expression:
               simple:
                 expression: "${body.type} == 'LOGIN_ERROR'"
-        - aggregate:
-            correlationExpression:
-              expression:
-                simple:
-                  expression: "${body.ipAddress}"
-            aggregationStrategy: "#arrayListAggregation"
-            completionSize: 5
-            completionTimeout: 300000
             steps:
-              - log:
-                  message: "SECURITY ALERT: Multiple failed login attempts from ${body[0].ipAddress}"
-              - to:
-                  uri: direct:block-ip
-              - to:
-                  uri: direct:send-security-alert
+              - aggregate:
+                  correlationExpression:
+                    simple:
+                      expression: "${body.ipAddress}"
+                  aggregationStrategy: "#class:org.apache.camel.processor.aggregate.GroupedBodyAggregationStrategy"
+                  completionSize: 5
+                  completionTimeout: 300000
+                  steps:
+                    - log:
+                        message: "SECURITY ALERT: Multiple failed login attempts from ${body[0].ipAddress}"
+                    - to:
+                        uri: direct:block-ip
+                    - to:
+                        uri: direct:send-security-alert
 ----
 ====
 
@@ -908,6 +908,7 @@ Before consuming events, you must enable event logging in Keycloak:
 The consumer uses fingerprint-based deduplication to prevent processing the same event multiple times:
 
 * Events are uniquely identified by combining timestamp and event-specific properties
-* Fingerprints are cached per timestamp and cleared when moving to newer timestamps
+* Fingerprints of the events with the latest timestamp are kept between polls, because Keycloak returns those events
+again on the next poll; fingerprints of older events are dropped when a newer timestamp is seen
 * Maximum cache size is 1000 fingerprints to prevent memory issues
 * This ensures reliable event processing even with high event volumes

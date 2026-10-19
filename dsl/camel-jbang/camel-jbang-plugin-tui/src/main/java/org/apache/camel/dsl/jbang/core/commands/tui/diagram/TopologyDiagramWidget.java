@@ -26,7 +26,9 @@ import dev.tamboui.buffer.Buffer;
 import dev.tamboui.layout.Rect;
 import dev.tamboui.style.Color;
 import dev.tamboui.style.Style;
+import dev.tamboui.text.CharWidth;
 import dev.tamboui.widget.Widget;
+import org.apache.camel.diagram.TopologyErrorFrame;
 import org.apache.camel.diagram.TopologyLayoutEngine.TopologyLayoutEdge;
 import org.apache.camel.diagram.TopologyLayoutEngine.TopologyLayoutNode;
 import org.apache.camel.diagram.TopologyLayoutEngine.TopologyLayoutResult;
@@ -41,6 +43,11 @@ public class TopologyDiagramWidget implements Widget {
     private static final int X_DIVISOR = 15;
     private static final int MAX_WRAP_LINES = 3;
     private static final String AI_MARK = "\u2726 ";
+    /**
+     * The node type of the box of the error handling in the architecture view (CAMEL-25466): drawn dashed, as are the
+     * links into it, which carry failures.
+     */
+    public static final String ERROR_HANDLING = "error-handling";
 
     private final TopologyLayoutResult layout;
     private final int nodeWidth;
@@ -59,7 +66,7 @@ public class TopologyDiagramWidget implements Widget {
     private Map<String, NodeLine> groupTags = Map.of();
     private Map<String, Color> groupColors = Map.of();
     private Style aiStyle = Style.EMPTY.italic();
-    private ErrorLayer errorLayer;
+    private TopologyErrorFrame errorLayer;
     private Set<String> errorMarks = Set.of();
     private Map<TopologyLayoutNode, List<String>> errorLabels;
 
@@ -142,7 +149,7 @@ public class TopologyDiagramWidget implements Widget {
         }
         String second = wrapped.get(1);
         int max = Math.max(1, boxWidth - 4 - 3);
-        return List.of(wrapped.get(0), (second.length() > max ? second.substring(0, max) : second) + "...");
+        return List.of(wrapped.get(0), CharWidth.substringByWidth(second, max) + "...");
     }
 
     /** A box's lines and which of them are the AI label, the route id and the group tag (-1 when none). */
@@ -179,7 +186,7 @@ public class TopologyDiagramWidget implements Widget {
             if (tag != null && label.size() > 1) {
                 int max = Math.max(1, boxWidth - 4 - 3);
                 String first = label.get(0);
-                label = List.of((first.length() > max ? first.substring(0, max) : first) + "...");
+                label = List.of(CharWidth.substringByWidth(first, max) + "...");
             }
             lines = new ArrayList<>(label);
             aiLines = ai != null ? lines.size() : 0;
@@ -240,7 +247,7 @@ public class TopologyDiagramWidget implements Widget {
      * each one where its failures come from (no arrows: with a global error handler every route would have one). A
      * route that sends to the frame has a mark on its box.
      */
-    public TopologyDiagramWidget withErrorLayer(ErrorLayer layer) {
+    public TopologyDiagramWidget withErrorLayer(TopologyErrorFrame layer) {
         this.errorLayer = layer;
         this.errorLabels = null;
         return this;
@@ -306,7 +313,7 @@ public class TopologyDiagramWidget implements Widget {
 
     /** The frame of the error handling: from its top to the bottom of the diagram, as wide as the diagram. */
     private void drawErrorFrame(Buffer buffer, Rect area) {
-        int top = toRow(errorLayer.frameTopY());
+        int top = toRow(errorLayer.topY());
         int bottom = toRow(layout.totalHeight) - 1;
         int right = getTotalCols() - 2;
         Style s = errorStyle().dim();
@@ -322,7 +329,7 @@ public class TopologyDiagramWidget implements Widget {
         setChar(buffer, area, top, right, '\u256e', s);
         setChar(buffer, area, bottom, 0, '\u2570', s);
         setChar(buffer, area, bottom, right, '\u256f', s);
-        writeText(buffer, area, top, 2, " Error handling ", errorStyle().bold());
+        writeText(buffer, area, top, 2, " " + TopologyErrorFrame.TITLE + " ", errorStyle().bold());
     }
 
     /**
@@ -343,20 +350,7 @@ public class TopologyDiagramWidget implements Widget {
             if (!inFrame(node)) {
                 continue;
             }
-            Map<String, List<String>> bySource = new java.util.LinkedHashMap<>();
-            for (ErrorLayer.ErrorPath p : errorLayer.paths()) {
-                if (node.routeId.equals(p.toRouteId())) {
-                    bySource.computeIfAbsent(p.fromRouteId(), k -> new ArrayList<>()).add(p.label());
-                }
-            }
-            List<String> lines = new ArrayList<>();
-            for (Map.Entry<String, List<String>> e : bySource.entrySet()) {
-                String how = String.join(" \u00b7 ", e.getValue());
-                lines.add(e.getKey().equals(node.routeId)
-                        ? "\u26a0 own failures: " + how
-                        : "\u25c2 " + e.getKey() + ": " + how);
-            }
-            answer.put(node, lines);
+            answer.put(node, errorLayer.lines(node.routeId, TopologyErrorFrame.LineStyle.UNICODE));
         }
         return answer;
     }
@@ -376,7 +370,7 @@ public class TopologyDiagramWidget implements Widget {
         int right = 0;
         for (Map.Entry<TopologyLayoutNode, List<String>> e : errorLabels().entrySet()) {
             for (String line : e.getValue()) {
-                right = Math.max(right, toCol(e.getKey().x) + line.length() + 2);
+                right = Math.max(right, toCol(e.getKey().x) + CharWidth.of(line) + 2);
             }
         }
         return right;
@@ -395,6 +389,7 @@ public class TopologyDiagramWidget implements Widget {
         int row = toRow(node.y);
 
         boolean ext = isExternal(node);
+        boolean dashedBox = ext || ERROR_HANDLING.equals(node.nodeType);
         List<NodeLine> own = ownLines(node);
 
         TextLines text = textLines(node, ext);
@@ -414,8 +409,9 @@ public class TopologyDiagramWidget implements Widget {
 
         boolean highlighted = !ext && node.routeId != null && highlightRouteIds.contains(node.routeId);
 
-        char hChar = ext ? DASH_H : H;
-        char vChar = ext ? DASH_V : V;
+        // a selected box has a solid frame like any other: dashes on the selection colour break up, the vertical ones most
+        char hChar = dashedBox && !selected ? DASH_H : H;
+        char vChar = dashedBox && !selected ? DASH_V : V;
         Style borderStyle;
         if (highlighted) {
             Color hlColor = highlightFailed ? highlightFailColor() : highlightOkColor();
@@ -424,7 +420,7 @@ public class TopologyDiagramWidget implements Widget {
             // the colour of the route's group, when groups are shown
             borderStyle = Style.EMPTY.fg(groupColors.get(node.routeId));
         } else {
-            borderStyle = ext ? dashedBorderStyle() : borderStyle();
+            borderStyle = dashedBox ? dashedBorderStyle() : borderStyle();
         }
         if (selected) {
             borderStyle = borderStyle.patch(selectionStyle());
@@ -459,10 +455,10 @@ public class TopologyDiagramWidget implements Widget {
             }
 
             String lineText = lines.get(i);
-            if (lineText.length() > innerWidth) {
-                lineText = lineText.substring(0, Math.max(1, innerWidth - 3)) + "...";
+            if (CharWidth.of(lineText) > innerWidth) {
+                lineText = CharWidth.substringByWidth(lineText, Math.max(1, innerWidth - 3)) + "...";
             }
-            int textCol = col + 2 + Math.max(0, (innerWidth - lineText.length()) / 2);
+            int textCol = col + 2 + Math.max(0, (innerWidth - CharWidth.of(lineText)) / 2);
 
             // Choose style based on content type
             if (own != null) {
@@ -518,7 +514,7 @@ public class TopologyDiagramWidget implements Widget {
             return;
         }
 
-        boolean dashed = isExternal(edge.from) || isExternal(edge.to);
+        boolean dashed = isExternal(edge.from) || isExternal(edge.to) || ERROR_HANDLING.equals(edge.to.nodeType);
         char vChar = dashed ? DASH_V : V;
         char hChar = dashed ? DASH_H : H;
         boolean edgeHighlighted = !dashed
@@ -602,20 +598,7 @@ public class TopologyDiagramWidget implements Widget {
     }
 
     private void writeText(Buffer buffer, Rect area, int gridRow, int gridCol, String text, Style style) {
-        int x = area.x() + gridCol - scrollX;
-        int y = area.y() + gridRow - scrollY;
-        if (y >= area.top() && y < area.bottom() && x < area.right()) {
-            int startIdx = 0;
-            if (x < area.left()) {
-                startIdx = area.left() - x;
-                x = area.left();
-            }
-            if (startIdx < text.length()) {
-                int maxLen = area.right() - x;
-                String visible = text.substring(startIdx, Math.min(text.length(), startIdx + maxLen));
-                buffer.setString(x, y, visible, style);
-            }
-        }
+        DiagramText.write(buffer, area, area.x() + gridCol - scrollX, area.y() + gridRow - scrollY, text, style);
     }
 
     private Style style(Style base, boolean selected) {
@@ -639,42 +622,6 @@ public class TopologyDiagramWidget implements Widget {
     }
 
     public static List<String> wrapText(String text, int maxWidth) {
-        if (maxWidth <= 0 || text.length() <= maxWidth) {
-            return new ArrayList<>(List.of(text));
-        }
-
-        List<String> lines = new ArrayList<>();
-        String remaining = text;
-
-        while (!remaining.isEmpty() && lines.size() < MAX_WRAP_LINES) {
-            if (remaining.length() <= maxWidth) {
-                lines.add(remaining);
-                remaining = "";
-                break;
-            }
-
-            int breakAt = -1;
-            for (int i = 0; i < maxWidth && i < remaining.length(); i++) {
-                char c = remaining.charAt(i);
-                if (c == ' ' || c == ':' || c == '/' || c == '.' || c == ',' || c == '&' || c == '?') {
-                    breakAt = i + 1;
-                }
-            }
-            if (breakAt <= 0) {
-                breakAt = maxWidth;
-            }
-
-            lines.add(remaining.substring(0, breakAt).stripTrailing());
-            remaining = remaining.substring(breakAt).stripLeading();
-        }
-
-        if (!remaining.isEmpty()) {
-            int lastIdx = lines.size() - 1;
-            String lastLine = lines.get(lastIdx);
-            String combined = lastLine + " " + remaining;
-            lines.set(lastIdx, combined.substring(0, Math.max(1, maxWidth - 3)) + "...");
-        }
-
-        return lines;
+        return DiagramText.wrap(text, maxWidth, MAX_WRAP_LINES);
     }
 }

@@ -442,16 +442,104 @@ class SourceValidatorEndpointTest {
     }
 
     @Test
-    void aTimerExchangePropertyUsedAsAHeaderIsNamed() {
-        // TimerConsumer sets the counter, name, period and time as exchange properties; only the fired time is a header
+    void aTimerExchangePropertyIsSetOnlyWithIncludeMetadata() {
+        // TimerConsumer sets the counter, name, period and time as exchange properties, and only with includeMetadata
         List<String> msgs = SourceValidator.validateKnownHeaders("""
                 - from:
                     uri: "timer:tick?period=1000"
                     steps:
                       - log: "${header.CamelTimerCounter} ${header.CamelTimerFiredTime} ${exchangeProperty.CamelTimerName}"
                 """, catalog);
-        assertThat(msgs).hasSize(1);
-        assertThat(msgs.get(0)).contains("CamelTimerCounter is an exchange property set by timer, not a header")
+        assertThat(msgs).hasSize(2);
+        assertThat(msgs.get(0)).startsWith("Line 4:")
+                .contains("timer sets CamelTimerCounter only with includeMetadata=true")
+                .contains("${exchangeProperty.CamelTimerCounter}");
+        assertThat(msgs.get(1)).startsWith("Line 4:").contains("timer sets CamelTimerName only with includeMetadata=true");
+    }
+
+    /** CAMEL-25744: the counter is 1 on the first fire, so a comparison with 0 never picks it. */
+    @Test
+    void aTimerCounterComparisonThatCanNeverBeTrueIsReported() {
+        List<String> msgs = SourceValidator.validateKnownHeaders("""
+                - from:
+                    uri: "timer:tick?repeatCount=2&includeMetadata=true"
+                    steps:
+                      - setBody:
+                          simple: "resource:file:${exchangeProperty.CamelTimerCounter == 0 ? 'a.json' : 'b.json'}"
+                      - choice:
+                          when:
+                            - simple: "${header.CamelTimerCounter} != 0"
+                              steps:
+                                - log: "${body}"
+                      - filter:
+                          groovy: "exchange.getProperty('CamelTimerCounter', Integer) < 1"
+                """, catalog);
+        assertThat(msgs).hasSize(3);
+        assertThat(msgs.get(0)).startsWith("Line 5:").contains("counts the fires from 1").contains("== 0 is never true")
+                .contains("compare with 1");
+        assertThat(msgs.get(1)).startsWith("Line 8:").contains("!= 0 is always true");
+        assertThat(msgs.get(2)).startsWith("Line 12:").contains("< 1 is never true");
+    }
+
+    @Test
+    void aTimerCounterComparisonThatIsAlwaysTrueIsReported() {
+        List<String> msgs = SourceValidator.validateKnownHeaders("""
+                - from:
+                    uri: "timer:tick?repeatCount=2&includeMetadata=true"
+                    steps:
+                      - filter:
+                          simple: "${exchangeProperty.CamelTimerCounter} > 0"
+                      - filter:
+                          groovy: "exchange.getProperty('CamelTimerCounter', Integer) >= 1"
+                      - filter:
+                          simple: "${exchangeProperty.CamelTimerCounter} >= 0"
+                """, catalog);
+        assertThat(msgs).hasSize(3);
+        assertThat(msgs.get(0)).startsWith("Line 5:").contains("> 0 is always true");
+        assertThat(msgs.get(1)).startsWith("Line 7:").contains(">= 1 is always true");
+        assertThat(msgs.get(2)).startsWith("Line 9:").contains(">= 0 is always true");
+    }
+
+    @Test
+    void aTimerCounterComparedWithOneIsFine() {
+        List<String> msgs = SourceValidator.validateKnownHeaders("""
+                - from:
+                    uri: "timer:tick?repeatCount=2&includeMetadata=true"
+                    steps:
+                      - setBody:
+                          simple: "resource:file:${exchangeProperty.CamelTimerCounter == 1 ? 'a.json' : 'b.json'}"
+                      - filter:
+                          simple: "${exchangeProperty.CamelTimerCounter} > 1"
+                      - filter:
+                          simple: "${exchangeProperty.CamelTimerCounter} >= 2"
+                """, catalog);
+        assertThat(msgs).isEmpty();
+    }
+
+    @Test
+    void withIncludeMetadataAHeaderLookupFindsTheExchangeProperty() {
+        // Simple's ${header.x} falls back to the exchange properties, so it reads the counter
+        List<String> msgs = SourceValidator.validateKnownHeaders("""
+                - from:
+                    uri: "timer:tick?period=1000&includeMetadata=true"
+                    steps:
+                      - log: "${header.CamelTimerCounter} ${exchangeProperty.CamelTimerName}"
+                """, catalog);
+        assertThat(msgs).isEmpty();
+    }
+
+    @Test
+    void withIncludeMetadataTheHeadersMapStillHasNoSuchHeader() {
+        List<String> msgs = SourceValidator.validateKnownHeaders("""
+                - from:
+                    uri: timer:tick
+                    parameters:
+                      includeMetadata: true
+                    steps:
+                      - log: "${headers.CamelTimerCounter}"
+                """, catalog);
+        assertThat(msgs).singleElement().asString()
+                .contains("CamelTimerCounter is an exchange property set by timer, not a header")
                 .contains("${exchangeProperty.CamelTimerCounter}");
     }
 

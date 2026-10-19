@@ -24,6 +24,7 @@ import java.util.Map;
 import org.apache.camel.Exchange;
 import org.apache.camel.catalog.CamelCatalog;
 import org.apache.camel.catalog.DefaultCamelCatalog;
+import org.apache.camel.dsl.yaml.validator.YamlValidator;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.support.ExchangeHelper;
@@ -122,7 +123,10 @@ class CatalogDocsTest {
         }
         assertEquals("path", byName.get("timerName/endpoint").getString("kind"));
         assertEquals("parameter", byName.get("period/endpoint").getString("kind"));
+        // bridgeErrorHandler is advanced on the endpoint, so the common options list it as a component option
         assertNull(byName.get("bridgeErrorHandler/component").get("kind"), "component options are neither");
+        // an option of both scopes is listed once, as the URI parameter it also is
+        assertEquals("parameter", byName.get("includeMetadata/endpoint,component").getString("kind"));
 
         // a component whose syntax has no path options says so
         JsonObject direct = catalogDoc(Map.of("name", "direct", "kind", "component", "includeOptions", false));
@@ -274,6 +278,48 @@ class CatalogDocsTest {
     }
 
     @Test
+    void theBeansEntryOfTheYamlDslIsKnown() throws Exception {
+        // CAMEL-25719: a model that had to declare a bean looked up beans four times in one step and was told "EIP not
+        // found", while camel_catalog_sample had the example; the items of beans are bean factories
+        for (Map<String, Object> args : List.<Map<String, Object>> of(Map.of("name", "beans"),
+                Map.of("name", "beans", "kind", "eip"))) {
+            JsonObject doc = catalogDoc(args);
+            assertEquals("beans", doc.getString("name"), String.valueOf(doc));
+            assertTrue(doc.getString("placement").startsWith("top-level entry"), doc.getString("placement"));
+            assertTrue(doc.getString("description").contains("${bean:name.method}"), doc.getString("description"));
+            assertTrue(String.valueOf(doc.get("options")).contains("properties"), String.valueOf(doc.get("options")));
+            assertTrue(doc.getString("sample").contains("- beans:"), doc.getString("sample"));
+            assertNull(doc.get("sampleHint"), "the example is in the answer");
+        }
+
+        CamelCatalog catalog = new DefaultCamelCatalog();
+        for (String term : List.of("beans", "bean")) {
+            JsonArray matches = (JsonArray) CatalogDocs.find(catalog, term, null, 10).get("matches");
+            assertTrue(matches.stream().anyMatch(m -> "beans".equals(((JsonObject) m).getString("name"))),
+                    term + ": " + matches);
+        }
+        // the bean EIP comes first for bean, which is also the name of an EIP
+        JsonArray eips = (JsonArray) CatalogDocs.find(catalog, "bean", "eip", 10).get("matches");
+        assertEquals("bean", ((JsonObject) eips.get(0)).getString("name"));
+    }
+
+    @Test
+    void sslContextParametersIsKnown() throws Exception {
+        // CAMEL-25735: a top-level entry of the YAML DSL whose model is an application model of the catalog (models-app),
+        // not an EIP model; camel_catalog_doc and camel_catalog_find answered that nothing was found
+        JsonObject doc = catalogDoc(Map.of("name", "sslContextParameters"));
+        assertEquals("sslContextParameters", doc.getString("name"), String.valueOf(doc));
+        assertTrue(doc.getString("placement").startsWith("top-level entry"), doc.getString("placement"));
+        assertTrue(String.valueOf(doc.get("options")).contains("keyStore"), String.valueOf(doc.get("options")));
+        assertFalse(doc.getString("description").contains("&lt;"), doc.getString("description"));
+        assertNotNull(doc.get("sampleHint"), "camel-configuration-utilities.adoc has an example");
+
+        JsonArray matches = (JsonArray) CatalogDocs.find(new DefaultCamelCatalog(), "ssl", null, 10).get("matches");
+        assertTrue(matches.stream().anyMatch(m -> "sslContextParameters".equals(((JsonObject) m).getString("name"))),
+                String.valueOf(matches));
+    }
+
+    @Test
     void anEipAliasFindsTheEip() throws Exception {
         // the aliases of the EIP models (fan-out, dedup, rate-limit) are what a model asks with; the former
         // camel_catalog_eips tool matched them, now camel_catalog_find and camel_catalog_doc do
@@ -338,8 +384,10 @@ class CatalogDocsTest {
         JsonObject all = catalogDoc(Map.of("name", "kafka", "kind", "component", "includeOptions", "all"));
         assertEquals(matched + omitted, all.getInteger("matchedOptions"));
         assertNull(all.get("omittedOptions"));
+        // listed in full or, past the limit, by name (CAMEL-25541)
         assertTrue(all.getCollection("options").stream()
-                .anyMatch(o -> "isolationLevel".equals(((JsonObject) o).getString("name"))));
+                .anyMatch(o -> "isolationLevel".equals(((JsonObject) o).getString("name")))
+                || all.getCollection("moreOptions").contains("isolationLevel"));
 
         JsonObject required = catalogDoc(Map.of("name", "kafka", "kind", "component", "includeOptions", "required"));
         assertTrue(required.getInteger("matchedOptions") < 5);
@@ -588,5 +636,124 @@ class CatalogDocsTest {
     void yamlKeyFallsBackToTheCatalogName() {
         EipModel element = new DefaultCamelCatalog().eipModel("templateParameter");
         assertEquals("templateParameter", CatalogDocs.yamlKey(null, "routeTemplate", "templateParameter", element));
+    }
+
+    /** CAMEL-25739: an option that takes several of its enum values says so, and one that takes one value does not. */
+    @Test
+    void anOptionWithSeveralEnumValuesSaysSo() {
+        CamelCatalog catalog = new DefaultCamelCatalog();
+        var doc = CatalogDocs.catalogDoc(catalog, "ehcache", null, "component", "eventTypes", "all", false, false, null);
+        assertTrue(option(doc, "eventTypes").getString("multiple").contains("separated by comma"), doc.toJson());
+        doc = CatalogDocs.catalogDoc(catalog, "consul", null, "component", "action", "all", false, false, null);
+        assertNull(option(doc, "action").get("multiple"), doc.toJson());
+    }
+
+    /** CAMEL-25539: onException says it is a top-level entry, and handled that it is an expression. */
+    @Test
+    void onExceptionSaysWhereItGoesAndTheShapeOfHandled() {
+        CamelCatalog catalog = new DefaultCamelCatalog();
+        var doc = CatalogDocs.catalogDoc(catalog, "onException", null, "eip", null, "all", false, false, null);
+        assertTrue(doc.getString("placement").startsWith("top-level entry"), doc.toJson());
+        assertTrue(doc.getString("sampleHint").contains("camel_catalog_sample name=onException"), doc.toJson());
+        assertEquals("handled: {constant: {expression: \"true\"}}", yamlExample(option(doc, "handled")));
+        assertEquals("continued: {constant: {expression: \"true\"}}", yamlExample(option(doc, "continued")));
+        assertEquals("onWhen: {expression: {simple: {expression: \"${header.foo} == 'bar'\"}}}",
+                yamlExample(option(doc, "onWhen")));
+        // the elements written in their own way keep no hint
+        assertFalse(option(doc, "redeliveryPolicy").containsKey("yaml"), doc.toJson());
+        assertFalse(option(doc, "exception").containsKey("yaml"), doc.toJson());
+    }
+
+    /** CAMEL-25539: each kind of EIP says where it goes, and a step has no shape hint it does not need. */
+    @Test
+    void placementByKindOfEip() {
+        CamelCatalog catalog = new DefaultCamelCatalog();
+        var doc = CatalogDocs.catalogDoc(catalog, "errorHandler", null, "eip", null, null, false, false, null);
+        assertTrue(doc.getString("placement").startsWith("errorHandler: with the kind"), doc.toJson());
+        doc = CatalogDocs.catalogDoc(catalog, "routeConfiguration", null, "eip", null, null, false, false, null);
+        assertTrue(doc.getString("placement").startsWith("top-level entry"), doc.toJson());
+        doc = CatalogDocs.catalogDoc(catalog, "when", null, "eip", null, null, false, false, null);
+        assertTrue(doc.getString("placement").startsWith("a part of choice"), doc.toJson());
+        doc = CatalogDocs.catalogDoc(catalog, "split", null, "eip", null, "all", false, false, null);
+        assertTrue(doc.getString("placement").startsWith("a step inside the steps of a route"), doc.toJson());
+        for (Object o : (JsonArray) doc.get("options")) {
+            assertFalse(((JsonObject) o).containsKey("yaml"), ((JsonObject) o).toJson());
+        }
+        assertTrue(doc.getString("sampleHint").contains("camel_catalog_sample name=split"), doc.toJson());
+        // the sample hint only for an EIP camel_catalog_sample has a sample of
+        doc = CatalogDocs.catalogDoc(catalog, "pausable", null, "eip", null, null, false, false, null);
+        assertTrue(doc.getString("placement").startsWith("a step inside the steps of a route"), doc.toJson());
+        assertFalse(doc.containsKey("sampleHint"), doc.toJson());
+    }
+
+    /**
+     * CAMEL-25539: the shape hints show the expected YAML, which passes the YAML DSL schema, the catalog checks and the
+     * canonical schema.
+     */
+    @Test
+    void theShapeHintsAreValidYaml() throws Exception {
+        CamelCatalog catalog = new DefaultCamelCatalog();
+        var onException = CatalogDocs.catalogDoc(catalog, "onException", null, "eip", null, "all", false, false, null);
+        var aggregate = CatalogDocs.catalogDoc(catalog, "aggregate", null, "eip", null, "all", false, false, null);
+        var xpath = CatalogDocs.catalogDoc(catalog, "xpath", null, "language", null, null, false, false, null);
+        // the namespace of xpath, xquery and xtokenize is a list of key/value pairs
+        assertEquals("namespace: [{key: c, value: \"http://acme.com/cheese\"}]", yamlExample(option(xpath, "namespace")));
+        for (String language : List.of("xquery", "xtokenize")) {
+            var doc = CatalogDocs.catalogDoc(catalog, language, null, "language", null, "all", false, false, null);
+            assertTrue(yamlExample(option(doc, "namespace")).startsWith("namespace: [{key: c, "), doc.toJson());
+        }
+        String yaml = """
+                - onException:
+                    exception: [java.io.IOException]
+                    %s
+                    %s
+                    %s
+                    steps:
+                      - log:
+                          message: failed
+                - onException:
+                    exception: [java.net.ConnectException]
+                    %s
+                - route:
+                    from:
+                      uri: direct:start
+                      steps:
+                        - setHeader:
+                            name: price
+                            expression:
+                              xpath:
+                                expression: /c:order/c:price/text()
+                                %s
+                        - aggregate:
+                            aggregationStrategy: "#class:org.apache.camel.processor.aggregate.GroupedBodyAggregationStrategy"
+                            %s
+                            %s
+                            steps:
+                              - log:
+                                  message: done
+                """.formatted(
+                yamlExample(option(onException, "handled")), yamlExample(option(onException, "onWhen")),
+                yamlExample(option(onException, "retryWhile")), yamlExample(option(onException, "continued")),
+                yamlExample(option(xpath, "namespace")), yamlExample(option(aggregate, "correlationExpression")),
+                yamlExample(option(aggregate, "completionPredicate")));
+        assertEquals(List.of(), SourceValidator.validateCamelYaml(yaml, catalog), yaml);
+        // and the canonical schema, which rejects the classic shorthand (handled: {constant: "true"})
+        YamlValidator canonical = new YamlValidator(true);
+        canonical.init();
+        assertEquals(List.of(), YamlValidator.describeAll(yaml, canonical.validate(yaml)), yaml);
+    }
+
+    private static JsonObject option(JsonObject doc, String name) {
+        return ((JsonArray) doc.get("options")).stream().map(JsonObject.class::cast)
+                .filter(o -> name.equals(o.getString("name"))).findFirst().orElseThrow(() -> new AssertionError(
+                        name + " not in " + doc.toJson()));
+    }
+
+    /** The YAML of a shape hint, without the comment that explains it. */
+    private static String yamlExample(JsonObject option) {
+        String yaml = option.getString("yaml");
+        assertNotNull(yaml, option.toJson());
+        int comment = yaml.indexOf("  # ");
+        return comment > 0 ? yaml.substring(0, comment) : yaml;
     }
 }
